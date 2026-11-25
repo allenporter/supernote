@@ -69,7 +69,7 @@ class ProcessorComponent:
 
     domain = "processor"
     dependencies: tuple[str, ...] = ("ai",)
-    platforms: tuple[str, ...] = ("http", "processor")
+    platforms: tuple[str, ...] = ("http", "mcp", "processor")
     hosted_platforms: tuple[str, ...] = ("processor",)
 
     def __init__(self) -> None:

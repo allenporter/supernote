@@ -10,6 +10,7 @@ import pytest
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.mcpserver import MCPServer
+from mcp.types import CallToolResult, TextContent
 from prometheus_client import REGISTRY
 
 from supernote.server.components.mcp import (
@@ -139,6 +140,57 @@ async def test_mcp_registrar_apply_to_server_and_metrics() -> None:
         REGISTRY.get_sample_value(
             "supernote_mcp_tool_calls_total",
             {"tool": "custom_ping", "status": "failure"},
+        )
+        == before_fail + 1.0
+    )
+
+
+async def test_mcp_registrar_tracks_call_tool_result_metrics() -> None:
+    registrar = McpRegistrar()
+
+    async def image_tool(ok: bool = True) -> CallToolResult:
+        return CallToolResult(
+            content=[TextContent(type="text", text="ok" if ok else "err")],
+            is_error=not ok,
+        )
+
+    registrar.add_tool(image_tool, name="custom_call_result")
+    mcp = MCPServer("Test MCP")
+    registrar.apply_to_server(mcp)
+
+    before_ok = (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "custom_call_result", "status": "success"},
+        )
+        or 0.0
+    )
+    before_fail = (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "custom_call_result", "status": "failure"},
+        )
+        or 0.0
+    )
+
+    ok_res = await mcp.call_tool("custom_call_result", {"ok": True})
+    fail_res = await mcp.call_tool("custom_call_result", {"ok": False})
+
+    assert isinstance(ok_res, CallToolResult)
+    assert isinstance(fail_res, CallToolResult)
+    assert ok_res.is_error is False
+    assert fail_res.is_error is True
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "custom_call_result", "status": "success"},
+        )
+        == before_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "custom_call_result", "status": "failure"},
         )
         == before_fail + 1.0
     )
