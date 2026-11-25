@@ -558,3 +558,73 @@ cases:
     category: edge_cases
     description: Poster-sized handwritten number '10' spanning ~40% of page height.
     ground_truth: "10"
+
+  # --- Multimodal: Diagrams, Tables & Sketches ---
+  - id: multimodal_architecture_flowchart
+    path: notebooks/diagram_architecture_flowchart.png
+    page_index: 0
+    category: multimodal_diagrams
+    description: Synthetic architecture flowchart with boxes, directional arrows, and bullet notes below.
+    expect_mermaid: true
+    required_entities:
+      - Auth Flow Architecture
+      - Client App
+      - API Gateway
+      - Auth Service
+      - SQLite DB
+      - WAL
+    ground_truth: |-
+      Auth Flow Architecture
+
+      ```mermaid
+      flowchart TD
+          Client[Client App] --> Gateway[API Gateway]
+          Gateway --> Auth[Auth Service]
+          Gateway --> DB[SQLite DB]
+      ```
+
+      Notes:
+      - Validate bearer tokens at API Gateway
+      - Keep SQLite WAL mode enabled
+
+  - id: multimodal_comparison_table
+    path: notebooks/diagram_comparison_table.png
+    page_index: 0
+    category: multimodal_diagrams
+    description: Synthetic 3-column comparison table with heading and note line below.
+    expect_table: true
+    required_entities:
+      - OCR Model Comparison
+      - Model
+      - Latency
+      - Accuracy
+      - Gemini
+      - Ollama
+      - Apple Vision
+    ground_truth: |-
+      OCR Model Comparison
+
+      | Model | Latency | Accuracy |
+      | :--- | :--- | :--- |
+      | Gemini | 1.2s | 98% |
+      | Ollama | 2.8s | 91% |
+      | Apple Vision | 0.3s | 89% |
+
+      - Prefer Gemini for complex diagrams
+
+  - id: multimodal_floorplan_sketch
+    path: notebooks/diagram_floorplan_sketch.png
+    page_index: 0
+    category: multimodal_diagrams
+    description: Synthetic living room floorplan sketch with labeled furniture and architectural features.
+    expect_diagram_description: true
+    required_entities:
+      - Living Room Floorplan
+      - Sofa
+      - Window
+      - Desk
+      - Door
+    ground_truth: |-
+      Living Room Floorplan
+
+      > [Diagram: Floorplan of a living room showing a Sofa along the north wall, a Window along the east wall, a Desk near the east window, and a Door along the south wall.]
