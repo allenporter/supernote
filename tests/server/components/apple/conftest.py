@@ -12,9 +12,9 @@ from unittest.mock import patch
 import pytest
 
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.ai import OCR_MODEL_KEY
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
 from supernote.server.core import ServerCore
-from supernote.server.keys import OCR_MODEL_KEY
 from tests.server.components.conftest import LoadComponents
 
 

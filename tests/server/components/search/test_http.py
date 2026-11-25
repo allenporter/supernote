@@ -12,6 +12,7 @@ from supernote.client.exceptions import ApiException, NotFoundException
 from supernote.client.extended import ExtendedClient
 from supernote.models.extended import SearchResultVO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
+from supernote.server.components.ai import EMBEDDING_MODEL_KEY
 from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
@@ -20,7 +21,6 @@ from supernote.server.db.models.note_processing import (
     NotePageMetadataDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import EMBEDDING_MODEL_KEY
 from supernote.server.services.user import UserService
 
 

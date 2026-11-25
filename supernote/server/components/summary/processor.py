@@ -29,6 +29,7 @@ from supernote.models.summary import (
 )
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
+from supernote.server.components.ai import SUMMARY_MODEL_KEY
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorRegistrar,
@@ -41,7 +42,6 @@ from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import SummaryDeletedEvent
-from supernote.server.keys import SUMMARY_MODEL_KEY
 from supernote.server.services.file import FileService
 from supernote.server.utils.note_content import (
     format_page_metadata,

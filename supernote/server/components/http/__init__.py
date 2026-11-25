@@ -19,7 +19,6 @@ from supernote.models.base import create_error_response
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_actor
 from supernote.server.keys import (
-    HTTP_REGISTRAR_KEY,
     REQUEST_ACTOR_KEY,
     REQUEST_EQUIPMENT_NO_KEY,
     REQUEST_USER_KEY,
@@ -176,6 +175,15 @@ class HttpRegistrar:
     def known_resource_paths(self) -> frozenset[str]:
         """Bounded canonical paths exposed by registered resources for metrics labeling."""
         return frozenset(self._known_resource_paths)
+
+
+HTTP_REGISTRAR_KEY: web.AppKey[HttpRegistrar] = web.AppKey("http_registrar")
+"""Typed `AppKey` exposing the active `HttpRegistrar` on `core.app`.
+
+Used at request time by `jwt_auth_middleware` (to check registered public
+prefixes and ASGI resources) and `metrics` (to resolve bounded route labels)
+without coupling core `keys.py` to the `http` component.
+"""
 
 
 class HttpComponent:

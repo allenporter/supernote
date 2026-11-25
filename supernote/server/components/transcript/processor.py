@@ -19,6 +19,7 @@ from supernote.server.ai.prompts import (
     format_image_ocr_prompt,
     format_ocr_prompt,
 )
+from supernote.server.components.ai import OCR_MODEL_KEY
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorRegistrar,
@@ -30,7 +31,6 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
-from supernote.server.keys import OCR_MODEL_KEY
 from supernote.server.services.file import FileService
 from supernote.server.utils.image import is_image_filename
 from supernote.server.utils.note_content import get_page_content_by_id

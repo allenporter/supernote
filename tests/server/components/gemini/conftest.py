@@ -12,13 +12,13 @@ from pytest_aiohttp import AiohttpServer
 from supernote.server.ai.models.embedding import EmbeddingModel
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.models.summary import SummaryModel
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
-from supernote.server.core import ServerCore
-from supernote.server.keys import (
+from supernote.server.components.ai import (
     EMBEDDING_MODEL_KEY,
     OCR_MODEL_KEY,
     SUMMARY_MODEL_KEY,
 )
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
+from supernote.server.core import ServerCore
 from tests.server.components.conftest import LoadComponents
 
 

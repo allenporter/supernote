@@ -754,6 +754,25 @@ class SummaryService:
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
 
+    @staticmethod
+    async def get_referenced_blob_keys(
+        session: AsyncSession, candidate_keys: set[str]
+    ) -> set[str]:
+        """Return the subset of ``candidate_keys`` still referenced by `SummaryDO` handwriting blobs.
+
+        Intentionally queries across all users (matching `VirtualFileSystem.get_unreferenced_storage_keys`):
+        `USER_DATA_BUCKET` is a shared blob store, so deletion safety must confirm no user still
+        references a physical key before `FileService.cleanup_unreferenced_blobs` deletes it.
+        """
+        if not candidate_keys:
+            return set()
+        stmt = (
+            select(SummaryDO.handwrite_inner_name)
+            .where(SummaryDO.handwrite_inner_name.in_(candidate_keys))
+            .group_by(SummaryDO.handwrite_inner_name)
+        )
+        return {k for k in (await session.execute(stmt)).scalars().all() if k}
+
 
 SUMMARY_SERVICE_KEY: web.AppKey[SummaryService] = web.AppKey("summary_service")
 """Typed `aiohttp.web.AppKey` exposing `SummaryService` to sibling components and routes."""

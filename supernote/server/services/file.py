@@ -13,11 +13,11 @@ import asyncio
 import logging
 import time
 import weakref
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.base import BooleanEnum, ErrorCode
 from supernote.server.constants import (
@@ -38,7 +38,6 @@ from supernote.server.exceptions import (
 from supernote.server.utils.paths import get_conversion_pdf_prefix
 
 from ..db.models.file import RecycleFileDO, UserFileDO
-from ..db.models.summary import SummaryDO
 from ..db.models.user import FALLBACK_QUOTA, UNLIMITED_QUOTA
 from ..db.session import DatabaseSessionManager
 from ..events import (
@@ -177,6 +176,17 @@ class _FileUpsertResult:
     previous_md5: str | None = None
 
 
+BlobReferenceProvider = Callable[[AsyncSession, set[str]], Awaitable[set[str]]]
+"""Async callback returning the subset of candidate `USER_DATA_BUCKET` keys still referenced outside `UserFileDO`.
+
+Exists so core `FileService` blob garbage collection (`cleanup_unreferenced_blobs`)
+stays decoupled from component ORM tables (such as `SummaryDO.handwrite_inner_name`)
+while still preventing deletion of physical blobs referenced by another component.
+New components should prefer their own `BlobStorage` bucket rather than sharing
+`USER_DATA_BUCKET`.
+"""
+
+
 class FileService:
     """File service."""
 
@@ -200,7 +210,28 @@ class FileService:
             weakref.WeakValueDictionary()
         )
         self._blob_cleanup_subscribed = False
+        self._blob_reference_providers: list[BlobReferenceProvider] = []
         init_oss_and_upload_metrics()
+
+    def register_blob_reference_provider(
+        self, provider: BlobReferenceProvider
+    ) -> Callable[[], None]:
+        """Register a provider that protects component-referenced `USER_DATA_BUCKET` blobs during GC.
+
+        Components that store pointers to blobs in the shared `USER_DATA_BUCKET`
+        outside `UserFileDO` register a `BlobReferenceProvider` during `async_setup`
+        so `cleanup_unreferenced_blobs` checks their tables before deleting a
+        physical blob—without forcing core `FileService` to import component models.
+        Returns an idempotent unregister callback to invoke during `async_stop`.
+        """
+        if provider not in self._blob_reference_providers:
+            self._blob_reference_providers.append(provider)
+
+        def _unregister() -> None:
+            if provider in self._blob_reference_providers:
+                self._blob_reference_providers.remove(provider)
+
+        return _unregister
 
     async def start(self) -> None:
         """Subscribe to asynchronous blob cleanup events."""
@@ -1315,38 +1346,20 @@ class FileService:
         cutoff_ms = int(time.time() * 1000) - RECYCLE_RETENTION_MS
         await self.purge_recycle(user_id=user_id, older_than_ms=cutoff_ms)
 
-    @staticmethod
-    async def _filter_unreferenced_summary_keys(
-        session: Any, candidate_keys: set[str]
-    ) -> set[str]:
-        """Return the subset of candidate keys not referenced by any SummaryDO handwriting blob."""
-        if not candidate_keys:
-            return set()
-        summary_stmt = (
-            select(SummaryDO.handwrite_inner_name)
-            .where(SummaryDO.handwrite_inner_name.in_(candidate_keys))
-            .group_by(SummaryDO.handwrite_inner_name)
-        )
-        surviving_summary_keys = {
-            k for k in (await session.execute(summary_stmt)).scalars().all() if k
-        }
-        return candidate_keys - surviving_summary_keys
-
     async def cleanup_unreferenced_blobs(self, candidate_keys: set[str]) -> None:
-        """Delete candidate keys from USER_DATA_BUCKET that are not referenced by any file or summary row."""
+        """Delete candidate keys from USER_DATA_BUCKET not referenced by VFS or registered providers."""
         clean_keys = {k for k in candidate_keys if k}
         if not clean_keys:
             return
 
-        # USER_DATA_BUCKET stores both VFS files (UserFileDO.storage_key) and
-        # summary handwriting strokes (SummaryDO.handwrite_inner_name); only delete
-        # keys that are unreferenced across both tables.
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            unreferenced_file_keys = await vfs.get_unreferenced_storage_keys(clean_keys)
-            blobs_to_delete = await self._filter_unreferenced_summary_keys(
-                session, unreferenced_file_keys
-            )
+            blobs_to_delete = await vfs.get_unreferenced_storage_keys(clean_keys)
+            for provider in list(self._blob_reference_providers):
+                if not blobs_to_delete:
+                    break
+                referenced = await provider(session, blobs_to_delete)
+                blobs_to_delete -= referenced
 
         for blob_key in blobs_to_delete:
             try:

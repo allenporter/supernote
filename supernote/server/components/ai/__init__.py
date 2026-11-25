@@ -42,11 +42,6 @@ from supernote.server.ai.models.text import (
     TextGenerationModel,
 )
 from supernote.server.core import ServerCore
-from supernote.server.keys import (
-    EMBEDDING_MODEL_KEY,
-    OCR_MODEL_KEY,
-    SUMMARY_MODEL_KEY,
-)
 from supernote.server.utils.prompt_loader import PROMPT_LOADER
 
 if TYPE_CHECKING:
@@ -54,13 +49,28 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AI_PLATFORMS",
+    "EMBEDDING_MODEL_KEY",
+    "OCR_MODEL_KEY",
+    "SUMMARY_MODEL_KEY",
     "TEXT_MODEL_KEY",
     "AiComponent",
     "AiRegistrar",
 ]
 
 AI_PLATFORMS: tuple[str, ...] = ("ocr", "summary", "embedding", "text")
+"""AI capability platform names hosted by `AiComponent`."""
+
+OCR_MODEL_KEY: web.AppKey[OcrModel | None] = web.AppKey("ocr_model")
+"""Typed `AppKey` for the configured OCR model; read by components declaring ``dependencies = ("ai",)``."""
+
+SUMMARY_MODEL_KEY: web.AppKey[SummaryModel | None] = web.AppKey("summary_model")
+"""Typed `AppKey` for the configured summary model; read by components declaring ``dependencies = ("ai",)``."""
+
+EMBEDDING_MODEL_KEY: web.AppKey[EmbeddingModel | None] = web.AppKey("embedding_model")
+"""Typed `AppKey` for the configured embedding model; read by components declaring ``dependencies = ("ai",)``."""
+
 TEXT_MODEL_KEY: web.AppKey[TextGenerationModel | None] = web.AppKey("text_model")
+"""Typed `AppKey` for the configured structured text-generation model; read by components declaring ``dependencies = ("ai",)``."""
 
 _ModelT = TypeVar("_ModelT")
 OcrModelFactory = Callable[["ServerConfig"], OcrModel | None]
