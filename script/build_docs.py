@@ -52,134 +52,141 @@ class GuideSpec:
 
 
 GUIDE_SPECS: list[GuideSpec] = [
-    # Getting Started & Self-Hosting
+    # Getting Started
     GuideSpec(
         slug="bootstrap_guide",
         title="Self-Hosting & Quickstart",
-        section="Self-Hosting & Guides",
+        section="Getting Started",
         path=ROOT_DIR / "docs" / "guides" / "bootstrap_guide.md",
-    ),
-    GuideSpec(
-        slug="configuration",
-        title="Configuration Reference",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "reference" / "configuration.md",
     ),
     GuideSpec(
         slug="ai_providers",
         title="Choosing an AI Provider",
-        section="Self-Hosting & Guides",
+        section="Getting Started",
         path=ROOT_DIR / "docs" / "guides" / "ai_providers.md",
     ),
     GuideSpec(
-        slug="mcp",
-        title="MCP Server & AI Assistants",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "guides" / "mcp.md",
+        slug="configuration",
+        title="Configuration Reference",
+        section="Getting Started",
+        path=ROOT_DIR / "docs" / "reference" / "configuration.md",
     ),
+    GuideSpec(
+        slug="cli_reference",
+        title="CLI Reference",
+        section="Getting Started",
+        path=ROOT_DIR / "docs" / "reference" / "cli_reference.md",
+    ),
+    # Features & Workflows
     GuideSpec(
         slug="ocr_and_multimodal",
         title="Handwriting OCR & Multimodal",
-        section="Self-Hosting & Guides",
+        section="Features & Workflows",
         path=ROOT_DIR / "docs" / "guides" / "ocr_and_multimodal.md",
     ),
     GuideSpec(
         slug="search",
-        title="Hybrid Search & Retrieval",
-        section="Self-Hosting & Guides",
+        title="Search & Retrieval",
+        section="Features & Workflows",
         path=ROOT_DIR / "docs" / "guides" / "search.md",
     ),
     GuideSpec(
         slug="llm_wiki",
-        title="LLM Wiki & Knowledge Graph",
-        section="Self-Hosting & Guides",
+        title="LLM Wiki",
+        section="Features & Workflows",
         path=ROOT_DIR / "docs" / "guides" / "llm_wiki.md",
+    ),
+    GuideSpec(
+        slug="mcp",
+        title="MCP Server & AI Assistants",
+        section="Features & Workflows",
+        path=ROOT_DIR / "docs" / "guides" / "mcp.md",
+    ),
+    GuideSpec(
+        slug="webhooks_and_integrations",
+        title="Webhooks, iCal & Integrations",
+        section="Features & Workflows",
+        path=ROOT_DIR / "docs" / "guides" / "webhooks_and_integrations.md",
     ),
     GuideSpec(
         slug="ocr_benchmarks",
         title="OCR Provider Benchmarks",
-        section="Self-Hosting & Guides",
+        section="Features & Workflows",
         path=ROOT_DIR / "evals" / "ocr" / "README.md",
     ),
     GuideSpec(
         slug="search_benchmarks",
         title="Search & Embedding Benchmarks",
-        section="Self-Hosting & Guides",
+        section="Features & Workflows",
         path=ROOT_DIR / "evals" / "search" / "README.md",
     ),
+    # Operations
     GuideSpec(
         slug="monitoring",
         title="Prometheus & Grafana Monitoring",
-        section="Self-Hosting & Guides",
+        section="Operations",
         path=ROOT_DIR / "docs" / "reference" / "monitoring.md",
     ),
     GuideSpec(
-        slug="webhooks_and_integrations",
-        title="Webhooks, iCal & Integrations",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "guides" / "webhooks_and_integrations.md",
+        slug="security",
+        title="Security & Threat Model",
+        section="Operations",
+        path=ROOT_DIR / "docs" / "reference" / "security.md",
     ),
     GuideSpec(
-        slug="cli_reference",
-        title="CLI Reference",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "reference" / "cli_reference.md",
+        slug="schema_migration_guide",
+        title="Database Migrations (Alembic)",
+        section="Operations",
+        path=ROOT_DIR / "docs" / "architecture" / "schema_migration_guide.md",
     ),
-    # Architecture & Specifications
+    # Architecture & Development
+    GuideSpec(
+        slug="components",
+        title="Server Component Catalog",
+        section="Architecture & Development",
+        path=ROOT_DIR / "docs" / "architecture" / "components.md",
+    ),
     GuideSpec(
         slug="architecture",
         title="Server & Sync Protocol",
-        section="Architecture & Specs",
+        section="Architecture & Development",
         path=ROOT_DIR / "docs" / "architecture" / "server_architecture.md",
     ),
     GuideSpec(
         slug="note_processing_design",
         title="Async Note Processing Pipeline",
-        section="Architecture & Specs",
+        section="Architecture & Development",
         path=ROOT_DIR / "docs" / "architecture" / "note_processing_design.md",
-    ),
-    GuideSpec(
-        slug="security",
-        title="Security & Threat Model",
-        section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "reference" / "security.md",
     ),
     GuideSpec(
         slug="notebook_spec",
         title="Binary .note Format Spec",
-        section="Architecture & Specs",
+        section="Architecture & Development",
         path=ROOT_DIR / "docs" / "architecture" / "notebook_spec.md",
     ),
     GuideSpec(
         slug="schedule_api",
         title="Schedule & Tasks API Spec",
-        section="Architecture & Specs",
+        section="Architecture & Development",
         path=ROOT_DIR / "docs" / "architecture" / "schedule_api.md",
     ),
     GuideSpec(
         slug="summary_api",
         title="Summary & OCR API Spec",
-        section="Architecture & Specs",
+        section="Architecture & Development",
         path=ROOT_DIR / "docs" / "architecture" / "summary_api.md",
     ),
-    # Contributing & Maintenance
     GuideSpec(
         slug="roadmap",
         title="Roadmap & Priorities",
-        section="Development",
+        section="Architecture & Development",
         path=ROOT_DIR / "ROADMAP.md",
     ),
     GuideSpec(
         slug="contributing",
         title="Contributing & Local Dev",
-        section="Development",
+        section="Architecture & Development",
         path=ROOT_DIR / "docs" / "CONTRIBUTING.md",
-    ),
-    GuideSpec(
-        slug="schema_migration_guide",
-        title="Database Migrations (Alembic)",
-        section="Development",
-        path=ROOT_DIR / "docs" / "architecture" / "schema_migration_guide.md",
     ),
 ]
 

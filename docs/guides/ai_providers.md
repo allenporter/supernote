@@ -8,7 +8,7 @@ Every AI feature in Open Private Cloud is optional. You can run the server with 
 | :--- | :--- | :--- |
 | **Google Gemini (recommended default)** | Highest handwriting accuracy, Bullet Journal symbols, diagrams, and best hybrid search embedding quality | `SUPERNOTE_GEMINI_API_KEY` (Paid tier does not train on API data; Free tier does—see below) |
 | **100% Local (Ollama, vLLM, llama.cpp, LM Studio)** | Keeping every note and image strictly inside your home network | A local OpenAI-compatible vision model for OCR/summaries and `embeddinggemma` for search |
-| **No AI (sync only)** | Minimal ~135–160 MB Private Cloud sync on a Raspberry Pi or NAS | Nothing—just run `supernote serve` |
+| **No AI (sync only)** | Minimal ~135–160 MB Private Cloud sync on a Raspberry Pi or NAS | Nothing; run `supernote serve` |
 
 You can also mix providers per capability (for example, Gemini for OCR and a local Ollama server for summaries and embeddings).
 
@@ -47,13 +47,13 @@ Across 100 pages in 26 notebooks and 60 blind ground-truth queries (`#tag` looku
 | `hybrid` | `gemini:gemini-embedding-001` | 95.5% | 98.0% | 93.2% | 96.0% | 95.5% | 69.4 ms |
 | `hybrid` | `openai:text-embedding-3-small` | 94.0% | 98.0% | 89.5% | 94.2% | 90.5% | 50.9 ms |
 | `hybrid` *(recommended local)* | `ollama:embeddinggemma` | **93.7%** | **97.0%** | **90.2%** | **94.3%** | **93.3%** | **23.5 ms** |
-| `hybrid` | `ollama:qwen3-embedding:4b` | 92.2% | 95.7% | 89.7% | 93.2% | 93.4% | 58.9 ms |
+| `hybrid` | `ollama:qwen3-embedding:4b` | 92.2% | 95.7% | 89.7% | 93.0% | 93.7% | 58.9 ms |
 | `hybrid` | `ollama:qwen3-embedding:0.6b` | 91.3% | 95.7% | 89.8% | 92.5% | 94.3% | 28.9 ms |
 | `keyword_only` | `none` | 54.8% | 59.0% | 49.3% | 54.8% | 49.3% | 4.0 ms |
 
 ### Public multimodal benchmarks (Gemini vs. Claude)
 
-Recent results (Jun–Nov 2026) from [Artificial Analysis](https://artificialanalysis.ai/) (`MMMU-Pro`), [Vals AI](https://www.vals.ai/benchmarks) (`MMMU-Pro` and `MortgageTax` scanned-form extraction), and [LMArena Vision](https://lmarena.ai/):
+For broader context on why Gemini is the default multimodal backend (Anthropic Claude is not a built-in server provider), here are recent results (Jun–Nov 2026) from [Artificial Analysis](https://artificialanalysis.ai/) (`MMMU-Pro`), [Vals AI](https://www.vals.ai/benchmarks) (`MMMU-Pro` and `MortgageTax` scanned-form extraction), and [LMArena Vision](https://lmarena.ai/):
 
 | Model | Release | API Price (In / Out per 1M) | LMArena Vision (Elo) | MMMU-Pro (AA) | MMMU-Pro (Vals) | MortgageTax (Vals) |
 | :--- | :--- | :--- | ---: | ---: | ---: | ---: |
@@ -86,6 +86,35 @@ Google Gemini offers both a **Free tier** that trains on API data and a **Paid t
 ### Google Gemini (default)
 
 Set `SUPERNOTE_GEMINI_API_KEY` and start the server. That enables `gemini-3.5-flash-lite` for OCR/summaries and `gemini-embedding-2` for hybrid search automatically.
+
+### 100% local with Ollama
+
+Run OCR, summaries, and hybrid search embeddings entirely on your own machine:
+
+```yaml
+ai:
+  providers:
+    ollama:
+      type: openai
+      base_url: "http://localhost:11434/v1"
+
+  ocr:
+    provider: ollama
+    model: gemma3:27b
+    max_concurrency: 1
+
+  summary:
+    provider: ollama
+    model: gemma3:27b
+    max_concurrency: 1
+
+  embedding:
+    provider: ollama
+    model: embeddinggemma
+    max_concurrency: 2
+```
+
+When running Open Private Cloud in Docker and Ollama on your host, set `base_url: "http://host.docker.internal:11434/v1"` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
 
 ### Mixing cloud and local models
 

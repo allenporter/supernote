@@ -15,11 +15,11 @@ In hybrid mode, the server runs both keyword matching and vector search and merg
 
 ## Picking an embedding model
 
-We benchmarked cloud and local embedding models across 100 notebook pages and 60 queries in [evals/search/RESULTS.md](../../evals/search/RESULTS.md):
+We benchmarked cloud and local embedding models across 100 notebook pages and 60 queries in [evals/search/RESULTS.md](../../evals/search/RESULTS.md).
 
-- **Google Gemini (`gemini-embedding-2`)** is the recommended cloud default. It scored highest across exact, paraphrase, and multilingual queries (~69 ms median latency) and turns on automatically when you set `SUPERNOTE_GEMINI_API_KEY`.
-- **Ollama (`embeddinggemma`)** is the recommended local option. Everything stays on your own machine, latency is ~24 ms, and hybrid accuracy stays close to cloud models.
-- **No embedding model** is completely fine if you want zero AI dependencies. You still get fast lexical search over native Supernote page keywords and any existing transcripts.
+- Google Gemini (`gemini-embedding-2`) is the recommended cloud default. It scored highest across exact, paraphrase, and multilingual queries (~69 ms median latency) and turns on automatically when you set `SUPERNOTE_GEMINI_API_KEY`.
+- Ollama (`embeddinggemma`) is the recommended local option. Everything stays on your own machine, latency is ~24 ms, and hybrid accuracy stays close to cloud models.
+- Leaving embeddings unconfigured is also fine if you want zero AI dependencies. You still get fast lexical search over native Supernote page keywords and any existing transcripts.
 
 To use local embeddings with Ollama, add this to `config/config.yaml`:
 
@@ -47,7 +47,7 @@ From the terminal:
 supernote cloud search "backyard drainage plan"
 
 # Narrow by notebook name and date range
-supernote cloud search "Q2 budget" --name "Work" --start-date 2026-04-01 --end-date 2026-06-30
+supernote cloud search "Q2 budget" --name-filter "Work" --after 2026-04-01 --before 2026-06-30
 ```
 
 See the [CLI Reference](../reference/cli_reference.md) for all search flags, or the [MCP Guide](./mcp.md) to see how AI assistants use `search_notebook_chunks`.
