@@ -9,12 +9,12 @@ from aiohttp import web
 
 from supernote.server.components.http import (
     HTTP_REGISTRAR_KEY,
-    HttpComponent,
     HttpRegistrar,
     jwt_auth_middleware,
 )
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
 from supernote.server.trace import trace_middleware
+from tests.server.components.conftest import LoadComponents
 
 
 def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
@@ -60,20 +60,19 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     ]
 
 
-async def test_http_component_lifecycle(component_core: ServerCore) -> None:
-    component = HttpComponent()
+async def test_http_component_lifecycle(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    loader = await load_components("http")
+    component = loader.get("http")
     assert isinstance(component, Component)
     assert component.domain == "http"
     assert component.dependencies == ()
     assert component.platforms == ()
 
-    loader = ComponentLoader()
-    loader.register(component)
-
-    await loader.async_setup_all(component_core, {})
     registrar = component_core.app[HTTP_REGISTRAR_KEY]
     assert isinstance(registrar, HttpRegistrar)
     assert registrar.router is component_core.app.router
 
-    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)

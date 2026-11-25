@@ -18,20 +18,29 @@ from supernote.server.components.mcp import (
     McpRegistrar,
     get_authenticated_user_id,
 )
-from supernote.server.components.oauth import OAuthComponent
 from supernote.server.components.oauth.models import SupernoteAccessToken
-from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
+from supernote.server.core import Component, PlatformHost, ServerCore
 from supernote.server.services.user import UserService
 from tests.fixtures.server import pick_port
-from tests.server.components.conftest import mcp_session, wait_for_mcp_server
+from tests.server.components.conftest import (
+    LoadComponents,
+    mcp_session,
+    wait_for_mcp_server,
+)
 
 
 async def test_mcp_component_lifecycle(
     component_core: ServerCore,
+    load_components: LoadComponents,
     user_service: UserService,
     test_user_id: int,
 ) -> None:
-    component = McpComponent()
+    component_core.config.host = "127.0.0.1"
+    component_core.config.mcp_port = pick_port()
+
+    loader = await load_components("mcp", start=False)
+    component = loader.get("mcp")
+    assert isinstance(component, McpComponent)
     assert isinstance(component, Component)
     assert isinstance(component, PlatformHost)
     assert component.domain == "mcp"
@@ -39,14 +48,6 @@ async def test_mcp_component_lifecycle(
     assert component.platforms == ()
     assert component.hosted_platforms == ("mcp",)
 
-    component_core.config.host = "127.0.0.1"
-    component_core.config.mcp_port = pick_port()
-
-    loader = ComponentLoader()
-    loader.register(OAuthComponent())
-    loader.register(component)
-
-    await loader.async_setup_all(component_core, {})
     registrar = component.get_platform_registrar()
     assert isinstance(registrar, McpRegistrar)
 
@@ -71,12 +72,9 @@ async def test_mcp_component_lifecycle(
 
 async def test_mcp_component_stop_after_setup_only(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
-    loader = ComponentLoader()
-    loader.register(OAuthComponent())
-    loader.register(McpComponent())
-
-    await loader.async_setup_all(component_core, {})
+    loader = await load_components("mcp", start=False)
     await loader.async_stop_all(component_core)
 
 
