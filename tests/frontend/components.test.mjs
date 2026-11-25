@@ -165,3 +165,58 @@ test('ViewerSidePanel.js: renders standalone image OCR & scene description as sa
         scope.unmount();
     }
 });
+
+test('ViewerSidePanel.js: hides image HTML on whitespace-only text and keeps notebook mode for note files', async () => {
+    const emptyImage = await mountComposable(() =>
+        ViewerSidePanel.setup(
+            {
+                fileId: '43',
+                fileCategory: 'image',
+                isOpenMobile: false,
+                activeTab: 'transcription',
+                activePageIndex: 0,
+                hasCanvasPages: false,
+                isLoadingTranscript: false,
+                transcriptPages: [{ pageIndex: 0, pageId: 'img', text: '   \n  ' }],
+                displayTranscriptPages: [],
+                pageMetaByIndex: new Map(),
+                linksByPageIndex: new Map(),
+                summaries: [],
+                aiStatus: null,
+            },
+            { expose() {}, emit() {} },
+        ),
+    );
+    try {
+        assert.equal(emptyImage.result.isStandaloneImage.value, true);
+        assert.equal(emptyImage.result.primaryImageHtml.value, '');
+    } finally {
+        emptyImage.unmount();
+    }
+
+    const notebook = await mountComposable(() =>
+        ViewerSidePanel.setup(
+            {
+                fileId: '44',
+                fileCategory: 'note',
+                isOpenMobile: false,
+                activeTab: 'transcription',
+                activePageIndex: 0,
+                hasCanvasPages: true,
+                isLoadingTranscript: false,
+                transcriptPages: [{ pageIndex: 0, pageId: 'p1', text: 'Hello' }],
+                displayTranscriptPages: [],
+                pageMetaByIndex: new Map(),
+                linksByPageIndex: new Map(),
+                summaries: [],
+                aiStatus: null,
+            },
+            { expose() {}, emit() {} },
+        ),
+    );
+    try {
+        assert.equal(notebook.result.isStandaloneImage.value, false);
+    } finally {
+        notebook.unmount();
+    }
+});

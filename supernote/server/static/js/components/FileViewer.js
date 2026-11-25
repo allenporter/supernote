@@ -331,9 +331,14 @@ export default {
                     if (seq !== activeLoadSeq) return;
                     pages.value = pngPages;
                 } else if (category === 'image') {
-                    const signedUrl = await fetchDownloadUrl(props.file.id);
+                    isLoadingTranscript.value = true;
+                    const [signedUrl, pagesData] = await Promise.all([
+                        fetchDownloadUrl(props.file.id),
+                        fetchTranscript(String(props.file.id)).catch(() => []),
+                    ]);
                     if (seq !== activeLoadSeq) return;
                     previewUrl.value = signedUrl;
+                    transcriptPages.value = pagesData;
                 } else if (category === 'pdf') {
                     const signedUrl = await fetchDownloadUrl(props.file.id);
                     if (seq !== activeLoadSeq) return;
@@ -375,12 +380,6 @@ export default {
                         displayTranscriptPages.value.length === 0 && realSummaries.value.length > 0
                             ? 'insights'
                             : 'transcription';
-                } else if (category === 'image') {
-                    isLoadingTranscript.value = true;
-                    const pagesData = await fetchTranscript(String(props.file.id)).catch(() => []);
-                    if (seq !== activeLoadSeq) return;
-                    transcriptPages.value = pagesData;
-                    activeRightTab.value = 'transcription';
                 } else {
                     activeRightTab.value = 'transcription';
                 }
@@ -418,10 +417,12 @@ export default {
                 const seq = activeLoadSeq;
                 isLoadingTranscript.value = true;
                 try {
-                    const pagesData = await fetchTranscript(String(props.file.id)).catch(() => []);
+                    const pagesData = await fetchTranscript(String(props.file.id));
                     if (seq === activeLoadSeq) {
                         transcriptPages.value = pagesData;
                     }
+                } catch {
+                    // Preserve any already-rendered image analysis on transient refresh failure.
                 } finally {
                     if (seq === activeLoadSeq) {
                         isLoadingTranscript.value = false;

@@ -158,16 +158,14 @@ export default {
             }, 2000);
         }
 
-        const isStandaloneImage = computed(
-            () => props.fileCategory === 'image' && props.summaries.length === 0,
-        );
+        const isStandaloneImage = computed(() => props.fileCategory === 'image');
 
         const primaryImagePage = computed(() => props.transcriptPages[0] || null);
 
         const primaryImageHtml = computed(() => {
             const page = primaryImagePage.value;
             if (!page?.text) return '';
-            return renderMarkdown(formatContent(page.text));
+            return renderMarkdown(page.text);
         });
 
         const renderedSummaries = computed(() =>
