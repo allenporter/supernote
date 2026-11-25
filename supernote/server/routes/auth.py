@@ -1,15 +1,20 @@
-"""Authentication, user profile, and device binding HTTP routes (`/api/official/user/*`).
+"""Authentication, user profile, device binding, and static API key routes.
 
 Implements the challenge-response login handshake (`handle_random_code`, `handle_login`),
 Admin-First public registration (`handle_register`), password/email updates, login history,
-CSRF token issuance, and hardware equipment binding (`bind_equipment`, `unbind_equipment`,
-`query_user_equipment`). Delegates account and JWT session operations to
-`supernote.server.services.user.UserService` and enforces brute-force protection via
-`supernote.server.utils.rate_limit.RateLimiter`. See `supernote.guides.bootstrap_guide`.
+static Bearer API key management (`/api/extended/keys*`), OAuth client grant
+inspection/revocation (`/api/extended/oauth/grants*`), CSRF token issuance, and hardware
+equipment binding (`bind_equipment`, `unbind_equipment`, `query_user_equipment`). Delegates
+account, API key, and JWT session operations to `supernote.server.services.user.UserService`
+and enforces brute-force protection via `supernote.server.utils.rate_limit.RateLimiter`.
+See `supernote.guides.bootstrap_guide`.
 """
 
+import json
+import time
+
 from aiohttp import web
-from mashumaro.exceptions import MissingField
+from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.auth import (
     LoginDTO,
@@ -23,6 +28,12 @@ from supernote.models.equipment import (
     BindStatusVO,
     UnbindEquipmentDTO,
     UserEquipmentDTO,
+)
+from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    CreateApiKeyDTO,
+    CreateApiKeyResponseVO,
+    OAuthGrantListResponseVO,
 )
 from supernote.models.user import (
     LoginRecordDTO,
@@ -565,3 +576,106 @@ async def handle_login_record(request: web.Request) -> web.Response:
             # ... other standard response fields
         }
     )
+
+
+@routes.get("/api/extended/keys")
+@interactive_session_only
+async def handle_list_api_keys(request: web.Request) -> web.Response:
+    """List active static Bearer API keys for the authenticated user."""
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    keys = await user_service.list_api_keys(user_id)
+    return web.json_response(ApiKeyListResponseVO(keys=keys).to_dict())
+
+
+@routes.post("/api/extended/keys")
+@interactive_session_only
+async def handle_create_api_key(request: web.Request) -> web.Response:
+    """Generate and return a new static Bearer API key."""
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        req_dto = CreateApiKeyDTO.from_dict(await request.json())
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    expires_at: int | None = None
+    if req_dto.expires_in_days is not None:
+        if req_dto.expires_in_days <= 0 or req_dto.expires_in_days > 3650:
+            return web.json_response(
+                {"error": "expiresInDays must be between 1 and 3650"}, status=400
+            )
+        expires_at = int(time.time()) + req_dto.expires_in_days * 86400
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    try:
+        raw_token, vo = await user_service.create_api_key(
+            user_id, req_dto.name, expires_at=expires_at
+        )
+    except ValueError as err:
+        return web.json_response({"error": str(err)}, status=400)
+
+    return web.json_response(
+        CreateApiKeyResponseVO(
+            id=vo.id,
+            name=vo.name,
+            key=raw_token,
+            created_at=vo.created_at,
+            expires_at=vo.expires_at,
+        ).to_dict()
+    )
+
+
+@routes.delete("/api/extended/keys/{key_id}")
+@interactive_session_only
+async def handle_delete_api_key(request: web.Request) -> web.Response:
+    """Revoke an existing static Bearer API key."""
+    user_email = request[REQUEST_USER_KEY]
+    key_id = request.match_info["key_id"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+
+    revoked = await user_service.revoke_api_key(user_id, key_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "API key not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())
+
+
+@routes.get("/api/extended/oauth/grants")
+@interactive_session_only
+async def handle_list_oauth_grants(request: web.Request) -> web.Response:
+    """List MCP OAuth clients the authenticated user has authorized."""
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    grants = await user_service.list_oauth_grants(user_id)
+    return web.json_response(OAuthGrantListResponseVO(grants=grants).to_dict())
+
+
+@routes.delete("/api/extended/oauth/grants/{grant_id}")
+@interactive_session_only
+async def handle_revoke_oauth_grant(request: web.Request) -> web.Response:
+    """Disconnect an MCP OAuth client, ending its access and refresh tokens."""
+    user_email = request[REQUEST_USER_KEY]
+    grant_id = request.match_info["grant_id"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+
+    revoked = await user_service.revoke_oauth_grant(user_id, grant_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "OAuth grant not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())
