@@ -332,6 +332,8 @@ class WikiCompilerWorker:
             updated_slugs, skipped_policy = await self._apply_compile_plan(
                 user_id, plan, source_event_seq=max_seq
             )
+            if updated_slugs:
+                await self._wiki_service.sync_index_page(user_id)
             issues = await self._wiki_service.run_structural_lint(user_id)
             await self._update_checkpoint(
                 user_id,
@@ -451,6 +453,8 @@ class WikiCompilerWorker:
                     source_event_seq=None,
                     max_pages=backfill_page_budget,
                 )
+                if updated_slugs:
+                    await self._wiki_service.sync_index_page(user_id)
 
             issues = await self._wiki_service.run_structural_lint(user_id)
             await self._update_checkpoint(

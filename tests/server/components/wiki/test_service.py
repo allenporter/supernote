@@ -263,3 +263,62 @@ async def test_search_structural_lint_self_links_and_cleanup(
 
     await service.delete_user_wiki(1)
     assert (await service.get_status(1)).page_count == 0
+
+
+async def test_sync_index_page_generates_catalog_is_idempotent_and_respects_protection(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    service = WikiService(session_manager)
+    assert await service.sync_index_page(1) is None
+
+    await service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="projects/aurora",
+            title="Aurora Home Server",
+            page_kind="project",
+            summary="TrueNAS home server",
+            body_md="Server details",
+            author_kind="compiler",
+        ),
+    )
+    await service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="entities/alice",
+            title="Alice",
+            page_kind="entity",
+            summary="Cloud release lead",
+            body_md="Works on [[projects/aurora]]",
+            author_kind="compiler",
+        ),
+    )
+
+    idx1 = await service.sync_index_page(1)
+    assert idx1 is not None
+    assert idx1.slug == "index"
+    assert idx1.version == 1
+    assert "## Projects" in idx1.body_md
+    assert "- [[projects/aurora]] — TrueNAS home server" in idx1.body_md
+    assert "## Entities" in idx1.body_md
+    assert "- [[entities/alice]] — Cloud release lead" in idx1.body_md
+
+    # Calling again with no page changes is idempotent (version does not bump).
+    idx2 = await service.sync_index_page(1)
+    assert idx2 is not None
+    assert idx2.version == 1
+
+    # Manual user edit flips index to protected_prose; sync_index_page must not overwrite it.
+    await service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="index",
+            title="My Custom Index",
+            page_kind="index",
+            body_md="Hand-crafted index",
+            author_kind="user",
+        ),
+    )
+    idx3 = await service.sync_index_page(1)
+    assert idx3 is not None
+    assert idx3.body_md == "Hand-crafted index"

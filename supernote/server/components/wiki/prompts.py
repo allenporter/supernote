@@ -60,6 +60,7 @@ __all__ = [
     "parse_lint_report",
     "render_prompt_template",
     "sanitize_xml_payload",
+    "select_candidate_pages",
 ]
 
 
@@ -401,13 +402,125 @@ def render_prompt_template(template: str, values: dict[str, str]) -> str:
 
 
 _CANDIDATE_KIND_PRIORITY: dict[str, int] = {
-    "index": 0,
-    "project": 1,
-    "entity": 2,
-    "topic": 3,
-    "source_digest": 4,
+    "project": 0,
+    "entity": 1,
+    "topic": 2,
+    "source_digest": 3,
+    "index": 4,
     "log": 5,
 }
+_TOKEN_RE = re.compile(r"[a-z0-9]{3,}")
+_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "are",
+        "was",
+        "were",
+        "have",
+        "has",
+        "had",
+        "not",
+        "but",
+        "note",
+        "notes",
+        "page",
+        "pages",
+        "projects",
+        "entities",
+        "topics",
+        "sources",
+    }
+)
+
+
+def _extract_tokens(text: str) -> set[str]:
+    return {t for t in _TOKEN_RE.findall(text.lower()) if t not in _STOPWORDS}
+
+
+def select_candidate_pages(
+    all_pages: Sequence[WikiPageDTO],
+    diff_payload: list[dict[str, Any]],
+    linked_context: dict[str, Any],
+    *,
+    limit: int = 20,
+) -> list[WikiPageDTO]:
+    """Select the most relevant existing non-index/log pages for the incoming diff.
+
+    Prioritizes pages that share a source `file_id`, match titles/aliases/tokens
+    in the incoming notes or tasks, or sit 1 hop away via wikilinks—preventing
+    recency-only truncation from clobbering older wiki pages during updates.
+    """
+    diff_file_ids: set[int] = set()
+    corpus_parts: list[str] = []
+    for ev in diff_payload:
+        rfid = ev.get("related_file_id")
+        if isinstance(rfid, int):
+            diff_file_ids.add(rfid)
+        payload = ev.get("payload")
+        if isinstance(payload, Mapping):
+            for key in ("file_path", "text_content", "previous_text"):
+                val = payload.get(key)
+                if isinstance(val, str) and val:
+                    corpus_parts.append(val)
+    for task in linked_context.get("tasks") or []:
+        if isinstance(task, Mapping):
+            for key in ("title", "detail"):
+                val = task.get(key)
+                if isinstance(val, str) and val:
+                    corpus_parts.append(val)
+
+    corpus_lower = "\n".join(corpus_parts).lower()
+    corpus_tokens = _extract_tokens(corpus_lower)
+
+    eligible = [p for p in all_pages if p.page_kind not in ("index", "log")]
+    scores: dict[str, int] = {}
+    for p in eligible:
+        score = 0
+        if diff_file_ids and any(ref.file_id in diff_file_ids for ref in p.source_refs):
+            score += 100
+        names = [p.title, *p.aliases]
+        if corpus_lower and any(
+            name.strip() and name.strip().lower() in corpus_lower for name in names
+        ):
+            score += 40
+        if corpus_tokens:
+            page_tokens = _extract_tokens(
+                f"{p.slug.replace('/', ' ')} {p.title} {' '.join(p.aliases)}"
+            )
+            score += 10 * len(page_tokens & corpus_tokens)
+        scores[p.slug] = score
+
+    # Boost 1-hop graph neighbors of directly matched pages (bidirectional).
+    matched_slugs = {slug for slug, s in scores.items() if s > 0}
+    if matched_slugs:
+        neighbor_slugs: set[str] = set()
+        for p in eligible:
+            if p.slug in matched_slugs:
+                neighbor_slugs.update(p.outbound_links)
+                neighbor_slugs.update(p.backlinks)
+        for p in eligible:
+            if scores[p.slug] == 0 and (
+                p.slug in neighbor_slugs
+                or any(link in matched_slugs for link in p.outbound_links)
+                or any(bl in matched_slugs for bl in p.backlinks)
+            ):
+                scores[p.slug] = 5
+
+    ranked = sorted(
+        eligible,
+        key=lambda p: (
+            -scores[p.slug],
+            _CANDIDATE_KIND_PRIORITY.get(p.page_kind, 4),
+            -p.update_time,
+        ),
+    )
+    return ranked[: max(1, limit)]
 
 
 def build_compile_prompt(
@@ -419,14 +532,12 @@ def build_compile_prompt(
 ) -> str:
     """Render `PromptId.WIKI_COMPILE` with sanitized index, candidates, diff, and context."""
     compact_index = "\n".join(
-        f"- [[{p.slug}]] ({p.page_kind}): {p.title} — {p.summary}" for p in all_pages
+        f"- [[{p.slug}]] ({p.page_kind}): {p.title} — {p.summary}"
+        for p in all_pages
+        if p.page_kind not in ("index", "log")
     )
-    prioritized_pages = sorted(
-        all_pages,
-        key=lambda p: (
-            _CANDIDATE_KIND_PRIORITY.get(p.page_kind, 4),
-            -p.update_time,
-        ),
+    selected_candidates = select_candidate_pages(
+        all_pages, diff_payload, linked_context, limit=20
     )
     candidate_pages = [
         {
@@ -436,9 +547,9 @@ def build_compile_prompt(
             "edit_policy": p.edit_policy,
             "version": p.version,
             "aliases": p.aliases,
-            "body_md": p.body_md[:2000],
+            "body_md": p.body_md[:8000],
         }
-        for p in prioritized_pages[:15]
+        for p in selected_candidates
     ]
     template = PROMPT_LOADER.get_prompt(PromptId.WIKI_COMPILE)
     return render_prompt_template(

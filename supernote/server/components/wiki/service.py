@@ -686,6 +686,73 @@ class WikiService:
             backfill_next_files=overview.next_files,
         )
 
+    async def sync_index_page(self, user_id: int) -> WikiPageDTO | None:
+        """Deterministically maintain the root `index` hub page from active wiki pages.
+
+        Skips updates when the user has protected or locked `index`, when no
+        non-index/log pages exist, or when the rendered Markdown is unchanged.
+        """
+        pages = await self.list_pages(user_id, limit=500)
+        existing_index = next((p for p in pages if p.slug == "index"), None)
+        if existing_index is not None and existing_index.edit_policy in (
+            "protected_prose",
+            "locked",
+        ):
+            return existing_index
+
+        indexed = [p for p in pages if p.page_kind not in ("index", "log")]
+        if not indexed:
+            return None
+
+        sections: tuple[tuple[str, str], ...] = (
+            ("project", "Projects"),
+            ("entity", "Entities"),
+            ("topic", "Topics"),
+            ("source_digest", "Sources"),
+        )
+        lines: list[str] = [
+            "# Wiki Index",
+            "",
+            "Automatically maintained catalog of compiled wiki pages.",
+        ]
+        for kind, heading in sections:
+            group = sorted(
+                (p for p in indexed if p.page_kind == kind),
+                key=lambda p: (p.title.lower(), p.slug),
+            )
+            if not group:
+                continue
+            lines.extend(["", f"## {heading}"])
+            for p in group:
+                summary = p.summary.strip()
+                if summary:
+                    lines.append(f"- [[{p.slug}]] — {summary}")
+                else:
+                    lines.append(f"- [[{p.slug}]]")
+
+        body_md = "\n".join(lines)
+        summary = f"Catalog of {len(indexed)} wiki {'page' if len(indexed) == 1 else 'pages'}."
+        if (
+            existing_index is not None
+            and existing_index.body_md == body_md
+            and existing_index.summary == summary
+        ):
+            return existing_index
+
+        return await self.upsert_page(
+            user_id,
+            WikiUpsertInput(
+                slug="index",
+                title="Wiki Index",
+                page_kind="index",
+                summary=summary,
+                body_md=body_md,
+                author_kind="compiler",
+                author_ref="system:wiki",
+                change_summary="Auto-updated Wiki Index",
+            ),
+        )
+
     async def delete_user_wiki(self, user_id: int) -> None:
         """Delete all `f_wiki_*` rows belonging to `user_id` (account deletion hook)."""
         async with self._session_manager.session() as session:
