@@ -22,6 +22,7 @@ from supernote.server.components.processor import (
 )
 from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
+from tests.server.components.conftest import LoadComponents
 
 
 class _CustomStage(ProcessorModule):
@@ -54,30 +55,24 @@ class _CustomStage(ProcessorModule):
 
 async def test_processor_component_protocol_and_idempotent_lifecycle(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
     """ProcessorComponent satisfies Component + PlatformHost and tears down idempotently."""
-    comp = ProcessorComponent()
+    loader = await load_components("processor")
+    comp = loader.get("processor")
+    assert isinstance(comp, ProcessorComponent)
     assert set(comp.hosted_platforms) <= KNOWN_PLATFORMS
     assert isinstance(comp, Component)
     assert isinstance(comp, PlatformHost)
 
-    loader = ComponentLoader()
-    loader.register(AiComponent())
-    loader.register(comp)
-
-    await loader.async_setup_all(component_core, {})
-    assert isinstance(component_core.app[PROCESSOR_SERVICE_KEY], ProcessorService)
-
-    await loader.async_load_all_platforms(component_core)
+    service = component_core.app[PROCESSOR_SERVICE_KEY]
+    assert isinstance(service, ProcessorService)
     with pytest.raises(RuntimeError, match="after platforms are finalized"):
         comp.get_platform_registrar().register_module(_CustomStage())
-    service = component_core.app[PROCESSOR_SERVICE_KEY]
     assert [m.task_type for m in service.task_graph.modules] == [
         TaskType.PAGE_HASHING,
         TaskType.PNG_CONVERSION,
     ]
-
-    await loader.async_start_all(component_core)
     assert len(service.workers) == service.concurrency
 
     await loader.async_stop_all(component_core)
@@ -90,13 +85,10 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
 
 async def test_processor_component_setup_to_stop_without_start(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
     """ProcessorComponent supports async_setup -> async_stop without async_start."""
-    loader = ComponentLoader()
-    loader.register(AiComponent())
-    loader.register(ProcessorComponent())
-
-    await loader.async_setup_all(component_core, {})
+    loader = await load_components("processor", start=False)
     await loader.async_stop_all(component_core)
 
 

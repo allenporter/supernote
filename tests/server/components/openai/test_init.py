@@ -12,27 +12,24 @@ from supernote.server.ai.models.embedding import (
 )
 from supernote.server.ai.models.summary import ConcurrencyLimitedSummaryModel
 from supernote.server.components.ai import AiComponent
-from supernote.server.components.openai import OpenAIComponent
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
+from tests.server.components.conftest import LoadComponents
 
 
 async def test_openai_component_registers_all_ai_platforms(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
-    component = OpenAIComponent()
+    loader = await load_components("openai")
+    component = loader.get("openai")
     assert isinstance(component, Component)
     assert component.domain == "openai"
     assert component.dependencies == ("ai",)
     assert component.platforms == ("ocr", "summary", "embedding", "text")
 
-    ai_component = AiComponent()
-    loader = ComponentLoader()
-    loader.register(ai_component)
-    loader.register(component)
-
-    await loader.async_setup_all(component_core, {})
-    await loader.async_load_all_platforms(component_core)
+    ai_component = loader.get("ai")
+    assert isinstance(ai_component, AiComponent)
     ai_registrar = ai_component.get_platform_registrar()
 
     assert ai_registrar.ocr_providers == ("openai",)
@@ -40,12 +37,12 @@ async def test_openai_component_registers_all_ai_platforms(
     assert ai_registrar.embedding_providers == ("openai",)
     assert ai_registrar.text_providers == ("openai",)
 
-    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)
 
 
 async def test_openai_component_routes_named_providers_to_distinct_servers(
     component_core: ServerCore,
+    load_components: LoadComponents,
     aiohttp_server: Any,
 ) -> None:
     """Summary and embedding route HTTP requests to two distinct OpenAI-compatible servers."""
@@ -84,12 +81,9 @@ async def test_openai_component_routes_named_providers_to_distinct_servers(
     llamacpp_app.router.add_post("/v1/embeddings", handle_llamacpp_embed)
     llamacpp_srv = await aiohttp_server(llamacpp_app)
 
-    ai_component = AiComponent()
-    loader = ComponentLoader()
-    loader.register(ai_component)
-    loader.register(OpenAIComponent())
-    await loader.async_setup_all(component_core, {})
-    await loader.async_load_all_platforms(component_core)
+    loader = await load_components("openai", start=False)
+    ai_component = loader.get("ai")
+    assert isinstance(ai_component, AiComponent)
     ai_registrar = ai_component.get_platform_registrar()
 
     config = ServerConfig(

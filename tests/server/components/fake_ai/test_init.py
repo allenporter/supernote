@@ -4,27 +4,24 @@ from __future__ import annotations
 
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.components.ai import AiComponent
-from supernote.server.components.fake_ai import FakeAiComponent
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
+from tests.server.components.conftest import LoadComponents
 
 
 async def test_fake_ai_component_registers_all_ai_platforms(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
-    component = FakeAiComponent()
+    loader = await load_components("fake_ai")
+    component = loader.get("fake_ai")
     assert isinstance(component, Component)
     assert component.domain == "fake_ai"
     assert component.dependencies == ("ai",)
     assert component.platforms == ("ocr", "summary", "embedding", "text")
 
-    ai_component = AiComponent()
-    loader = ComponentLoader()
-    loader.register(ai_component)
-    loader.register(component)
-
-    await loader.async_setup_all(component_core, {})
-    await loader.async_load_all_platforms(component_core)
+    ai_component = loader.get("ai")
+    assert isinstance(ai_component, AiComponent)
     ai_registrar = ai_component.get_platform_registrar()
 
     assert ai_registrar.ocr_providers == ("fake_ai",)
@@ -51,5 +48,4 @@ async def test_fake_ai_component_registers_all_ai_platforms(
     assert embedding is not None
     assert len(await embedding.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY)) > 0
 
-    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)

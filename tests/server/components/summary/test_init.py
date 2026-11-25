@@ -4,16 +4,12 @@ from __future__ import annotations
 
 from sqlalchemy import delete
 
-from supernote.server.components.ai import AiComponent
-from supernote.server.components.conversion import ConversionComponent
-from supernote.server.components.processor import ProcessorComponent
 from supernote.server.components.summary import (
     SUMMARY_SERVICE_KEY,
-    SummaryComponent,
     SummaryService,
 )
 from supernote.server.constants import USER_DATA_BUCKET
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
 from supernote.server.db.models.summary import SummaryDO
 from tests.server.components.conftest import LoadComponents
 
@@ -95,13 +91,8 @@ async def test_summary_component_protects_summary_blobs_during_file_gc(
 
 async def test_summary_component_stop_after_setup_only(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
     """Verify stopping after async_setup (without async_start) is clean."""
-    loader = ComponentLoader()
-    loader.register(AiComponent())
-    loader.register(ProcessorComponent())
-    loader.register(ConversionComponent())
-    loader.register(SummaryComponent())
-
-    await loader.async_setup_all(component_core, {})
+    loader = await load_components("summary", "transcript", start=False)
     await loader.async_stop_all(component_core)

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from supernote.server.components.ai import EMBEDDING_MODEL_KEY, AiComponent
+from supernote.server.components.ai import EMBEDDING_MODEL_KEY
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.search import (
     SEARCH_SERVICE_KEY,
-    SearchComponent,
     SearchService,
 )
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
 from tests.server.components.conftest import LoadComponents
 
 
@@ -41,12 +40,9 @@ async def test_search_component_lifecycle_binds_embedding_model_on_start(
 
 async def test_search_component_stop_after_setup_only(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
     """Verify stopping after async_setup (without async_start) is clean."""
-    loader = ComponentLoader()
-    loader.register(AiComponent())
-    loader.register(SearchComponent())
-
-    await loader.async_setup_all(component_core, {})
+    loader = await load_components("search", start=False)
     component_core.app[EMBEDDING_MODEL_KEY] = FakeEmbeddingModel(model_id="fake-embed")
     await loader.async_stop_all(component_core)

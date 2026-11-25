@@ -10,11 +10,10 @@ from aiohttp import web
 from pytest_aiohttp import AiohttpClient
 
 from supernote.models.events import DomainEventType
-from supernote.server.components.events import EventsComponent
-from supernote.server.components.webhooks import WebhooksComponent
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
 from supernote.server.events import VfsItemCreatedEvent
 from tests.fixtures.server import TEST_USERNAME
+from tests.server.components.conftest import LoadComponents
 
 
 def _webhooks_config(url: str = "http://127.0.0.1:9999/hook") -> dict[str, Any]:
@@ -34,6 +33,7 @@ def _webhooks_config(url: str = "http://127.0.0.1:9999/hook") -> dict[str, Any]:
 
 async def test_webhooks_component_lifecycle(
     component_core: ServerCore,
+    load_components: LoadComponents,
     aiohttp_client: AiohttpClient,
     test_user_id: int,
 ) -> None:
@@ -50,17 +50,13 @@ async def test_webhooks_component_lifecycle(
     receiver_client = await aiohttp_client(receiver_app)
     config = _webhooks_config(str(receiver_client.make_url("/hook")))
 
-    component = WebhooksComponent()
+    loader = await load_components("webhooks", configs=config, start=False)
+    component = loader.get("webhooks")
     assert isinstance(component, Component)
     assert component.domain == "webhooks"
     assert component.dependencies == ("events",)
     assert component.platforms == ()
 
-    loader = ComponentLoader()
-    loader.register(EventsComponent())
-    loader.register(component)
-
-    await loader.async_setup_all(component_core, config)
     await component_core.event_bus.publish(
         VfsItemCreatedEvent(
             user_id=test_user_id,
@@ -94,24 +90,18 @@ async def test_webhooks_component_lifecycle(
 
 async def test_webhooks_component_stop_after_setup_only(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
-    loader = ComponentLoader()
-    loader.register(EventsComponent())
-    loader.register(WebhooksComponent())
-
-    await loader.async_setup_all(component_core, _webhooks_config())
+    loader = await load_components("webhooks", configs=_webhooks_config(), start=False)
     await loader.async_stop_all(component_core)
 
 
 async def test_webhooks_component_validates_config_on_setup(
-    component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
-    loader = ComponentLoader()
-    loader.register(EventsComponent())
-    loader.register(WebhooksComponent())
-
     with pytest.raises(ValueError, match="endpoints"):
-        await loader.async_setup_all(
-            component_core,
-            _webhooks_config("ftp://invalid"),
+        await load_components(
+            "webhooks",
+            configs=_webhooks_config("ftp://invalid"),
+            start=False,
         )

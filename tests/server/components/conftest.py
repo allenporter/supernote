@@ -34,6 +34,7 @@ class LoadComponents(Protocol):
         self,
         *domains: str,
         configs: Mapping[str, Mapping[str, Any]] | None = None,
+        start: bool = True,
     ) -> ComponentLoader: ...
 
 
@@ -75,6 +76,7 @@ async def load_components(
     async def _load(
         *domains: str,
         configs: Mapping[str, Mapping[str, Any]] | None = None,
+        start: bool = True,
     ) -> ComponentLoader:
         loader = ComponentLoader()
         component_core.app[COMPONENT_LOADER_KEY] = loader
@@ -93,7 +95,8 @@ async def load_components(
 
         await loader.async_setup_all(component_core, configs or {})
         await loader.async_load_all_platforms(component_core)
-        await loader.async_start_all(component_core)
+        if start:
+            await loader.async_start_all(component_core)
         loaders.append(loader)
         return loader
 
