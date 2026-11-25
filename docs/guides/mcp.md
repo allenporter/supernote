@@ -22,6 +22,10 @@ Open Private Cloud supports two authentication modes:
 
 ### Create a static API key (for CLI / headless clients)
 
+In the Web UI, click the **Settings** gear icon in the top-right bar, open **Access & API Keys** (`#/settings`), and create a named key under **API keys** (with an optional expiry of `30 days`, `90 days`, `1 year`, or `Never expires`). Copy the `sn_...` secret immediately—it is shown only once—and revoke keys from the same panel at any time.
+
+Prefer the terminal? You can also mint, list, and revoke keys with the CLI:
+
 ```bash
 # Log in once interactively
 supernote cloud login you@example.com --url http://localhost:8080
@@ -34,7 +38,11 @@ supernote cloud keys list
 supernote cloud keys revoke <key-id>
 ```
 
-You can also manage API keys and connected OAuth clients from the Web UI under account settings.
+### Managing OAuth 2.1 clients in the Web UI
+
+When you connect an OAuth 2.1 client (such as Claude Desktop, Cursor, or ChatGPT), your browser opens the Web UI sign-in screen followed by an **Authorize Application** consent card showing the client's name, redirect target, and requested scopes so you can approve or deny access.
+
+To audit or revoke access later, open **Settings → Access & API Keys** (`#/settings`) and scroll to **Connected clients**. Each authorized client shows its scopes, connection date, last-used timestamp, and expiry; clicking **Disconnect** immediately revokes both its access and refresh tokens.
 
 ### Claude Code
 

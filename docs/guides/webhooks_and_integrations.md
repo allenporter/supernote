@@ -19,7 +19,7 @@ Tasks created on your Supernote tablet (including handwritten To-Do items linked
 
 From the Web UI, open **Tasks** and click **Export `.ics`** to download all tasks or the currently selected list.
 
-For scripts or scheduled syncs, fetch `/api/schedule/feed.ics` using a revocable static API key (`supernote cloud keys create "calendar-sync"`):
+For scripts or scheduled syncs, fetch `/api/schedule/feed.ics` using a revocable static API key created in the Web UI (**Settings → Access & API Keys**) or via the CLI (`supernote cloud keys create "calendar-sync"`):
 
 ```bash
 curl -fsSL \
