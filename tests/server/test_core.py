@@ -607,3 +607,111 @@ async def test_unregister_removes_component_before_setup_and_rejects_after_setup
     with pytest.raises(ComponentError, match="Cannot unregister component after setup"):
         loader.unregister("webhooks")
     await loader.async_stop_all(server_core)
+
+
+async def test_async_reconfigure_rejects_before_started_state(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    """`async_reconfigure` rejects calls before the loader reaches `STARTED` state."""
+    loader.register(RecordingComponent(domain="events"))
+
+    with pytest.raises(ComponentError, match="Cannot reconfigure component in state"):
+        await loader.async_reconfigure(
+            server_core, RecordingComponent(domain="webhooks"), {"enabled": True}
+        )
+
+
+async def test_async_reconfigure_rejects_missing_dependency(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    """`async_reconfigure` raises `MissingDependencyError` when a dependency is not running."""
+    await loader.async_setup_all(server_core, {})
+    await loader.async_start_all(server_core)
+
+    with pytest.raises(MissingDependencyError):
+        await loader.async_reconfigure(
+            server_core,
+            RecordingComponent(domain="webhooks", dependencies=("missing_dep",)),
+            {"enabled": True},
+        )
+
+    await loader.async_stop_all(server_core)
+
+
+async def test_async_reconfigure_rejects_disabling_component_with_active_dependent(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    """`async_reconfigure` refuses to disable a component while a dependent component is running."""
+    dep = RecordingComponent(domain="events")
+    loader.register(dep)
+    await loader.async_setup_all(server_core, {})
+    await loader.async_start_all(server_core)
+
+    comp = RecordingComponent(domain="webhooks", dependencies=("events",))
+    await loader.async_reconfigure(server_core, comp, {"enabled": True})
+    with pytest.raises(
+        ComponentError,
+        match="Cannot disable component 'events' while dependent component 'webhooks' is running",
+    ):
+        await loader.async_reconfigure(server_core, dep, {"enabled": False})
+
+    await loader.async_stop_all(server_core)
+
+
+async def test_async_reconfigure_starts_restarts_and_disables_component(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    """`async_reconfigure` dynamically starts, restarts with updated config, and disables a component."""
+    events: list[tuple[str, str]] = []
+    dep = RecordingComponent(domain="events", events=events)
+    loader.register(dep)
+    await loader.async_setup_all(server_core, {})
+    await loader.async_start_all(server_core)
+
+    comp_v1 = RecordingComponent(
+        domain="webhooks", dependencies=("events",), events=events
+    )
+    await loader.async_reconfigure(
+        server_core, comp_v1, {"enabled": True, "url": "http://v1"}
+    )
+    assert loader.is_running("webhooks") is True
+    assert loader.get("webhooks") is comp_v1
+    assert comp_v1.seen_configs == [{"enabled": True, "url": "http://v1"}]
+
+    comp_v2 = RecordingComponent(
+        domain="webhooks", dependencies=("events",), events=events
+    )
+    await loader.async_reconfigure(
+        server_core, comp_v2, {"enabled": True, "url": "http://v2"}
+    )
+    assert loader.is_running("webhooks") is True
+    assert loader.get("webhooks") is comp_v2
+    assert ("stop", "webhooks") in events
+
+    await loader.async_reconfigure(server_core, comp_v2, {"enabled": False})
+    assert loader.is_running("webhooks") is False
+    assert loader.get("webhooks") is None
+
+    await loader.async_stop_all(server_core)
+
+
+async def test_async_reconfigure_rolls_back_failed_start(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    """`async_reconfigure` stops and unregisters a component whose `async_start` fails."""
+    events: list[tuple[str, str]] = []
+    await loader.async_setup_all(server_core, {})
+    await loader.async_start_all(server_core)
+
+    comp_fail = RecordingComponent(
+        domain="webhooks",
+        events=events,
+        fail_on="start",
+    )
+    with pytest.raises(RuntimeError, match="start failure in webhooks"):
+        await loader.async_reconfigure(server_core, comp_fail, {"enabled": True})
+    assert loader.is_running("webhooks") is False
+    assert loader.get("webhooks") is None
+    assert ("stop", "webhooks") in events
+
+    await loader.async_stop_all(server_core)

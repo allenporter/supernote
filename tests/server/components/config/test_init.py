@@ -15,7 +15,7 @@ async def test_config_component_setup_and_stop(component_core: ServerCore) -> No
     comp = ConfigComponent()
     assert comp.domain == "config"
     assert comp.dependencies == ()
-    assert comp.platforms == ()
+    assert comp.platforms == ("http",)
 
     await comp.async_setup(component_core, {})
     assert isinstance(component_core.app[CONFIG_SERVICE_KEY], ConfigService)

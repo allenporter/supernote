@@ -1,34 +1,55 @@
-"""Configuration resolution service for built-in vertical server components.
+"""Configuration resolution and runtime reconfiguration service for built-in components.
 
 Resolves effective per-component configuration across four priority tiers
-(`env` > `yaml` > `database` > `default`) and persists dynamic overrides in
-`CoordinationService`.
+(`env` > `yaml` > `database` > `default`) and orchestrates live runtime
+reconfiguration via `ComponentLoader.async_reconfigure`.
 """
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import importlib
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import MISSING, dataclass, fields, is_dataclass
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mashumaro.mixins.dict import DataClassDictMixin
 
+from supernote.models.base import ErrorCode
 from supernote.server.components import (
     BUILTIN_COMPONENTS,
     BuiltinComponentSpec,
     is_component_enabled,
+    load_component_from_spec,
 )
 from supernote.server.config import ComponentConfigSource, ServerConfig
-from supernote.server.core import ComponentError, ComponentLoader
+from supernote.server.core import ComponentError, ComponentLoader, ServerCore
+from supernote.server.exceptions import (
+    InvalidInputError,
+    SupernoteError,
+)
+
+from .models import ComponentFieldSpecVO, ComponentFieldType, ComponentStatusVO
 
 if TYPE_CHECKING:
     from supernote.server.services.coordination import CoordinationService
+
+__all__ = [
+    "CONFIG_SERVICE_KEY",
+    "ConfigService",
+    "ConfigurationConflictError",
+    "ResolvedComponentConfig",
+    "async_resolve_component_configs",
+    "async_save_component_config",
+    "build_static_component_configs",
+    "extract_component_field_specs",
+    "load_component_config_schema",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +57,17 @@ _COMPONENT_CONFIG_KEY_PREFIX = "component_config:"
 _AI_PROVIDER_DOMAINS: frozenset[str] = frozenset(
     {"apple", "fake_ai", "gemini", "openai"}
 )
+
+
+class ConfigurationConflictError(SupernoteError):
+    """Raised when attempting to dynamically modify a component pinned by `env`/`yaml` or required by an active dependent."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message,
+            error_code=ErrorCode.CONFLICT_EXISTS,
+            status_code=409,
+        )
 
 
 def _configured_ai_provider_domains(server_config: ServerConfig) -> set[str]:
@@ -149,6 +181,38 @@ def load_component_config_schema(
             f"Config schema {spec.config_schema_path!r} did not resolve to a DataClassDictMixin dataclass"
         )
     return schema_cls
+
+
+def extract_component_field_specs(
+    spec: BuiltinComponentSpec,
+) -> list[ComponentFieldSpecVO]:
+    """Extract declarative field descriptors from ``spec.config_schema_path`` (or default `enabled`)."""
+    schema_cls = load_component_config_schema(spec)
+    if schema_cls is None or not is_dataclass(schema_cls):
+        return [
+            ComponentFieldSpecVO(
+                name="enabled",
+                type=ComponentFieldType.BOOLEAN,
+                default=spec.default_enabled,
+            )
+        ]
+    result: list[ComponentFieldSpecVO] = []
+    for f in fields(schema_cls):
+        if f.name.startswith("_"):
+            continue
+        default_val: Any = None
+        if f.default is not MISSING:
+            default_val = f.default
+        elif f.default_factory is not MISSING:
+            default_val = f.default_factory()
+        result.append(
+            ComponentFieldSpecVO(
+                name=f.name,
+                type=ComponentFieldType.from_type_annotation(str(f.type)),
+                default=default_val,
+            )
+        )
+    return result
 
 
 async def async_save_component_config(
@@ -278,19 +342,21 @@ async def async_resolve_component_configs(
 
 
 class ConfigService:
-    """Service managing dynamic component configuration resolution and persistence."""
+    """Service managing dynamic component configuration resolution, persistence, and runtime updates."""
 
     def __init__(
         self,
-        server_config: ServerConfig,
-        coordination: CoordinationService,
+        core: ServerCore,
         loader: ComponentLoader,
         specs: Sequence[BuiltinComponentSpec] = BUILTIN_COMPONENTS,
     ) -> None:
-        self._server_config = server_config
-        self._coordination = coordination
+        self._core = core
+        self._server_config = core.config
+        self._coordination = core.coordination
         self._loader = loader
         self._specs = tuple(specs)
+        self._specs_by_domain = {spec.domain: spec for spec in self._specs}
+        self._update_lock = asyncio.Lock()
 
     async def resolve_all(self) -> dict[str, ResolvedComponentConfig]:
         """Resolve effective configuration and source tiers for all built-in components."""
@@ -299,6 +365,132 @@ class ConfigService:
             self._coordination,
             specs=self._specs,
         )
+
+    def _build_status_vo(
+        self,
+        spec: BuiltinComponentSpec,
+        entry: ResolvedComponentConfig,
+    ) -> ComponentStatusVO:
+        running = self._loader.is_running(spec.domain)
+        read_only = entry.source.is_static
+        return ComponentStatusVO(
+            domain=spec.domain,
+            enabled=entry.enabled,
+            running=running,
+            source=entry.source,
+            read_only=read_only,
+            runtime_configurable=spec.runtime_configurable,
+            restart_required=(entry.enabled != running),
+            config=dict(entry.config),
+            fields=extract_component_field_specs(spec),
+        )
+
+    async def list_component_statuses(self) -> list[ComponentStatusVO]:
+        """Return runtime status and configuration for all built-in components."""
+        resolved = await self.resolve_all()
+        return [
+            self._build_status_vo(spec, resolved[spec.domain]) for spec in self._specs
+        ]
+
+    async def update_component_config(
+        self,
+        domain: str,
+        updates: Mapping[str, Any],
+    ) -> ComponentStatusVO:
+        """Merge ``updates`` onto ``domain``'s current config, validate, live-reconfigure if supported, and persist."""
+        spec = self._specs_by_domain.get(domain)
+        if spec is None:
+            raise InvalidInputError(f"Unknown component domain: {domain!r}")
+
+        async with self._update_lock:
+            resolved = await self.resolve_all()
+            current_entry = resolved[domain]
+            if current_entry.source.is_static:
+                raise ConfigurationConflictError(
+                    f"Component '{domain}' is managed by {current_entry.source} configuration and is read-only."
+                )
+
+            merged_config: dict[str, Any] = {
+                **current_entry.config,
+                **dict(updates),
+            }
+
+            field_specs = extract_component_field_specs(spec)
+            allowed_keys = {f.name for f in field_specs}
+            extra_keys = set(updates.keys()) - allowed_keys
+            if extra_keys:
+                raise InvalidInputError(
+                    f"Unexpected configuration field(s) for component '{domain}': "
+                    f"{', '.join(sorted(extra_keys))}"
+                )
+            for f_spec in field_specs:
+                # Mashumaro's default `bool` deserializer coerces ints/strings to booleans;
+                # reject non-bool values explicitly so malformed payloads fail with 400.
+                if (
+                    f_spec.type is ComponentFieldType.BOOLEAN
+                    and f_spec.name in merged_config
+                    and not isinstance(merged_config[f_spec.name], bool)
+                ):
+                    raise InvalidInputError(
+                        f"Component '{domain}' field '{f_spec.name}' must be a boolean."
+                    )
+
+            schema_cls = load_component_config_schema(spec)
+            if schema_cls is not None:
+                try:
+                    validated = schema_cls.from_dict(merged_config)
+                    merged_config = validated.to_dict()
+                except (
+                    InvalidFieldValue,
+                    MissingField,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                ) as err:
+                    raise InvalidInputError(
+                        f"Invalid configuration for component '{domain}': {err}"
+                    ) from err
+
+            merged_config["enabled"] = is_component_enabled(spec, merged_config)
+
+            if spec.runtime_configurable:
+                was_running = self._loader.is_running(domain)
+                comp_instance = load_component_from_spec(spec)
+                try:
+                    await self._loader.async_reconfigure(
+                        self._core, comp_instance, merged_config
+                    )
+                except ComponentError as err:
+                    raise ConfigurationConflictError(
+                        f"Cannot reconfigure component '{domain}': {err}"
+                    ) from err
+                except (ValueError, TypeError) as err:
+                    if was_running and not self._loader.is_running(domain):
+                        await self._loader.async_reconfigure(
+                            self._core,
+                            load_component_from_spec(spec),
+                            current_entry.config,
+                        )
+                    raise InvalidInputError(
+                        f"Failed to reconfigure component '{domain}': {err}"
+                    ) from err
+
+            await async_save_component_config(self._coordination, domain, merged_config)
+            updated_entry = ResolvedComponentConfig(
+                domain=domain,
+                config=merged_config,
+                enabled=bool(merged_config["enabled"]),
+                source=ComponentConfigSource.DATABASE,
+            )
+            status_vo = self._build_status_vo(spec, updated_entry)
+            logger.info(
+                "Updated configuration for component %r (enabled=%s, running=%s, restart_required=%s)",
+                domain,
+                status_vo.enabled,
+                status_vo.running,
+                status_vo.restart_required,
+            )
+            return status_vo
 
 
 CONFIG_SERVICE_KEY: web.AppKey[ConfigService] = web.AppKey("config_service")
