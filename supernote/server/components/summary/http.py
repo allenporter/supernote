@@ -15,7 +15,6 @@ See `supernote.guides.summary_api`.
 
 from __future__ import annotations
 
-import json
 import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable
@@ -23,7 +22,6 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.extended import (
@@ -60,10 +58,10 @@ from supernote.server.components.conversion import (
     CONVERSION_SERVICE_KEY,
     ConversionService,
 )
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import HttpRegistrar, parse_json_dto
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     REQUEST_USER_KEY,
@@ -145,11 +143,11 @@ async def handle_add_summary_tag(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/add/summary/tag
     # Purpose: Add a new summary tag.
     # Response: AddSummaryTagVO
-    req_data = AddSummaryTagDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, AddSummaryTagDTO)
         tag = await summary_service.add_tag(user_email, req_data.name)
         return web.json_response(AddSummaryTagVO(id=tag.id).to_dict())
     except SupernoteError as err:
@@ -164,11 +162,11 @@ async def handle_update_summary_tag(request: web.Request) -> web.Response:
     # Endpoint: PUT /api/file/update/summary/tag
     # Purpose: Update an existing summary tag.
     # Response: BaseResponse
-    req_data = UpdateSummaryTagDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, UpdateSummaryTagDTO)
         await summary_service.update_tag(user_email, req_data.id, req_data.name)
         return web.json_response(BaseResponse().to_dict())
     except SupernoteError as err:
@@ -183,11 +181,11 @@ async def handle_delete_summary_tag(request: web.Request) -> web.Response:
     # Endpoint: DELETE /api/file/delete/summary/tag
     # Purpose: Delete a summary tag.
     # Response: BaseResponse
-    req_data = DeleteSummaryTagDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, DeleteSummaryTagDTO)
         await summary_service.delete_tag(user_email, req_data.id)
         return web.json_response(BaseResponse().to_dict())
     except SupernoteError as err:
@@ -219,11 +217,11 @@ async def handle_add_summary(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/add/summary
     # Purpose: Add a new summary.
     # Response: AddSummaryVO
-    req_data = AddSummaryDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, AddSummaryDTO)
         summary = await summary_service.add_summary(user_email, req_data)
         return web.json_response(AddSummaryVO(id=summary.id).to_dict())
     except SupernoteError as err:
@@ -238,11 +236,11 @@ async def handle_update_summary(request: web.Request) -> web.Response:
     # Endpoint: PUT /api/file/update/summary
     # Purpose: Update an existing summary.
     # Response: BaseResponse
-    req_data = UpdateSummaryDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, UpdateSummaryDTO)
         await summary_service.update_summary(user_email, req_data)
         return web.json_response(BaseResponse().to_dict())
     except SupernoteError as err:
@@ -257,11 +255,11 @@ async def handle_delete_summary(request: web.Request) -> web.Response:
     # Endpoint: DELETE /api/file/delete/summary
     # Purpose: Delete a summary.
     # Response: BaseResponse
-    req_data = DeleteSummaryDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, DeleteSummaryDTO)
         await summary_service.delete_summary(user_email, req_data.id)
         return web.json_response(BaseResponse().to_dict())
     except SupernoteError as err:
@@ -275,11 +273,11 @@ async def handle_query_summary(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/query/summary
     # Purpose: Query summaries.
     # Response: QuerySummaryVO
-    req_data = QuerySummaryDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, QuerySummaryDTO)
         size = (
             req_data.size
             if (req_data.size is not None or req_data.ids is not None)
@@ -322,11 +320,11 @@ async def handle_add_summary_group(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/add/summary/group
     # Purpose: Add a new summary group.
     # Response: AddSummaryGroupVO
-    req_data = AddSummaryGroupDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, AddSummaryGroupDTO)
         group = await summary_service.add_group(user_email, req_data)
         return web.json_response(AddSummaryGroupVO(id=group.id).to_dict())
     except SupernoteError as err:
@@ -341,11 +339,11 @@ async def handle_update_summary_group(request: web.Request) -> web.Response:
     # Endpoint: PUT /api/file/update/summary/group
     # Purpose: Update an existing summary group.
     # Response: BaseResponse
-    req_data = UpdateSummaryGroupDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, UpdateSummaryGroupDTO)
         await summary_service.update_group(user_email, req_data)
         return web.json_response(BaseResponse().to_dict())
     except SupernoteError as err:
@@ -360,11 +358,11 @@ async def handle_delete_summary_group(request: web.Request) -> web.Response:
     # Endpoint: DELETE /api/file/delete/summary/group
     # Purpose: Delete a summary group.
     # Response: BaseResponse
-    req_data = DeleteSummaryGroupDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, DeleteSummaryGroupDTO)
         await summary_service.delete_group(user_email, req_data.id)
         return web.json_response(BaseResponse().to_dict())
     except SupernoteError as err:
@@ -378,11 +376,11 @@ async def handle_query_summary_group(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/query/summary/group
     # Purpose: Query summary groups.
     # Response: QuerySummaryGroupVO
-    req_data = QuerySummaryGroupDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, QuerySummaryGroupDTO)
         size = DEFAULT_SUMMARY_PAGE_SIZE if req_data.size is None else req_data.size
         groups = await summary_service.list_groups(
             user_email, QuerySummaryGroupDTO(page=req_data.page, size=size)
@@ -413,10 +411,10 @@ async def handle_upload_apply_summary(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/upload/apply/summary
     # Purpose: Apply for upload (signed URL).
     # Response: UploadSummaryApplyVO
-    req_data = UploadSummaryApplyDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
 
     try:
+        req_data = await parse_json_dto(request, UploadSummaryApplyDTO)
         url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
         # Generate inner name
@@ -451,11 +449,11 @@ async def handle_download_summary(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/download/summary
     # Purpose: Get signed download URL for binary content.
     # Response: DownloadSummaryVO
-    req_data = DownloadSummaryDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, DownloadSummaryDTO)
         summary = await summary_service.get_summary(user_email, req_data.id)
         if not summary.handwrite_inner_name:
             return web.json_response(
@@ -486,11 +484,11 @@ async def handle_query_summary_hash(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/query/summary/hash
     # Purpose: Query summary lightweight info (hash/integrity).
     # Response: QuerySummaryMD5HashVO
-    req_data = QuerySummaryDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, QuerySummaryDTO)
         infos = await summary_service.list_summary_infos(user_email, req_data)
         pagination = await _resolve_pagination_metadata(
             len(infos),
@@ -522,11 +520,11 @@ async def handle_query_summary_id(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/query/summary/id
     # Purpose: Query full summaries by ID.
     # Response: QuerySummaryByIdVO
-    req_data = QuerySummaryDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, QuerySummaryDTO)
         summaries = await summary_service.list_summaries_by_id(user_email, req_data)
         return web.json_response(
             QuerySummaryByIdVO(summary_do_list=summaries).to_dict()
@@ -543,14 +541,9 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
     # Purpose: Extended API to list summaries for a file.
     user_email = request[REQUEST_USER_KEY]
     try:
-        data = await request.json()
-    except Exception:
-        return web.json_response({"error": "Invalid JSON"}, status=400)
-
-    try:
-        req_dto = WebSummaryListRequestDTO.from_dict(data)
-    except Exception as e:
-        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+        req_dto = await parse_json_dto(request, WebSummaryListRequestDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
@@ -576,9 +569,9 @@ async def handle_summary_to_pdf(request: web.Request) -> web.Response:
     # Purpose: Render a summary's handwriting to PDF and return a signed download URL.
     # Response: PdfVO
     try:
-        req_data = DownloadSummaryDTO.from_dict(await request.json())
-    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_data = await parse_json_dto(request, DownloadSummaryDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
@@ -604,9 +597,9 @@ async def handle_summary_to_png(request: web.Request) -> web.Response:
     # Purpose: Render a summary's handwriting to per-page PNGs and return signed download URLs.
     # Response: PngVO
     try:
-        req_data = DownloadSummaryDTO.from_dict(await request.json())
-    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_data = await parse_json_dto(request, DownloadSummaryDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
