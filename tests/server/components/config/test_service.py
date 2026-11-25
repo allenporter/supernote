@@ -18,6 +18,7 @@ from supernote.server.components.config.models import (
 from supernote.server.components.config.service import (
     _COMPONENT_CONFIG_KEY_PREFIX,
     ConfigService,
+    ConfigurationConflictError,
     async_resolve_component_configs,
     async_save_component_config,
     extract_component_field_specs,
@@ -249,3 +250,58 @@ def test_extract_component_field_specs() -> None:
     )
     assert by_name["debounce_seconds"].type is ComponentFieldType.NUMBER
     assert by_name["max_pages_per_batch"].type is ComponentFieldType.INTEGER
+
+
+async def test_config_service_protects_host_components_and_enforces_dependencies(
+    component_core: ServerCore,
+) -> None:
+    """`ConfigService` marks protected host components read-only and blocks breaking dependency order."""
+    web_ui_spec = BuiltinComponentSpec(
+        domain="web_ui",
+        import_path="supernote.server.components.web_ui:WebUiComponent",
+        default_enabled=True,
+    )
+    conversion_spec = BuiltinComponentSpec(
+        domain="conversion",
+        import_path="supernote.server.components.conversion:ConversionComponent",
+        default_enabled=True,
+    )
+    summary_spec = BuiltinComponentSpec(
+        domain="summary",
+        import_path="supernote.server.components.summary:SummaryComponent",
+        default_enabled=True,
+    )
+    service = ConfigService(
+        core=component_core,
+        loader=ComponentLoader(),
+        specs=(web_ui_spec, conversion_spec, summary_spec),
+    )
+
+    statuses = {s.domain: s for s in await service.list_component_statuses()}
+    assert statuses["web_ui"].read_only is True
+    assert statuses["conversion"].read_only is False
+    assert statuses["summary"].read_only is False
+
+    with pytest.raises(
+        ConfigurationConflictError,
+        match="Component 'web_ui' cannot be modified dynamically via the API",
+    ):
+        await service.update_component_config("web_ui", {"enabled": False})
+
+    with pytest.raises(
+        ConfigurationConflictError,
+        match="Cannot disable component 'conversion' while dependent component 'summary' is enabled",
+    ):
+        await service.update_component_config("conversion", {"enabled": False})
+
+    await service.update_component_config("summary", {"enabled": False})
+    disabled_conversion = await service.update_component_config(
+        "conversion", {"enabled": False}
+    )
+    assert disabled_conversion.enabled is False
+
+    with pytest.raises(
+        ConfigurationConflictError,
+        match="Cannot enable component 'summary' while required dependency 'conversion' is disabled",
+    ):
+        await service.update_component_config("summary", {"enabled": True})

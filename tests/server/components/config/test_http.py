@@ -236,6 +236,26 @@ async def test_update_system_component_blocks_env_pinned(
             server_cfg._component_sources.pop("webhooks", None)
 
 
+async def test_update_system_component_blocks_protected_and_dependent_components(
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """Disabling `web_ui` or disabling `conversion` while `summary` is enabled returns 409 Conflict."""
+    web_ui_resp = await client.put(
+        "/api/extended/system/components/web_ui",
+        headers=admin_headers,
+        json={"config": {"enabled": False}},
+    )
+    assert web_ui_resp.status == 409
+
+    conversion_resp = await client.put(
+        "/api/extended/system/components/conversion",
+        headers=admin_headers,
+        json={"config": {"enabled": False}},
+    )
+    assert conversion_resp.status == 409
+
+
 async def test_update_system_component_rejects_static_api_key(
     client: TestClient,
     admin_headers: dict[str, str],
