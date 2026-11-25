@@ -420,7 +420,15 @@ interface OAuthBridgeRequest {
     resource: string | null;
     scopes: string[];
     redirectTarget: OAuthRedirectTarget;
+    client: OAuthBridgeClient | null;
+    clientError: string | null;
     bridgePathWithQuery: string | null;
+}
+
+interface OAuthBridgeClient {
+    clientName: string;
+    clientHost: string;
+    redirectUri: string;
 }
 
 // ---------------------------------------------------------------------------

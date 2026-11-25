@@ -205,15 +205,40 @@ export async function login(email, password) {
 }
 
 /**
+ * Resolve the client named in a pending `/login-bridge` request from its Client ID
+ * Metadata Document, including the redirect URI a decision will be sent to.
+ * @param {string} clientId
+ * @param {string} redirectUri The requested redirect URI, or '' when omitted.
+ * @returns {Promise<OAuthBridgeClient>}
+ */
+export async function fetchOAuthBridgeClient(clientId, redirectUri) {
+    const params = new URLSearchParams({ client_id: clientId });
+    if (redirectUri) params.set('redirect_uri', redirectUri);
+    const data = await apiRequest(`/login-bridge/client?${params}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        reloadOnUnauthorized: false,
+        errorPrefix: 'Could not verify the client',
+    });
+    return {
+        clientName: String(data.client_name),
+        clientHost: String(data.client_host),
+        redirectUri: String(data.redirect_uri),
+    };
+}
+
+/**
  * Submit an OAuth 2.1 consent decision (`approve` or `deny`) to `/login-bridge`
- * and return the authorized redirect URL.
+ * and return the authorized redirect URL. The server refuses the decision if the
+ * client's redirect URI no longer matches the one the user was shown.
  * @param {string} bridgePathWithQuery
  * @param {'approve' | 'deny'} decision
+ * @param {string} [redirectUri] Redirect URI shown on the consent card.
  * @returns {Promise<string>}
  */
-export async function submitOAuthBridgeDecision(bridgePathWithQuery, decision) {
+export async function submitOAuthBridgeDecision(bridgePathWithQuery, decision, redirectUri) {
     const data = await apiRequest(bridgePathWithQuery, {
-        body: { decision },
+        body: redirectUri ? { decision, redirect_uri: redirectUri } : { decision },
         headers: { Accept: 'application/json' },
         reloadOnUnauthorized: false,
         errorPrefix: 'Authorization failed',

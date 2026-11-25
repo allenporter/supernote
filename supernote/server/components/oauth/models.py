@@ -16,6 +16,7 @@ from mcp.server.auth.provider import (
 from pydantic import model_validator
 
 __all__ = [
+    "LoginBridgeClientVO",
     "LoginBridgeDecision",
     "LoginBridgeRequestDTO",
     "LoginBridgeResponseVO",
@@ -47,12 +48,29 @@ class LoginBridgeRequestDTO(DataClassJSONMixin):
 
     decision: LoginBridgeDecision = LoginBridgeDecision.APPROVE
 
+    redirect_uri: str | None = None
+    """Redirect URI the user was shown; the decision is refused if it has changed."""
+
 
 @dataclass
 class LoginBridgeResponseVO(DataClassJSONMixin):
     """Redirect response VO returned by POST /login-bridge."""
 
     redirect_url: str
+
+
+@dataclass
+class LoginBridgeClientVO(DataClassJSONMixin):
+    """Client details for the consent card, returned by GET /login-bridge/client."""
+
+    client_name: str
+    """Name from the client's metadata document, or its host if it has none."""
+
+    client_host: str
+    """Host serving the client's metadata document, in ASCII (punycode) form."""
+
+    redirect_uri: str
+    """Redirect URI an approval or denial will be sent to."""
 
 
 @dataclass

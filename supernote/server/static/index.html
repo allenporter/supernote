@@ -142,6 +142,7 @@
                     :completed-outcome="oauthCompletedOutcome"
                     @approve="handleOAuthApprove"
                     @deny="handleOAuthDeny"
+                    @retry="handleOAuthRetry"
                     @dismiss="dismissOAuthConsent"></oauth-consent-card>
                 <template v-else-if="activeTab === 'files'">
                     <!-- Directory Browser View -->

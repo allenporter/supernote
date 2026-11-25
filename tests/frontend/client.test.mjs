@@ -11,6 +11,7 @@ import {
     fetchAiStatus,
     fetchApiKeys,
     fetchFiles,
+    fetchOAuthBridgeClient,
     fetchOAuthGrants,
     fetchProcessingStatus,
     fetchRecycleBin,
@@ -505,6 +506,13 @@ test('client.js: submitOAuthBridgeDecision sends JSON Accept + token headers and
         );
         assert.equal(calls[0].init.headers['x-access-token'], 'oauth-tok');
         assert.equal(calls[0].init.headers.Accept, 'application/json');
+        assert.deepEqual(JSON.parse(calls[0].init.body), { decision: 'approve' });
+
+        await submitOAuthBridgeDecision('/login-bridge?case=ok', 'deny', 'https://claude.ai/cb');
+        assert.deepEqual(JSON.parse(calls[1].init.body), {
+            decision: 'deny',
+            redirect_uri: 'https://claude.ai/cb',
+        });
 
         await assert.rejects(
             () => submitOAuthBridgeDecision('/login-bridge?case=bad', 'approve'),
@@ -526,6 +534,62 @@ test('client.js: submitOAuthBridgeDecision sends JSON Accept + token headers and
         await logout({ reload: false });
         globalThis.fetch = origFetch;
         globalThis.window = origWindow;
+    }
+});
+
+test('client.js: fetchOAuthBridgeClient GETs /login-bridge/client with the bridge query', async () => {
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('consent-tok');
+        /** @type {Array<{ url: string, init: any }>} */
+        const calls = [];
+        globalThis.fetch = async (url, init) => {
+            calls.push({ url: String(url), init });
+            if (String(url).endsWith('client_id=bad')) {
+                return new Response(
+                    JSON.stringify({
+                        error: 'invalid_client',
+                        error_description: "The client's metadata document is missing or invalid.",
+                    }),
+                    { status: 400 },
+                );
+            }
+            return new Response(
+                JSON.stringify({
+                    client_id: 'https://client.example/client.json',
+                    client_name: 'Example Client',
+                    client_host: 'client.example',
+                    redirect_uri: 'https://client.example/callback',
+                }),
+                { status: 200 },
+            );
+        };
+
+        assert.deepEqual(await fetchOAuthBridgeClient('https://client.example/client.json', ''), {
+            clientName: 'Example Client',
+            clientHost: 'client.example',
+            redirectUri: 'https://client.example/callback',
+        });
+        assert.equal(
+            calls[0].url,
+            '/login-bridge/client?client_id=https%3A%2F%2Fclient.example%2Fclient.json',
+        );
+        assert.equal(calls[0].init.method, 'GET');
+        assert.equal(calls[0].init.headers['x-access-token'], 'consent-tok');
+
+        await fetchOAuthBridgeClient('https://client.example/client.json', 'app:/cb');
+        assert.match(calls[1].url, /&redirect_uri=app%3A%2Fcb$/);
+
+        await assert.rejects(
+            () => fetchOAuthBridgeClient('bad', ''),
+            (err) =>
+                err instanceof ApiError &&
+                err.status === 400 &&
+                /metadata document/.test(err.message),
+        );
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
     }
 });
 
