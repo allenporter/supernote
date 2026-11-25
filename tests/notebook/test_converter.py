@@ -660,18 +660,13 @@ def test_convert_title_cropped_bitmap() -> None:
     converter = ImageConverter(notebook)
 
     assert len(notebook.titles) == 4
-    for idx, title in enumerate(notebook.titles):
+    for title in notebook.titles:
         assert title.metadata.rect is not None
-        img_by_index = converter.convert_title(idx)
-        img_by_obj = converter.convert_title(title)
+        img = converter.convert_title(title)
 
-        assert img_by_index.size == (
-            title.metadata.rect.width,
-            title.metadata.rect.height,
-        )
-        assert img_by_index.mode == "L"
-        assert img_by_index.tobytes() == img_by_obj.tobytes()
-        pixels = img_by_index.tobytes()
+        assert img.size == (title.metadata.rect.width, title.metadata.rect.height)
+        assert img.mode == "L"
+        pixels = img.tobytes()
         assert min(pixels) < color.TRANSPARENT
         assert max(pixels) == color.TRANSPARENT
 
@@ -704,17 +699,6 @@ def test_convert_title_raises_when_bitmap_missing() -> None:
 
     with pytest.raises(DecoderException, match="no bitmap content"):
         converter.convert_title(empty_title)
-
-
-def test_convert_title_index_out_of_range() -> None:
-    note_path = (
-        TEST_DATA_DIR / "philips" / "heading-n5-20260016-backgrounds-marker.note"
-    )
-    notebook = get_cached_notebook(str(note_path))
-    converter = ImageConverter(notebook)
-
-    with pytest.raises(IndexError):
-        converter.convert_title(len(notebook.titles))
 
 
 def test_convert_title_without_rect_decodes_full_page() -> None:

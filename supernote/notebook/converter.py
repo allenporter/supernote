@@ -102,33 +102,32 @@ class ImageConverter:
             converted_img = self._make_transparent(converted_img)
         return converted_img
 
-    def convert_title(self, title: fileformat.Title | int) -> Image.Image:
+    def convert_title(self, title: fileformat.Title) -> Image.Image:
         """Decode a notebook `Title`'s `<TITLEBITMAP>` into a cropped image.
 
         Supports both modern cropped title bitmaps (sized to `<TITLERECT>`) and
         legacy full-page title bitmaps (decoded at page dimensions and cropped
         to `<TITLERECT>`).
         """
-        target = self.note.titles[title] if isinstance(title, int) else title
-        if not target.content:
+        if not title.content:
             raise exceptions.DecoderException("title has no bitmap content")
 
-        rect = target.metadata.rect or target.metadata.rect_original
+        rect = title.metadata.rect or title.metadata.rect_original
         decoder = self.find_decoder(
-            target,
+            title,
             highres_grayscale=self.note.supports_highres_grayscale(),
             default_protocol=schema.LayerProtocol.RATTA_RLE,
         )
         horizontal = (
-            self.note.pages[target.page_number].is_horizontal()
-            if 0 <= target.page_number < self.note.total_pages
+            self.note.pages[title.page_number].is_horizontal()
+            if 0 <= title.page_number < self.note.total_pages
             else False
         )
 
         if rect is None or rect.width <= 0 or rect.height <= 0:
             full_img = self._create_image_from_decoder(
                 decoder,
-                target.content,
+                title.content,
                 palette=self.palette,
                 horizontal=horizontal,
             )
@@ -137,7 +136,7 @@ class ImageConverter:
         try:
             img = self._create_image_from_decoder(
                 decoder,
-                target.content,
+                title.content,
                 palette=self.palette,
                 width=rect.width,
                 height=rect.height,
@@ -147,7 +146,7 @@ class ImageConverter:
             # RLE bitmap in TITLEBITMAP; decode at page size and crop to rect.
             full_img = self._create_image_from_decoder(
                 decoder,
-                target.content,
+                title.content,
                 palette=self.palette,
                 horizontal=horizontal,
             )
