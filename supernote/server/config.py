@@ -309,8 +309,13 @@ class ServerConfig(DataClassYAMLMixin):
     )
     """VFS path globs excluded from standalone image indexing (defaults to `MyStyle/**` and `EXPORT/**`)."""
 
-    event_log_retention_days: int = 90
+    event_log_retention_days: int = field(
+        default=90,
+        metadata={"component": ("events", "retention_days")},
+    )
     """Number of days to retain domain events in `f_user_event` (0 = retain indefinitely).
+
+    Aliases `events.retention_days`.
 
     Env Var: `SUPERNOTE_EVENT_LOG_RETENTION_DAYS`
     """
@@ -377,8 +382,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_METRICS_ENABLED`
     """
 
-    metrics_path: str = "/metrics"
+    metrics_path: str = field(
+        default="/metrics",
+        metadata={"component": ("metrics", "path")},
+    )
     """The path where Prometheus metrics are exposed.
+
+    Aliases `metrics.path`.
 
     Env Var: `SUPERNOTE_METRICS_PATH`
     """
@@ -661,6 +671,7 @@ class ServerConfig(DataClassYAMLMixin):
                 if retention_val < 0:
                     raise ValueError("must be >= 0")
                 config.event_log_retention_days = retention_val
+                config._component_sources["events"] = ComponentConfigSource.ENV
                 logger.info(
                     f"Using SUPERNOTE_EVENT_LOG_RETENTION_DAYS: {config.event_log_retention_days}"
                 )
@@ -788,6 +799,7 @@ class ServerConfig(DataClassYAMLMixin):
 
         if metrics_path := os.getenv("SUPERNOTE_METRICS_PATH"):
             config.metrics_path = metrics_path
+            config._component_sources["metrics"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_METRICS_PATH: {config.metrics_path}")
 
         if os.getenv("SUPERNOTE_WEBHOOKS_ENABLED"):

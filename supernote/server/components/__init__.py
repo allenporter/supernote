@@ -75,6 +75,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="events",
         import_path="supernote.server.components.events:EventsComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.events.config:EventsConfig",
     ),
     BuiltinComponentSpec(
         domain="fake_ai",
@@ -105,6 +106,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="metrics",
         import_path="supernote.server.components.metrics:MetricsComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.metrics.config:MetricsConfig",
     ),
     BuiltinComponentSpec(
         domain="oauth",

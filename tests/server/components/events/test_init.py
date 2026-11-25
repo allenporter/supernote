@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from supernote.server.components.events import (
     EVENT_LOG_SERVICE_KEY,
     EventLogService,
@@ -35,3 +37,15 @@ async def test_events_component_stop_after_setup_only(
     """Verify stopping after async_setup (without async_start) is clean."""
     loader = await load_components("events", start=False)
     await loader.async_stop_all(component_core)
+
+
+async def test_events_component_loads_config_and_validates(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    """`EventsComponent` parses `EventsConfig` during setup and rejects negative retention days."""
+    await load_components("events", configs={"events": {"retention_days": 14}})
+    assert component_core.app[EVENT_LOG_SERVICE_KEY]._retention_days == 14
+
+    with pytest.raises(ValueError, match="events.retention_days must be >= 0"):
+        await load_components("events", configs={"events": {"retention_days": -1}})

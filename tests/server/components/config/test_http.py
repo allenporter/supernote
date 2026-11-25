@@ -211,8 +211,11 @@ async def test_update_system_component_marks_restart_required(
         "readOnly": False,
         "runtimeConfigurable": False,
         "restartRequired": True,
-        "config": {"enabled": False},
-        "fields": [{"name": "enabled", "type": "boolean", "default": True}],
+        "config": {"enabled": False, "path": "/metrics"},
+        "fields": [
+            {"name": "enabled", "type": "boolean", "default": True},
+            {"name": "path", "type": "string", "default": "/metrics"},
+        ],
     }
 
 

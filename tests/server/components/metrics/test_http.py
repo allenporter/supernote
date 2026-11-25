@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from aiohttp import web
 from prometheus_client import REGISTRY
 from pytest_aiohttp import AiohttpClient
@@ -84,3 +85,30 @@ async def test_metrics_http_platform_exposes_scrape_endpoint_and_normalizes_labe
     assert _http_request_count("GET", "HTTP 404", "404") == before_unknown + 1.0
     assert _http_request_count("GET", "/wp-login.php", "404") == 0.0
     assert _http_request_count("GET", "/metrics", "200") == before_metrics
+
+
+async def test_metrics_component_loads_custom_path(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    aiohttp_client: AiohttpClient,
+) -> None:
+    """`MetricsComponent` mounts the scrape endpoint at `MetricsConfig.path`."""
+    await load_components(
+        "http",
+        "metrics",
+        configs={"metrics": {"enabled": True, "path": "/custom-metrics"}},
+    )
+    client = await aiohttp_client(component_core.app)
+    resp = await client.get("/custom-metrics")
+    assert resp.status == 200
+
+
+async def test_metrics_component_rejects_relative_path(
+    load_components: LoadComponents,
+) -> None:
+    """`MetricsComponent` rejects relative metrics paths during setup."""
+    with pytest.raises(ValueError, match="metrics.path must be a non-empty URL path"):
+        await load_components(
+            "metrics",
+            configs={"metrics": {"path": "relative-metrics"}},
+        )
