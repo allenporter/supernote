@@ -37,8 +37,6 @@ from supernote.server.utils.image import (
 )
 from supernote.server.utils.paths import get_page_png_path
 
-__all__ = ["PngConversionModule", "async_setup_processor"]
-
 logger = logging.getLogger(__name__)
 
 # Use zlib compression level 1 (fastest) to minimize CPU overhead during background PNG rendering.
