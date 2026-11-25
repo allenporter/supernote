@@ -60,6 +60,8 @@ import { ApiError, apiRequest, getToken } from './http.js';
  * @property {string | null} last_error
  * @property {number} [backfill_remaining_files]
  * @property {number} [backfill_total_files]
+ * @property {number} [backfill_untranscribed_files]
+ * @property {string[]} [backfill_next_files]
  */
 
 /**
@@ -203,7 +205,39 @@ export async function fetchWikiStatus() {
  * @property {number | null} [lint_issues_open]
  * @property {string | null} [status]
  * @property {WikiLintIssue[] | null} [issues]
+ * @property {string[]} [files_processed]
+ * @property {string[]} [updated_pages]
+ * @property {number | null} [remaining_files]
  */
+
+const PAGE_KIND_LABELS = {
+    project: 'Project',
+    entity: 'Entity',
+    topic: 'Topic',
+    source_digest: 'Source',
+    index: 'Index',
+    log: 'Log',
+};
+
+/**
+ * Format an internal wiki `page_kind` into a concise user-facing label.
+ *
+ * @param {string} kind
+ * @returns {string}
+ */
+export function formatPageKindLabel(kind) {
+    return PAGE_KIND_LABELS[/** @type {keyof typeof PAGE_KIND_LABELS} */ (kind)] || kind;
+}
+
+/**
+ * Format an internal lint `issue_type` into a readable label.
+ *
+ * @param {string} issueType
+ * @returns {string}
+ */
+export function formatLintTypeLabel(issueType) {
+    return String(issueType || '').replace(/_/g, ' ');
+}
 
 /**
  * @param {'incremental' | 'backfill' | 'lint'} [mode='incremental']
@@ -241,14 +275,34 @@ export function formatWikiActionResult(mode, result) {
     const processed = result?.events_processed ?? 0;
     const updated = result?.pages_updated ?? 0;
     if (mode === 'backfill') {
-        if (processed === 0) {
+        const filesCount = Array.isArray(result?.files_processed)
+            ? result.files_processed.length
+            : 0;
+        if (processed === 0 && filesCount === 0) {
             return {
                 message: 'No remaining OCR’d notebooks to backfill.',
                 type: 'info',
             };
         }
+        const notebookPart =
+            filesCount > 0
+                ? `compiled ${filesCount} ${filesCount === 1 ? 'notebook' : 'notebooks'} (`
+                : 'backfilled batch (';
+        const pageSummary = `${updated} ${updated === 1 ? 'page' : 'pages'} updated`;
+        if (result?.remaining_files === 0) {
+            return {
+                message: `Backfill complete — ${notebookPart}${pageSummary}).`,
+                type: 'success',
+            };
+        }
+        if (typeof result?.remaining_files === 'number' && result.remaining_files > 0) {
+            return {
+                message: `Backfilled batch — ${notebookPart}${pageSummary}). ${result.remaining_files} ${result.remaining_files === 1 ? 'notebook' : 'notebooks'} remaining.`,
+                type: 'success',
+            };
+        }
         return {
-            message: `Backfilled batch (${updated} ${updated === 1 ? 'page' : 'pages'} updated). Run Backfill again for older notebooks.`,
+            message: `Backfilled batch (${pageSummary}).`,
             type: 'success',
         };
     }

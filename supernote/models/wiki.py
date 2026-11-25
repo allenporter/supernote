@@ -135,6 +135,8 @@ class WikiStatusDTO(DataClassJSONMixin):
     last_error: str | None
     backfill_remaining_files: int = 0
     backfill_total_files: int = 0
+    backfill_untranscribed_files: int = 0
+    backfill_next_files: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -214,6 +216,9 @@ class WikiCompileResponseVO(BaseResponse):
     lint_issues_open: int | None = None
     status: str | None = None
     issues: list[WikiLintIssueDTO] | None = None
+    files_processed: list[str] = field(default_factory=list)
+    updated_pages: list[str] = field(default_factory=list)
+    remaining_files: int | None = None
 
 
 @dataclass

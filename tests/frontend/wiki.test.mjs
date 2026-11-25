@@ -9,6 +9,8 @@ import {
     fetchWikiPage,
     fetchWikiPages,
     fetchWikiStatus,
+    formatLintTypeLabel,
+    formatPageKindLabel,
     formatWikiActionResult,
     resolveWikiLintIssue,
     saveWikiPage,
@@ -140,11 +142,44 @@ for (const { name, mode, result, expected } of [
         },
     },
     {
-        name: 'updated backfill batch',
+        name: 'updated backfill batch with remaining notebooks',
+        mode: 'backfill',
+        result: {
+            mode: 'backfill',
+            events_processed: 5,
+            pages_updated: 3,
+            files_processed: ['A.note', 'B.note'],
+            remaining_files: 4,
+            status: 'idle',
+        },
+        expected: {
+            message:
+                'Backfilled batch — compiled 2 notebooks (3 pages updated). 4 notebooks remaining.',
+            type: 'success',
+        },
+    },
+    {
+        name: 'final backfill batch completes without prompting to run again',
+        mode: 'backfill',
+        result: {
+            mode: 'backfill',
+            events_processed: 2,
+            pages_updated: 1,
+            files_processed: ['Final.note'],
+            remaining_files: 0,
+            status: 'idle',
+        },
+        expected: {
+            message: 'Backfill complete — compiled 1 notebook (1 page updated).',
+            type: 'success',
+        },
+    },
+    {
+        name: 'legacy backfill batch without remaining_files',
         mode: 'backfill',
         result: { mode: 'backfill', events_processed: 5, pages_updated: 3, status: 'idle' },
         expected: {
-            message: 'Backfilled batch (3 pages updated). Run Backfill again for older notebooks.',
+            message: 'Backfilled batch (3 pages updated).',
             type: 'success',
         },
     },
@@ -180,3 +215,13 @@ for (const { name, mode, result, expected } of [
         assert.deepEqual(formatWikiActionResult(mode, result), expected);
     });
 }
+
+test('formatPageKindLabel and formatLintTypeLabel produce readable labels', () => {
+    assert.equal(formatPageKindLabel('source_digest'), 'Source');
+    assert.equal(formatPageKindLabel('project'), 'Project');
+    assert.equal(formatPageKindLabel('entity'), 'Entity');
+    assert.equal(formatPageKindLabel('topic'), 'Topic');
+    assert.equal(formatPageKindLabel('custom'), 'custom');
+    assert.equal(formatLintTypeLabel('orphan_page'), 'orphan page');
+    assert.equal(formatLintTypeLabel('broken_link'), 'broken link');
+});

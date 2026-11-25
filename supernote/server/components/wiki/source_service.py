@@ -8,6 +8,7 @@ import foreign ORM models directly.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import Select, func, select
@@ -18,7 +19,17 @@ from supernote.server.db.models.schedule import ScheduleTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import DomainEventRecorded
 
-__all__ = ["WikiSourceService"]
+__all__ = ["BackfillOverview", "WikiSourceService"]
+
+
+@dataclass(frozen=True)
+class BackfillOverview:
+    """Snapshot of a user's notebook backfill progress and next batch preview."""
+
+    remaining_files: int
+    total_files: int
+    untranscribed_files: int = 0
+    next_files: list[str] = field(default_factory=list)
 
 
 class WikiSourceService:
@@ -125,6 +136,87 @@ class WikiSourceService:
             has_transcribed_page,
         )
 
+    def _untranscribed_note_files_stmt(self, user_id: int) -> Select[UserFileDO]:
+        """Return a tenant-scoped query for active `.note` files without OCR text."""
+        has_transcribed_page = (
+            select(NotePageContentDO.id)
+            .where(
+                NotePageContentDO.file_id == UserFileDO.id,
+                NotePageContentDO.text_content.is_not(None),
+            )
+            .correlate(UserFileDO)
+            .exists()
+        )
+        return select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.is_active == "Y",
+            UserFileDO.is_folder == "N",
+            func.lower(UserFileDO.file_name).like("%.note"),
+            ~has_transcribed_page,
+        )
+
+    async def get_backfill_overview(
+        self,
+        user_id: int,
+        *,
+        before_file_id: int | None,
+        preview_limit: int = 5,
+    ) -> BackfillOverview:
+        """Return backfill progress counts, un-OCR'd notebook count, and next filenames."""
+        base_stmt = self._transcribed_files_stmt(user_id)
+        remaining_stmt = (
+            base_stmt
+            if before_file_id is None
+            else base_stmt.where(UserFileDO.id < before_file_id)
+        )
+        untranscribed_stmt = self._untranscribed_note_files_stmt(user_id)
+        capped_preview = max(0, min(preview_limit, 20))
+
+        async with self._session_manager.session() as session:
+            total = int(
+                (
+                    await session.execute(
+                        select(func.count()).select_from(base_stmt.subquery())
+                    )
+                ).scalar_one()
+            )
+            if before_file_id is None:
+                remaining = total
+            else:
+                remaining = int(
+                    (
+                        await session.execute(
+                            select(func.count()).select_from(remaining_stmt.subquery())
+                        )
+                    ).scalar_one()
+                )
+            untranscribed = int(
+                (
+                    await session.execute(
+                        select(func.count()).select_from(untranscribed_stmt.subquery())
+                    )
+                ).scalar_one()
+            )
+            next_files: list[str] = []
+            if remaining > 0 and capped_preview > 0:
+                next_files = list(
+                    (
+                        await session.execute(
+                            remaining_stmt.with_only_columns(UserFileDO.file_name)
+                            .order_by(UserFileDO.id.desc())
+                            .limit(capped_preview)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+        return BackfillOverview(
+            remaining_files=remaining,
+            total_files=total,
+            untranscribed_files=untranscribed,
+            next_files=next_files,
+        )
+
     async def count_backfill_progress(
         self,
         user_id: int,
@@ -132,23 +224,10 @@ class WikiSourceService:
         before_file_id: int | None,
     ) -> tuple[int, int]:
         """Return `(remaining_files, total_files)` eligible for wiki backfill."""
-        base_stmt = self._transcribed_files_stmt(user_id)
-        async with self._session_manager.session() as session:
-            total = (
-                await session.execute(
-                    select(func.count()).select_from(base_stmt.subquery())
-                )
-            ).scalar_one()
-            if before_file_id is None:
-                return int(total), int(total)
-            remaining = (
-                await session.execute(
-                    select(func.count()).select_from(
-                        base_stmt.where(UserFileDO.id < before_file_id).subquery()
-                    )
-                )
-            ).scalar_one()
-            return int(remaining), int(total)
+        overview = await self.get_backfill_overview(
+            user_id, before_file_id=before_file_id, preview_limit=0
+        )
+        return overview.remaining_files, overview.total_files
 
     async def list_backfill_batch(
         self,

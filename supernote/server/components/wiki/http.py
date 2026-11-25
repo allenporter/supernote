@@ -129,6 +129,9 @@ def _compile_result_response(mode: str, res: WikiCompileResult) -> web.Response:
             skipped_policy_pages=res.skipped_policy_pages,
             lint_issues_open=res.lint_issues_open,
             status=res.status,
+            files_processed=res.files_processed,
+            updated_pages=res.updated_pages,
+            remaining_files=res.remaining_files,
         ).to_dict()
     )
 

@@ -2,7 +2,7 @@
  * LLM Wiki browser, Markdown viewer, inline editor, lint triage, and Obsidian export panel.
  */
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { ApiError } from '../api/http.js';
 import {
     deleteWikiPage,
@@ -11,6 +11,8 @@ import {
     fetchWikiPage,
     fetchWikiPages,
     fetchWikiStatus,
+    formatLintTypeLabel,
+    formatPageKindLabel,
     formatWikiActionResult,
     resolveWikiLintIssue,
     saveWikiPage,
@@ -66,6 +68,22 @@ export default {
         const selectedKind = ref('');
         const searchQuery = ref('');
         const showLintPanel = ref(false);
+        const showBackfillPanel = ref(false);
+        const backfillBannerDismissed = ref(false);
+        const isBackfillAllRunning = ref(false);
+        const stopBackfillRequested = ref(false);
+        /** @type {import('vue').Ref<string[]>} */
+        const activeBatchFiles = ref([]);
+        /**
+         * @type {import('vue').Ref<{
+         *   filesProcessed: string[],
+         *   updatedPages: string[],
+         *   batchesRun: number,
+         *   completed: boolean,
+         *   stopped: boolean,
+         * } | null>}
+         */
+        const lastBackfillSummary = ref(null);
         const isEditing = ref(false);
         const isCreating = ref(false);
         const confirmDeleteSlug = ref('');
@@ -78,6 +96,7 @@ export default {
 
         let loadSeq = 0;
         let selectSeq = 0;
+        let isUnmounted = false;
 
         const filteredPages = computed(() => {
             const source = searchHits.value !== null ? searchHits.value : pages.value;
@@ -91,19 +110,54 @@ export default {
 
         const backfillTotal = computed(() => status.value?.backfill_total_files ?? 0);
         const backfillRemaining = computed(() => status.value?.backfill_remaining_files ?? 0);
+        const backfillUntranscribed = computed(
+            () => status.value?.backfill_untranscribed_files ?? 0,
+        );
+        const backfillNextFiles = computed(() =>
+            Array.isArray(status.value?.backfill_next_files)
+                ? status.value.backfill_next_files
+                : [],
+        );
         const backfillCompleted = computed(() =>
             Math.max(0, backfillTotal.value - backfillRemaining.value),
         );
+        const backfillPercent = computed(() => {
+            if (backfillTotal.value <= 0) return 0;
+            return Math.min(100, Math.round((backfillCompleted.value / backfillTotal.value) * 100));
+        });
+        const nextBatchCount = computed(() => Math.min(5, backfillRemaining.value));
         const isBackfillDone = computed(
             () => backfillTotal.value > 0 && backfillRemaining.value === 0,
         );
-        const backfillButtonLabel = computed(() => {
-            if (runningAction.value === 'backfill') return 'Backfilling...';
-            if (isBackfillDone.value) return 'Backfill Complete';
-            if (backfillRemaining.value > 0) {
-                return `Backfill Notebooks (${backfillRemaining.value} left)`;
+        const isBackfillBannerVisible = computed(() => {
+            if (isDisabled.value || error.value) return false;
+            if (runningAction.value === 'backfill') return true;
+            if (showBackfillPanel.value) return true;
+            if (lastBackfillSummary.value && !backfillBannerDismissed.value) return true;
+            // Show inline progress banner automatically when backfill is partially done and wiki has pages.
+            if (
+                pages.value.length > 0 &&
+                backfillRemaining.value > 0 &&
+                !backfillBannerDismissed.value
+            ) {
+                return true;
             }
-            return 'Backfill Notebooks';
+            return false;
+        });
+        const warnLintCount = computed(
+            () => lintIssues.value.filter((issue) => issue.severity !== 'info').length,
+        );
+        const hasOnlySourceDigests = computed(
+            () =>
+                pages.value.length > 0 && pages.value.every((p) => p.page_kind === 'source_digest'),
+        );
+        const pageTitleBySlug = computed(() => {
+            /** @type {Record<string, string>} */
+            const map = {};
+            for (const p of pages.value) {
+                map[p.slug] = p.title;
+            }
+            return map;
         });
 
         async function loadAll(preferredSlug = '') {
@@ -297,10 +351,167 @@ export default {
             }
         }
 
+        function toggleBackfillPanel() {
+            if (isBackfillBannerVisible.value && runningAction.value !== 'backfill') {
+                showBackfillPanel.value = false;
+                backfillBannerDismissed.value = true;
+            } else {
+                showBackfillPanel.value = true;
+                backfillBannerDismissed.value = false;
+            }
+        }
+
+        function dismissBackfillBanner() {
+            if (runningAction.value === 'backfill') return;
+            showBackfillPanel.value = false;
+            backfillBannerDismissed.value = true;
+        }
+
+        function requestStopBackfill() {
+            stopBackfillRequested.value = true;
+        }
+
+        /**
+         * Run either a single backfill batch (`runAll = false`) or loop until all
+         * remaining OCR'd notebooks are compiled (`runAll = true`).
+         *
+         * @param {boolean} [runAll=false]
+         */
+        async function handleBackfill(runAll = false) {
+            if (isBusy.value || isDisabled.value || isBackfillDone.value) return;
+            isBusy.value = true;
+            runningAction.value = 'backfill';
+            isBackfillAllRunning.value = runAll;
+            stopBackfillRequested.value = false;
+            backfillBannerDismissed.value = false;
+            showBackfillPanel.value = true;
+
+            /** @type {string[]} */
+            const allFiles = [];
+            /** @type {string[]} */
+            const allPages = [];
+            let batchesRun = 0;
+            let stoppedEarly = false;
+            let pausedOrEmpty = false;
+            /** @type {import('../api/wiki.js').WikiCompileResult | null} */
+            let lastResult = null;
+
+            try {
+                while (!isUnmounted) {
+                    activeBatchFiles.value = [...backfillNextFiles.value];
+                    const result = await triggerWikiCompile('backfill');
+                    lastResult = result;
+                    if (isUnmounted) return;
+
+                    if (result?.status === 'paused') {
+                        const toast = formatWikiActionResult('backfill', result);
+                        showToast(toast.message, toast.type);
+                        pausedOrEmpty = true;
+                        await loadAll(activePage.value?.slug || '');
+                        break;
+                    }
+
+                    const batchFiles = Array.isArray(result?.files_processed)
+                        ? result.files_processed
+                        : [];
+                    const batchPages = Array.isArray(result?.updated_pages)
+                        ? result.updated_pages
+                        : [];
+                    const eventsProcessed = result?.events_processed ?? 0;
+
+                    if (batchFiles.length === 0 && eventsProcessed === 0) {
+                        if (batchesRun === 0) {
+                            const toast = formatWikiActionResult('backfill', result);
+                            showToast(toast.message, toast.type);
+                        }
+                        pausedOrEmpty = true;
+                        await loadAll(activePage.value?.slug || '');
+                        break;
+                    }
+
+                    batchesRun += 1;
+                    for (const f of batchFiles) {
+                        if (!allFiles.includes(f)) allFiles.push(f);
+                    }
+                    for (const slug of batchPages) {
+                        if (!allPages.includes(slug)) allPages.push(slug);
+                    }
+
+                    const remaining =
+                        typeof result?.remaining_files === 'number' ? result.remaining_files : null;
+
+                    lastBackfillSummary.value = {
+                        filesProcessed: [...allFiles],
+                        updatedPages: [...allPages],
+                        batchesRun,
+                        completed: remaining === 0,
+                        stopped: false,
+                    };
+
+                    const preferredSlug = activePage.value?.slug || batchPages[0] || '';
+                    await loadAll(preferredSlug);
+                    if (isUnmounted) return;
+
+                    if (!runAll || remaining === 0 || backfillRemaining.value === 0) {
+                        break;
+                    }
+                    if (stopBackfillRequested.value) {
+                        stoppedEarly = true;
+                        break;
+                    }
+                }
+
+                if (!isUnmounted && !pausedOrEmpty && batchesRun > 0) {
+                    const isDoneNow = backfillRemaining.value === 0;
+                    lastBackfillSummary.value = {
+                        filesProcessed: [...allFiles],
+                        updatedPages: [...allPages],
+                        batchesRun,
+                        completed: isDoneNow,
+                        stopped: stoppedEarly,
+                    };
+                    if (stoppedEarly) {
+                        showToast(
+                            `Stopped backfill after ${batchesRun} ${batchesRun === 1 ? 'batch' : 'batches'} (${allFiles.length} ${allFiles.length === 1 ? 'notebook' : 'notebooks'} compiled, ${backfillRemaining.value} remaining).`,
+                            'info',
+                        );
+                    } else if (runAll && batchesRun > 1) {
+                        showToast(
+                            `Backfill complete — compiled ${allFiles.length} ${allFiles.length === 1 ? 'notebook' : 'notebooks'} (${allPages.length} ${allPages.length === 1 ? 'page' : 'pages'} updated).`,
+                            'success',
+                        );
+                    } else if (lastResult) {
+                        const toast = formatWikiActionResult('backfill', lastResult);
+                        showToast(toast.message, toast.type);
+                    }
+                }
+            } catch (err) {
+                if (!isUnmounted) {
+                    showToast(getErrorMessage(err), 'error');
+                    try {
+                        const refreshed = await fetchWikiStatus();
+                        if (refreshed) status.value = refreshed;
+                    } catch {
+                        // Best-effort status refresh so persisted compiler errors surface immediately.
+                    }
+                }
+            } finally {
+                activeBatchFiles.value = [];
+                isBackfillAllRunning.value = false;
+                stopBackfillRequested.value = false;
+                runningAction.value = '';
+                isBusy.value = false;
+            }
+        }
+
         /**
          * @param {'incremental' | 'backfill' | 'lint'} mode
          */
         async function handleRunAction(mode) {
+            if (mode === 'backfill') {
+                await handleBackfill(false);
+                return;
+            }
             isBusy.value = true;
             runningAction.value = mode;
             try {
@@ -376,8 +587,15 @@ export default {
             loadAll(props.initialSlug);
         });
 
+        onUnmounted(() => {
+            isUnmounted = true;
+            stopBackfillRequested.value = true;
+        });
+
         return {
             KIND_FILTERS,
+            formatPageKindLabel,
+            formatLintTypeLabel,
             isLoading,
             isDisabled,
             isBusy,
@@ -389,10 +607,19 @@ export default {
             activePage,
             status,
             lintIssues,
+            warnLintCount,
+            hasOnlySourceDigests,
+            pageTitleBySlug,
             selectedKind,
             searchQuery,
             clearSearch,
             showLintPanel,
+            showBackfillPanel,
+            isBackfillBannerVisible,
+            isBackfillAllRunning,
+            stopBackfillRequested,
+            activeBatchFiles,
+            lastBackfillSummary,
             isEditing,
             isCreating,
             confirmDeleteSlug,
@@ -404,9 +631,12 @@ export default {
             renderedBodyHtml,
             backfillTotal,
             backfillRemaining,
+            backfillUntranscribed,
+            backfillNextFiles,
             backfillCompleted,
+            backfillPercent,
+            nextBatchCount,
             isBackfillDone,
-            backfillButtonLabel,
             selectSlug,
             handleSearch,
             startCreate,
@@ -414,6 +644,10 @@ export default {
             cancelEdit,
             submitSave,
             handleDeleteConfirmed,
+            toggleBackfillPanel,
+            dismissBackfillBanner,
+            requestStopBackfill,
+            handleBackfill,
             handleRunAction,
             handleResolveIssue,
             handleExportZip,
@@ -424,13 +658,16 @@ export default {
         <div class="space-y-4">
             <!-- Header Bar -->
             <div class="flex flex-wrap items-center justify-between gap-3 bg-white border border-stone-200/80 rounded-xl p-4 shadow-sm">
-                <div>
+                <div class="min-w-0">
                     <h2 class="text-base font-semibold text-slate-900">LLM Wiki</h2>
                     <p class="text-xs text-stone-500 mt-0.5">
                         <template v-if="status">
-                            {{ status.page_count }} pages · {{ status.open_lint_count }} lint issues · status: {{ status.status }}
+                            {{ status.page_count }} {{ status.page_count === 1 ? 'page' : 'pages' }}
                             <template v-if="backfillTotal > 0">
-                                · {{ backfillCompleted }}/{{ backfillTotal }} notebooks backfilled
+                                · {{ backfillCompleted }}/{{ backfillTotal }} notebooks compiled
+                            </template>
+                            <template v-if="status.status && status.status !== 'idle'">
+                                · {{ status.status }}
                             </template>
                         </template>
                         <template v-else>Compiled knowledge base from notebooks &amp; tasks</template>
@@ -441,21 +678,32 @@ export default {
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
                         New Page
                     </button>
-                    <button type="button" @click="handleRunAction('backfill')" :disabled="isDisabled || isBusy || isBackfillDone"
-                        class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
-                        {{ backfillButtonLabel }}
+                    <button v-if="backfillRemaining > 0 || runningAction === 'backfill'"
+                        type="button" @click="toggleBackfillPanel" :disabled="isDisabled"
+                        :class="isBackfillBannerVisible ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-stone-200 text-slate-700 hover:bg-stone-50'"
+                        class="px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors">
+                        <template v-if="runningAction === 'backfill'">Backfilling…</template>
+                        <template v-else>Backfill ({{ backfillRemaining }} left)</template>
                     </button>
                     <button type="button" @click="handleRunAction('incremental')" :disabled="isDisabled || isBusy"
+                        title="Compile recent notebook and task changes since the last update"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
-                        {{ runningAction === 'incremental' ? 'Updating...' : 'Update Wiki' }}
+                        {{ runningAction === 'incremental' ? 'Updating…' : 'Update Wiki' }}
                     </button>
                     <button type="button" @click="showLintPanel = !showLintPanel" :disabled="isDisabled"
-                        class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 transition-colors">
-                        Lint ({{ lintIssues.length }})
+                        :class="showLintPanel ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-stone-200 text-slate-700 hover:bg-stone-50'"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors">
+                        <span>Lint</span>
+                        <span v-if="lintIssues.length > 0"
+                            :class="warnLintCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-stone-600'"
+                            class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none">
+                            {{ lintIssues.length }}
+                        </span>
                     </button>
                     <button type="button" @click="handleExportZip" :disabled="isDisabled || pages.length === 0"
+                        title="Download Obsidian-compatible Markdown vault (.zip)"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
-                        Export Obsidian .zip
+                        Export .zip
                     </button>
                 </div>
             </div>
@@ -466,6 +714,122 @@ export default {
                 <span class="font-semibold">Wiki compiler {{ status.status }}:</span>
                 {{ status.last_error }}
             </div>
+
+            <!-- Notebook Backfill Progress & Queue Panel -->
+            <section v-if="isBackfillBannerVisible" aria-label="Notebook Backfill"
+                class="bg-white border border-stone-200/80 rounded-xl p-4 shadow-sm space-y-3">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1 space-y-0.5">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="text-xs font-semibold text-slate-900">
+                                <template v-if="runningAction === 'backfill'">Compiling Notebooks…</template>
+                                <template v-else-if="isBackfillDone">Backfill Complete</template>
+                                <template v-else>Notebook Backfill</template>
+                            </h3>
+                            <span v-if="backfillTotal > 0"
+                                :class="isBackfillDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-stone-100 text-stone-700 border-stone-200'"
+                                class="text-[11px] font-medium px-2 py-0.5 rounded-full border">
+                                {{ backfillCompleted }} of {{ backfillTotal }} compiled ({{ backfillPercent }}%)
+                            </span>
+                            <span v-if="backfillUntranscribed > 0" class="text-[11px] text-stone-500">
+                                · {{ backfillUntranscribed }} awaiting OCR
+                            </span>
+                        </div>
+                        <p class="text-xs text-stone-500">
+                            <template v-if="runningAction === 'backfill' && activeBatchFiles.length > 0">
+                                Compiling {{ activeBatchFiles.length }} {{ activeBatchFiles.length === 1 ? 'notebook' : 'notebooks' }}:
+                                <span class="font-medium text-slate-700">{{ activeBatchFiles.join(', ') }}</span>
+                            </template>
+                            <template v-else-if="runningAction === 'backfill'">
+                                Compiling next batch of notebooks…
+                            </template>
+                            <template v-else-if="isBackfillDone">
+                                All {{ backfillTotal }} OCR’d {{ backfillTotal === 1 ? 'notebook has' : 'notebooks have' }} been compiled into your wiki. New edits update automatically.
+                            </template>
+                            <template v-else>
+                                Compiles OCR’d notebooks newest-first in batches of 5.
+                                <template v-if="hasOnlySourceDigests || backfillCompleted > 0">
+                                    Early batches create source digests; cross-notebook topics, projects, and entities emerge as more notebooks are compiled.
+                                </template>
+                            </template>
+                        </p>
+                    </div>
+                    <button v-if="runningAction !== 'backfill'" type="button" @click="dismissBackfillBanner"
+                        aria-label="Hide backfill panel"
+                        class="shrink-0 text-stone-400 hover:text-slate-700 px-1.5 py-0.5 rounded text-sm leading-none transition-colors">
+                        &times;
+                    </button>
+                </div>
+
+                <!-- Progress Bar -->
+                <div v-if="backfillTotal > 0" class="w-full h-2 rounded-full bg-stone-100 overflow-hidden"
+                    role="progressbar" :aria-valuenow="backfillPercent" aria-valuemin="0" aria-valuemax="100">
+                    <div :class="isBackfillDone ? 'bg-emerald-600' : 'bg-slate-900'"
+                        class="h-full rounded-full transition-all duration-300"
+                        :style="{ width: backfillPercent + '%' }"></div>
+                </div>
+
+                <!-- Last Batch Summary with clickable page links -->
+                <div v-if="lastBackfillSummary && lastBackfillSummary.filesProcessed.length > 0"
+                    class="rounded-lg bg-stone-50 border border-stone-200/70 px-3 py-2 text-xs space-y-1.5">
+                    <div class="text-stone-600">
+                        <span class="font-medium text-slate-800">
+                            {{ lastBackfillSummary.batchesRun > 1 ? 'Session total:' : 'Last batch:' }}
+                        </span>
+                        compiled {{ lastBackfillSummary.filesProcessed.length }}
+                        {{ lastBackfillSummary.filesProcessed.length === 1 ? 'notebook' : 'notebooks' }}
+                        &rarr;
+                        {{ lastBackfillSummary.updatedPages.length }}
+                        {{ lastBackfillSummary.updatedPages.length === 1 ? 'page' : 'pages' }} updated.
+                    </div>
+                    <div v-if="lastBackfillSummary.updatedPages.length > 0" class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-[11px] text-stone-500">Updated pages:</span>
+                        <button v-for="slug in lastBackfillSummary.updatedPages.slice(0, 8)" :key="slug"
+                            type="button" @click="selectSlug(slug)"
+                            class="px-2 py-0.5 rounded-md bg-white border border-stone-200 hover:border-slate-300 text-[11px] font-medium text-slate-700 hover:text-slate-900 transition-colors">
+                            {{ pageTitleBySlug[slug] || slug }}
+                        </button>
+                        <span v-if="lastBackfillSummary.updatedPages.length > 8" class="text-[11px] text-stone-400">
+                            +{{ lastBackfillSummary.updatedPages.length - 8 }} more
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Next Batch Queue Preview & Controls -->
+                <div v-if="backfillRemaining > 0" class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pt-0.5">
+                    <div v-if="backfillNextFiles.length > 0 && runningAction !== 'backfill'" class="min-w-0 flex-1 space-y-1">
+                        <div class="text-[11px] font-medium text-stone-500">
+                            Up next (batch of {{ backfillNextFiles.length }}):
+                        </div>
+                        <div class="flex flex-wrap gap-1.5">
+                            <span v-for="fname in backfillNextFiles" :key="fname"
+                                class="px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 font-mono text-[11px] max-w-full truncate">
+                                {{ fname }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 shrink-0">
+                        <template v-if="runningAction === 'backfill'">
+                            <button v-if="isBackfillAllRunning" type="button" @click="requestStopBackfill"
+                                :disabled="stopBackfillRequested"
+                                class="px-3 py-1.5 rounded-lg text-xs font-medium border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                                {{ stopBackfillRequested ? 'Stopping after batch…' : 'Stop After Current Batch' }}
+                            </button>
+                            <span v-else class="text-xs text-stone-500">Running single batch…</span>
+                        </template>
+                        <template v-else>
+                            <button type="button" @click="handleBackfill(true)" :disabled="isBusy"
+                                class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
+                                Backfill All Remaining ({{ backfillRemaining }})
+                            </button>
+                            <button v-if="backfillRemaining > nextBatchCount" type="button" @click="handleBackfill(false)" :disabled="isBusy"
+                                class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
+                                Next {{ nextBatchCount }} Only
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </section>
 
             <!-- Disabled Banner -->
             <div v-if="isDisabled" class="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
@@ -517,7 +881,7 @@ export default {
                                 class="w-full text-left px-2.5 py-2 rounded-lg transition-colors">
                                 <div class="flex items-center justify-between gap-2">
                                     <span class="text-xs font-semibold text-slate-900 truncate">{{ p.title }}</span>
-                                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 shrink-0">{{ p.page_kind }}</span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 shrink-0">{{ formatPageKindLabel(p.page_kind) }}</span>
                                 </div>
                                 <div class="text-[11px] text-stone-500 truncate mt-0.5">{{ p.summary || p.slug }}</div>
                             </button>
@@ -533,15 +897,23 @@ export default {
                             <h3 class="text-xs font-semibold text-slate-900">Open Lint Issues ({{ lintIssues.length }})</h3>
                             <button type="button" @click="handleRunAction('lint')" :disabled="isBusy"
                                 class="text-[11px] font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50">
-                                {{ runningAction === 'lint' ? 'Linting...' : 'Run Lint Now' }}
+                                {{ runningAction === 'lint' ? 'Linting…' : 'Run Lint Now' }}
                             </button>
+                        </div>
+                        <div v-if="backfillRemaining > 0 && lintIssues.length > 0"
+                            class="rounded-lg bg-stone-50 border border-stone-200/80 px-3 py-2 text-[11px] text-stone-600">
+                            Backfill is still in progress ({{ backfillRemaining }} {{ backfillRemaining === 1 ? 'notebook' : 'notebooks' }} left). Orphan pages and unresolved links are normal until remaining notebooks are compiled.
                         </div>
                         <div v-if="lintIssues.length === 0" class="text-xs text-stone-500">All clear — zero open lint issues.</div>
                         <div v-for="issue in lintIssues" :key="issue.issue_id"
                             class="flex items-start justify-between gap-3 p-2.5 rounded-lg bg-stone-50 border border-stone-200/60">
                             <div class="min-w-0">
-                                <span class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ issue.issue_type }}</span>
-                                <p class="text-xs text-slate-700 mt-0.5">{{ issue.description }}</p>
+                                <span
+                                    :class="issue.severity === 'info' ? 'text-stone-500' : issue.severity === 'error' ? 'text-red-700' : 'text-amber-700'"
+                                    class="text-[10px] font-semibold uppercase tracking-wide">
+                                    {{ issue.severity }} · {{ formatLintTypeLabel(issue.issue_type) }}
+                                </span>
+                                <p class="text-xs text-slate-700 mt-0.5 break-words">{{ issue.description }}</p>
                             </div>
                             <div class="flex items-center gap-1.5 shrink-0">
                                 <button type="button" @click="handleResolveIssue(issue.issue_id, 'resolved')"
@@ -608,7 +980,7 @@ export default {
                         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-stone-100 pb-3">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">{{ activePage.page_kind }}</span>
+                                    <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">{{ formatPageKindLabel(activePage.page_kind) }}</span>
                                     <span class="text-[11px] text-stone-400 font-mono break-all">{{ activePage.slug }}</span>
                                     <span class="text-[11px] text-stone-400">v{{ activePage.version }} · {{ activePage.edit_policy }}</span>
                                 </div>
@@ -675,21 +1047,56 @@ export default {
                     </div>
 
                     <div v-else-if="pages.length === 0"
-                        class="bg-white border border-stone-200/80 rounded-xl p-8 text-center space-y-3 shadow-sm">
-                        <h3 class="text-sm font-semibold text-slate-900">Build your personal wiki</h3>
-                        <p class="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
-                            Compile your existing OCR’d notebooks into linked wiki pages (newest-first, 5 notebooks per batch), or create a page manually.
-                        </p>
+                        class="bg-white border border-stone-200/80 rounded-xl p-6 sm:p-8 space-y-4 shadow-sm">
+                        <div class="text-center space-y-1.5">
+                            <h3 class="text-sm font-semibold text-slate-900">Build your personal wiki</h3>
+                            <p class="text-xs text-stone-500 max-w-lg mx-auto leading-relaxed">
+                                <template v-if="backfillRemaining > 0">
+                                    Compile your {{ backfillRemaining }} OCR’d {{ backfillRemaining === 1 ? 'notebook' : 'notebooks' }} newest-first in batches of 5. Early batches create source digests; cross-notebook topics, projects, and entities emerge as more notebooks are compiled.
+                                </template>
+                                <template v-else-if="backfillUntranscribed > 0">
+                                    {{ backfillUntranscribed }} {{ backfillUntranscribed === 1 ? 'notebook does' : 'notebooks do' }} not have OCR transcripts yet. Process your notebooks with OCR first, then return here to build your wiki—or create a page manually.
+                                </template>
+                                <template v-else>
+                                    No OCR’d notebooks found yet. Upload and transcribe a notebook in Files, or create a wiki page manually.
+                                </template>
+                            </p>
+                        </div>
+
+                        <!-- Queue preview right inside empty state so clicking Backfill is never a surprise -->
+                        <div v-if="backfillNextFiles.length > 0"
+                            class="max-w-lg mx-auto rounded-lg bg-stone-50 border border-stone-200/80 p-3 space-y-2">
+                            <div class="flex items-center justify-between gap-2 text-[11px]">
+                                <span class="font-medium text-slate-700">
+                                    First batch ({{ backfillNextFiles.length }} newest {{ backfillNextFiles.length === 1 ? 'notebook' : 'notebooks' }})
+                                </span>
+                                <span v-if="backfillUntranscribed > 0" class="text-stone-500">
+                                    {{ backfillUntranscribed }} awaiting OCR
+                                </span>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5">
+                                <span v-for="fname in backfillNextFiles" :key="fname"
+                                    class="px-2 py-0.5 rounded-md bg-white border border-stone-200 text-stone-700 font-mono text-[11px] max-w-full truncate">
+                                    {{ fname }}
+                                </span>
+                            </div>
+                        </div>
+
                         <div class="flex flex-wrap items-center justify-center gap-2 pt-1">
-                            <button type="button" @click="handleRunAction('backfill')" :disabled="isBusy || isBackfillDone"
-                                class="px-3.5 py-2 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
-                                <template v-if="runningAction === 'backfill'">Backfilling...</template>
-                                <template v-else-if="backfillRemaining > 0">Build Wiki from Existing Notebooks ({{ backfillRemaining }} ready)</template>
-                                <template v-else>Build Wiki from Existing Notebooks</template>
-                            </button>
+                            <template v-if="backfillRemaining > 0">
+                                <button type="button" @click="handleBackfill(true)" :disabled="isBusy"
+                                    class="px-3.5 py-2 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
+                                    <template v-if="runningAction === 'backfill'">Backfilling…</template>
+                                    <template v-else>Backfill All ({{ backfillRemaining }} {{ backfillRemaining === 1 ? 'notebook' : 'notebooks' }})</template>
+                                </button>
+                                <button v-if="backfillRemaining > nextBatchCount" type="button" @click="handleBackfill(false)" :disabled="isBusy"
+                                    class="px-3.5 py-2 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
+                                    Backfill Next {{ nextBatchCount }}
+                                </button>
+                            </template>
                             <button type="button" @click="startCreate" :disabled="isBusy"
                                 class="px-3.5 py-2 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
-                                New Page
+                                Create Page Manually
                             </button>
                         </div>
                     </div>

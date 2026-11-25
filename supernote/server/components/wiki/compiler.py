@@ -37,7 +37,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from aiohttp import web
 from sqlalchemy import select
@@ -114,6 +114,9 @@ class WikiCompileResult:
     skipped_policy_pages: int
     lint_issues_open: int
     status: str
+    files_processed: list[str] = field(default_factory=list)
+    updated_pages: list[str] = field(default_factory=list)
+    remaining_files: int | None = None
 
 
 class WikiCompilerWorker:
@@ -321,7 +324,7 @@ class WikiCompilerWorker:
                 )
                 raise
 
-            pages_updated, skipped_policy = await self._apply_compile_plan(
+            updated_slugs, skipped_policy = await self._apply_compile_plan(
                 user_id, plan, source_event_seq=max_seq
             )
             issues = await self._wiki_service.run_structural_lint(user_id)
@@ -336,10 +339,11 @@ class WikiCompilerWorker:
                 self._schedule_user_compile(user_id)
             return WikiCompileResult(
                 events_processed=len(page.events),
-                pages_updated=pages_updated,
+                pages_updated=len(updated_slugs),
                 skipped_policy_pages=skipped_policy,
                 lint_issues_open=len(issues),
                 status="idle",
+                updated_pages=updated_slugs,
             )
 
     async def run_backfill(
@@ -383,9 +387,17 @@ class WikiCompilerWorker:
                     skipped_policy_pages=0,
                     lint_issues_open=len(issues),
                     status="idle",
+                    remaining_files=0,
                 )
 
-            pages_updated = 0
+            files_processed = list(
+                dict.fromkeys(
+                    str(diff["payload"]["file_path"])
+                    for diff in synthetic_diffs
+                    if diff.get("payload", {}).get("file_path")
+                )
+            )
+            updated_slugs: list[str] = []
             skipped_policy = 0
             if synthetic_diffs:
                 all_pages = await self._wiki_service.list_pages(user_id, limit=100)
@@ -405,7 +417,7 @@ class WikiCompilerWorker:
                         user_id, status="error", last_error=str(err)
                     )
                     raise
-                pages_updated, skipped_policy = await self._apply_compile_plan(
+                updated_slugs, skipped_policy = await self._apply_compile_plan(
                     user_id, plan, source_event_seq=None
                 )
 
@@ -416,12 +428,18 @@ class WikiCompilerWorker:
                 status="idle",
                 last_error=None,
             )
+            remaining_files, _ = await self._source_service.count_backfill_progress(
+                user_id, before_file_id=next_cursor
+            )
             return WikiCompileResult(
                 events_processed=len(synthetic_diffs),
-                pages_updated=pages_updated,
+                pages_updated=len(updated_slugs),
                 skipped_policy_pages=skipped_policy,
                 lint_issues_open=len(issues),
                 status="idle",
+                files_processed=files_processed,
+                updated_pages=updated_slugs,
+                remaining_files=remaining_files,
             )
 
     async def run_semantic_lint(self, user_id: int) -> list[WikiLintIssueDTO]:
@@ -465,8 +483,8 @@ class WikiCompilerWorker:
         plan: WikiCompilePlan,
         *,
         source_event_seq: int | None,
-    ) -> tuple[int, int]:
-        pages_updated = 0
+    ) -> tuple[list[str], int]:
+        updated_slugs: list[str] = []
         skipped_policy = 0
         for op in plan.page_ops[: self._config.max_pages_per_batch]:
             slug = op.slug.strip()
@@ -485,7 +503,7 @@ class WikiCompilerWorker:
                 if ref.source_type and ref.source_key
             ]
             try:
-                await self._wiki_service.upsert_page(
+                page = await self._wiki_service.upsert_page(
                     user_id,
                     WikiUpsertInput(
                         slug=slug,
@@ -502,13 +520,13 @@ class WikiCompilerWorker:
                         source_event_seq=source_event_seq,
                     ),
                 )
-                pages_updated += 1
+                updated_slugs.append(page.slug)
             except (WikiPolicyError, ValueError) as err:
                 logger.info("Skipping compiler op for %r: %s", slug, err)
                 skipped_policy += 1
 
         await self._record_lint_proposals(user_id, plan.lint_proposals)
-        return pages_updated, skipped_policy
+        return updated_slugs, skipped_policy
 
     async def _record_lint_proposals(
         self,
