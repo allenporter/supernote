@@ -10,8 +10,8 @@
 
 As `supernote.server` evolved from a monolithic application factory into the `ServerCore` + vertical `Component` architecture ([ADR 0001](0001-server-core-component-architecture.md)), component configuration remained split across two patterns:
 
-1. **Legacy flat attributes on `ServerConfig` ([`supernote/server/config.py`](../../supernote/server/config.py))**: Several components (`mcp`, `metrics`, `web_ui`, `events`, `http`, `ai`, `gemini`, `openai`) still read flat top-level fields directly from `core.config` (e.g., `core.config.mcp_enabled`, `core.config.mcp_port`, `core.config.metrics_path`, `core.config.web_notebook_preview`, `core.config.event_log_retention_days`) and ignore the `config: Mapping[str, Any]` dictionary passed into `Component.async_setup(core, config)`.
-2. **Typed per-component config dataclasses**: Newer vertical components (`webhooks`, `wiki`) define their own `mashumaro` `DataClassDictMixin` config dataclasses ([`WebhookConfig`](../../supernote/server/components/webhooks/config.py), [`WikiConfig`](../../supernote/server/components/wiki/config.py)) validated from the `config` mapping passed to `async_setup(core, config)`.
+1. **Legacy flat attributes on `ServerConfig` ([`supernote/server/config.py`](../../../supernote/server/config.py))**: Several components (`mcp`, `metrics`, `web_ui`, `events`, `http`, `ai`, `gemini`, `openai`) still read flat top-level fields directly from `core.config` (e.g., `core.config.mcp_enabled`, `core.config.mcp_port`, `core.config.metrics_path`, `core.config.web_notebook_preview`, `core.config.event_log_retention_days`) and ignore the `config: Mapping[str, Any]` dictionary passed into `Component.async_setup(core, config)`.
+2. **Typed per-component config dataclasses**: Newer vertical components (`webhooks`, `wiki`) define their own `mashumaro` `DataClassDictMixin` config dataclasses ([`WebhookConfig`](../../../supernote/server/components/webhooks/config.py), [`WikiConfig`](../../../supernote/server/components/wiki/config.py)) validated from the `config` mapping passed to `async_setup(core, config)`.
 
 At the same time, self-hosted operators need two complementary ways to configure components:
 - **Declarative / Infrastructure-as-Code**: Pinning settings via `SUPERNOTE_*` environment variables or `config.yaml` in container/Compose deployments.
@@ -23,7 +23,7 @@ At the same time, self-hosted operators need two complementary ways to configure
 
 ### 2.1 Four-Tier Priority Resolution (`ComponentConfigSource`)
 
-Every component's effective configuration is resolved by the `config` vertical component ([`supernote/server/components/config/`](../../supernote/server/components/config/__init__.py)) across four priority tiers (`ComponentConfigSource`):
+Every component's effective configuration is resolved by the `config` vertical component ([`supernote/server/components/config/`](../../../supernote/server/components/config/__init__.py)) across four priority tiers (`ComponentConfigSource`):
 
 ```
 SUPERNOTE_* Env Vars (env)  >  config.yaml (<domain>:) (yaml)  >  Database (CoordinationService) (database)  >  Component Default (default)
@@ -75,7 +75,7 @@ wiki:
 
 ### 2.3 Per-Component `DataClassDictMixin` Schemas (`config_schema_path`)
 
-Every configurable built-in component declares a `config_schema_path` on its [`BuiltinComponentSpec`](../../supernote/server/components/__init__.py) pointing to a `mashumaro` `DataClassDictMixin` dataclass in `supernote/server/components/<domain>/config.py`:
+Every configurable built-in component declares a `config_schema_path` on its [`BuiltinComponentSpec`](../../../supernote/server/components/__init__.py) pointing to a `mashumaro` `DataClassDictMixin` dataclass in `supernote/server/components/<domain>/config.py`:
 
 1. **Single input path (`async_setup(core, config)`)**: Each component parses its typed config dataclass from the `config: Mapping[str, Any]` argument passed to `async_setup(core, config)` (e.g., `self._config = McpConfig.from_dict(config)`) instead of reading flat attributes off `core.config`.
 2. **Schema-driven validation and UI introspection**: `ConfigService` lazily loads `config_schema_path` via `load_component_config_schema(spec)` to validate persisted database configs and incoming `PUT /api/extended/system/components/{domain}` payloads, and extracts declarative `ComponentFieldSpecVO` descriptors (`name`, `type`, `default`) so the Web UI can render component settings without hardcoding per-component forms.
@@ -94,5 +94,5 @@ Every configurable built-in component declares a `config_schema_path` on its [`B
 
 To reach this end state incrementally through small, backward-compatible PRs:
 
-1. **Declarative field alias metadata on `ServerConfig`**: While legacy flat fields (`mcp_enabled`, `metrics_enabled`, `web_enabled`, etc.) exist on `ServerConfig`, they carry `field(metadata={"component": (domain, key)})`. `ServerConfig.load()` and `build_static_component_configs()` ([`supernote/server/components/config/service.py`](../../supernote/server/components/config/service.py)) use this metadata generically to synchronize legacy flat fields with root `<domain>:` sections in both directions.
+1. **Declarative field alias metadata on `ServerConfig`**: While legacy flat fields (`mcp_enabled`, `metrics_enabled`, `web_enabled`, etc.) exist on `ServerConfig`, they carry `field(metadata={"component": (domain, key)})`. `ServerConfig.load()` and `build_static_component_configs()` ([`supernote/server/components/config/service.py`](../../../supernote/server/components/config/service.py)) use this metadata generically to synchronize legacy flat fields with root `<domain>:` sections in both directions.
 2. **Incremental per-component schema migration**: As each remaining component (`mcp`, `metrics`, `web_ui`, `events`, `http`, `ai`, `gemini`, `openai`) is migrated to its own `supernote/server/components/<domain>/config.py` dataclass and `config_schema_path`, its flat attributes on `ServerConfig` and the transitional bridging in `build_static_component_configs()` are retired until `build_static_component_configs()` becomes a direct pass-through of `root_component_configs`.
