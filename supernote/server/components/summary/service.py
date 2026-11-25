@@ -758,7 +758,12 @@ class SummaryService:
     async def get_referenced_blob_keys(
         session: AsyncSession, candidate_keys: set[str]
     ) -> set[str]:
-        """Return the subset of ``candidate_keys`` still referenced by `SummaryDO` handwriting blobs."""
+        """Return the subset of ``candidate_keys`` still referenced by `SummaryDO` handwriting blobs.
+
+        Intentionally queries across all users (matching `VirtualFileSystem.get_unreferenced_storage_keys`):
+        `USER_DATA_BUCKET` is a shared blob store, so deletion safety must confirm no user still
+        references a physical key before `FileService.cleanup_unreferenced_blobs` deletes it.
+        """
         if not candidate_keys:
             return set()
         stmt = (

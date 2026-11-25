@@ -9,24 +9,22 @@ from supernote.server.components.transcript import (
     TranscriptService,
 )
 from supernote.server.core import Component, ComponentLoader, ServerCore
+from tests.server.components.conftest import LoadComponents
 
 
-async def test_transcript_component_lifecycle(component_core: ServerCore) -> None:
+async def test_transcript_component_lifecycle(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
     """Verify TranscriptComponent registers TranscriptService and supports idempotent lifecycle."""
-    component = TranscriptComponent()
+    loader = await load_components("transcript")
+    component = loader.get("transcript")
     assert isinstance(component, Component)
     assert component.domain == "transcript"
     assert component.dependencies == ("ai",)
     assert component.platforms == ("http", "mcp", "processor")
-
-    loader = ComponentLoader()
-    loader.register(AiComponent())
-    loader.register(component)
-
-    await loader.async_setup_all(component_core, {})
     assert isinstance(component_core.app[TRANSCRIPT_SERVICE_KEY], TranscriptService)
 
-    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)
     await loader.async_stop_all(component_core)
 

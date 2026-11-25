@@ -8,16 +8,14 @@ from unittest.mock import patch
 
 import pytest
 from prometheus_client import REGISTRY
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 
-from supernote.server.components.summary import SummaryService
 from supernote.server.constants import (
     CACHE_BUCKET,
     RECYCLE_RETENTION_MS,
     USER_DATA_BUCKET,
 )
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
-from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import FALLBACK_QUOTA, UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
@@ -861,70 +859,52 @@ async def test_file_service_publishes_vfs_domain_events(
     ]
 
 
-async def test_file_overwrite_and_purge_preserve_summary_referenced_blob(
+async def test_file_overwrite_and_purge_preserve_provider_referenced_blob(
     file_service: FileService,
     blob_storage: BlobStorage,
-    session_manager: DatabaseSessionManager,
     test_user_id: int,
     test_users: list[str],
 ) -> None:
-    """Near-miss: overwriting or purging a file must not delete a blob still referenced by SummaryDO."""
-    file_service.register_blob_reference_provider(
-        SummaryService.get_referenced_blob_keys
-    )
+    """Overwriting or purging a file must not delete a blob still referenced by a registered provider."""
+    _ = test_user_id
+    protected_keys = {"shared_ext_key_v1", "shared_ext_key_v2"}
+
+    async def _provider(_session: object, candidate_keys: set[str]) -> set[str]:
+        return candidate_keys & protected_keys
+
+    unregister = file_service.register_blob_reference_provider(_provider)
     user = test_users[0]
-    content_v1 = b"shared with summary v1"
+    content_v1 = b"shared with external table v1"
     md5_v1 = hashlib.md5(content_v1).hexdigest()
-    content_v2 = b"shared with summary v2"
+    content_v2 = b"shared with external table v2"
     md5_v2 = hashlib.md5(content_v2).hexdigest()
 
-    await blob_storage.put(USER_DATA_BUCKET, "shared_sum_key_v1", content_v1)
-    await blob_storage.put(USER_DATA_BUCKET, "shared_sum_key_v2", content_v2)
-
-    async with session_manager.session() as session:
-        session.add_all(
-            [
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="sum-ref-v1",
-                    handwrite_inner_name="shared_sum_key_v1",
-                ),
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="sum-ref-v2",
-                    handwrite_inner_name="shared_sum_key_v2",
-                ),
-            ]
-        )
-        await session.commit()
+    await blob_storage.put(USER_DATA_BUCKET, "shared_ext_key_v1", content_v1)
+    await blob_storage.put(USER_DATA_BUCKET, "shared_ext_key_v2", content_v2)
 
     await file_service.finish_upload(
-        user, "cross_ref.txt", "/", md5_v1, "shared_sum_key_v1"
+        user, "cross_ref.txt", "/", md5_v1, "shared_ext_key_v1"
     )
-    # Overwrite with v2 -> v1 blob must survive because SummaryDO still references it
+    # Overwrite with v2 -> v1 blob must survive because the provider still references it
     entity_v2 = await file_service.finish_upload(
-        user, "cross_ref.txt", "/", md5_v2, "shared_sum_key_v2"
+        user, "cross_ref.txt", "/", md5_v2, "shared_ext_key_v2"
     )
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v1") is True
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v1") is True
 
-    # Soft-delete and purge v2 -> v2 blob must survive because SummaryDO still references it
+    # Soft-delete and purge v2 -> v2 blob must survive because the provider still references it
     await file_service.delete_item(user, entity_v2.id)
     recycled = await file_service.list_recycle(user)
     await file_service.delete_from_recycle(user, [recycled[0].id])
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v2") is True
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v2") is True
 
-    # Once SummaryDO rows are removed, cleanup_unreferenced_blobs deletes both keys
-    async with session_manager.session() as session:
-        await session.execute(
-            delete(SummaryDO).where(SummaryDO.user_id == test_user_id)
-        )
-        await session.commit()
-
+    # Once the provider stops referencing (or is unregistered), cleanup deletes both keys
+    protected_keys.clear()
+    unregister()
     await file_service.cleanup_unreferenced_blobs(
-        {"shared_sum_key_v1", "shared_sum_key_v2"}
+        {"shared_ext_key_v1", "shared_ext_key_v2"}
     )
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v1") is False
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v2") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v1") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v2") is False
 
 
 async def test_get_storage_quota(
@@ -1369,10 +1349,7 @@ async def test_handle_blob_cleanup_event(
     await blob_storage.put(
         USER_DATA_BUCKET, "referenced_by_recycled_file.bin", b"recycled-file-data"
     )
-    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_summary.bin", b"sum-data")
-    await blob_storage.put(
-        USER_DATA_BUCKET, "referenced_by_deleted_summary.bin", b"deleted-sum-data"
-    )
+    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_provider.bin", b"ext-data")
 
     async with session_manager.session() as session:
         session.add_all(
@@ -1393,25 +1370,14 @@ async def test_handle_blob_cleanup_event(
                     directory_id=0,
                     is_active="N",
                 ),
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="keep-summary-uuid",
-                    handwrite_inner_name="referenced_by_summary.bin",
-                    is_deleted=False,
-                ),
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="soft-deleted-summary-uuid",
-                    handwrite_inner_name="referenced_by_deleted_summary.bin",
-                    is_deleted=True,
-                ),
             ]
         )
         await session.commit()
 
-    file_service.register_blob_reference_provider(
-        SummaryService.get_referenced_blob_keys
-    )
+    async def _provider(_session: object, candidate_keys: set[str]) -> set[str]:
+        return candidate_keys & {"referenced_by_provider.bin"}
+
+    file_service.register_blob_reference_provider(_provider)
     await file_service.start()
     await file_service.start()  # idempotent
     await event_bus.publish(
@@ -1420,8 +1386,7 @@ async def test_handle_blob_cleanup_event(
                 "unreferenced_hw.bin",
                 "referenced_by_file.bin",
                 "referenced_by_recycled_file.bin",
-                "referenced_by_summary.bin",
-                "referenced_by_deleted_summary.bin",
+                "referenced_by_provider.bin",
             }
         )
     )
@@ -1432,7 +1397,4 @@ async def test_handle_blob_cleanup_event(
     assert await blob_storage.exists(
         USER_DATA_BUCKET, "referenced_by_recycled_file.bin"
     )
-    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_summary.bin")
-    assert await blob_storage.exists(
-        USER_DATA_BUCKET, "referenced_by_deleted_summary.bin"
-    )
+    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_provider.bin")
