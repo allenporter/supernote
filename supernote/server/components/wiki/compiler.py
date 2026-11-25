@@ -307,7 +307,12 @@ class WikiCompilerWorker:
                 for ev in page.events
             ]
             all_pages = await self._wiki_service.list_pages(user_id, limit=100)
-            prompt = build_compile_prompt(all_pages, diff_payload, linked_context)
+            prompt = build_compile_prompt(
+                all_pages,
+                diff_payload,
+                linked_context,
+                max_pages_per_batch=self._config.max_pages_per_batch,
+            )
 
             # Execute LLM HTTP call strictly outside any open SQLite session.
             try:
@@ -401,8 +406,31 @@ class WikiCompilerWorker:
             skipped_policy = 0
             if synthetic_diffs:
                 all_pages = await self._wiki_service.list_pages(user_id, limit=100)
+                task_rows = await self._source_service.list_task_snapshots(
+                    user_id, limit=50
+                )
+                linked_context: dict[str, object] = {}
+                if task_rows:
+                    linked_context["tasks"] = [
+                        {
+                            "task_id": t.task_id,
+                            "title": t.title,
+                            "detail": t.detail,
+                            "status": t.status,
+                            "importance": t.importance,
+                            "due_time": t.due_time,
+                            "completed_time": t.completed_time,
+                        }
+                        for t in task_rows
+                    ]
+                backfill_page_budget = max(
+                    self._config.max_pages_per_batch, max_files * 2
+                )
                 prompt = build_compile_prompt(
-                    all_pages, synthetic_diffs, linked_context={}
+                    all_pages,
+                    synthetic_diffs,
+                    linked_context=linked_context,
+                    max_pages_per_batch=backfill_page_budget,
                 )
                 try:
                     raw_plan = await self._text_model.generate_json(
@@ -418,7 +446,10 @@ class WikiCompilerWorker:
                     )
                     raise
                 updated_slugs, skipped_policy = await self._apply_compile_plan(
-                    user_id, plan, source_event_seq=None
+                    user_id,
+                    plan,
+                    source_event_seq=None,
+                    max_pages=backfill_page_budget,
                 )
 
             issues = await self._wiki_service.run_structural_lint(user_id)
@@ -483,25 +514,37 @@ class WikiCompilerWorker:
         plan: WikiCompilePlan,
         *,
         source_event_seq: int | None,
+        max_pages: int | None = None,
     ) -> tuple[list[str], int]:
         updated_slugs: list[str] = []
         skipped_policy = 0
-        for op in plan.page_ops[: self._config.max_pages_per_batch]:
+        page_cap = (
+            max_pages if max_pages is not None else self._config.max_pages_per_batch
+        )
+        for op in plan.page_ops[:page_cap]:
             slug = op.slug.strip()
             title = op.title.strip()
             if not slug or not title:
                 continue
             page_kind = op.page_kind if op.page_kind in VALID_PAGE_KINDS else "topic"
-            source_refs = [
-                WikiSourceRefDTO(
-                    source_type=ref.source_type,
-                    source_key=ref.source_key,
-                    file_id=ref.file_id,
-                    last_event_seq=source_event_seq,
+            source_refs: list[WikiSourceRefDTO] = []
+            for ref in op.source_refs:
+                if not ref.source_type or not ref.source_key:
+                    continue
+                clean_key = ref.source_key.strip()
+                redundant_prefix = f"{ref.source_type}:"
+                if clean_key.startswith(redundant_prefix):
+                    clean_key = clean_key[len(redundant_prefix) :]
+                if not clean_key:
+                    continue
+                source_refs.append(
+                    WikiSourceRefDTO(
+                        source_type=ref.source_type,
+                        source_key=clean_key,
+                        file_id=ref.file_id,
+                        last_event_seq=source_event_seq,
+                    )
                 )
-                for ref in op.source_refs
-                if ref.source_type and ref.source_key
-            ]
             try:
                 page = await self._wiki_service.upsert_page(
                     user_id,

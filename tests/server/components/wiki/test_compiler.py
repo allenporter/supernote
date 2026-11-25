@@ -474,3 +474,67 @@ async def test_cursor_expired_and_ai_error_update_checkpoint(
     status = await wiki_service.get_status(1)
     assert status.status == "error"
     assert status.last_error == "upstream 503"
+
+
+async def test_apply_compile_plan_strips_redundant_source_type_prefix(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    async with session_manager.session() as session:
+        note = UserFileDO(
+            user_id=1,
+            directory_id=0,
+            file_name="Spec.note",
+            is_folder="N",
+            is_active="Y",
+        )
+        session.add(note)
+        await session.flush()
+        session.add(
+            NotePageContentDO(
+                file_id=note.id,
+                page_index=0,
+                page_id="P1",
+                text_content="Aurora spec",
+            )
+        )
+        await session.commit()
+
+    fake_llm = FakeTextGenerationModel(
+        responses=[
+            {
+                "page_ops": [
+                    {
+                        "slug": "projects/aurora",
+                        "title": "Aurora",
+                        "page_kind": "project",
+                        "body_md": "Spec body",
+                        "source_refs": [
+                            {
+                                "source_type": "note_page",
+                                "source_key": "note_page:1:P1",
+                                "file_id": 1,
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    )
+    worker = WikiCompilerWorker(
+        config=WikiConfig(enabled=True, auto_compile=False),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=fake_llm,
+    )
+    res = await worker.run_backfill(1, max_files=5)
+    assert res.pages_updated == 1
+    page = await wiki_service.get_page(1, "projects/aurora")
+    assert page is not None
+    assert [r.source_key for r in page.source_refs] == ["1:P1"]
