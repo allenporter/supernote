@@ -69,7 +69,7 @@ ai:
     max_concurrency: 5
   embedding:
     provider: gemini
-    model: gemini-embedding-001
+    model: gemini-embedding-2  # see evals/search/RESULTS.md
     max_concurrency: 5
 ```
 
@@ -158,7 +158,7 @@ ai:
     max_concurrency: 5
   embedding:
     provider: gemini
-    model: gemini-embedding-001
+    model: gemini-embedding-2  # see evals/search/RESULTS.md
     max_concurrency: 5
 
 webhooks:
@@ -236,7 +236,7 @@ Defined at `ai.ocr`, `ai.summary`, and `ai.embedding`:
 | YAML Key | Type | Default | Validation & Behavior |
 | :--- | :--- | :--- | :--- |
 | `ai.<capability>.provider` | `str` | `"gemini"` | Name of the provider entry in `ai.providers` (or a built-in provider type such as `"gemini"`, `"openai"`, `"apple"`). Non-empty string required. |
-| `ai.<capability>.model` | `str` | `""` | Provider-specific model identifier (e.g., `"gemini-3.5-flash-lite"`, `"gemini-3.6-flash"`, `"gemini-embedding-001"`, `"gemma3:27b"`, `"embeddinggemma"`, `"vision-accurate"`). Non-empty string required. |
+| `ai.<capability>.model` | `str` | `""` | Provider-specific model identifier (e.g., `"gemini-3.5-flash-lite"`, `"gemini-3.6-flash"`, `"gemini-embedding-2"`, `"gemma3:27b"`, `"embeddinggemma"`, `"vision-accurate"`). Non-empty string required; see [OCR](../evals/ocr/RESULTS.md) and [Search & Embedding](../evals/search/RESULTS.md) benchmarks. |
 | `ai.<capability>.max_concurrency` | `int` | `5` | Maximum concurrent in-flight API requests for this capability (`>= 1`). Lower to `1` or `2` when using local GPU/CPU inference servers or macOS `apple` Vision. |
 | `ai.ocr.prompt_override` | `str \| None` | `None` | Optional fixed prompt that replaces the composed page-metadata and legend prompt when calling the OCR model. Non-empty string required when set. |
 
@@ -263,7 +263,7 @@ For single-variable Docker deployments, `supernote.server.config.ServerConfig` a
 | :--- | :--- | :--- | :--- |
 | `gemini_api_key` | `SUPERNOTE_GEMINI_API_KEY` | `None` | `ai.providers.gemini.api_key` (and enables `ocr`, `summary`, `embedding` if unset) |
 | `gemini_ocr_model` | `SUPERNOTE_GEMINI_OCR_MODEL` | `"gemini-3.5-flash-lite"` | `ai.ocr.model` and `ai.summary.model` |
-| `gemini_embedding_model` | `SUPERNOTE_GEMINI_EMBEDDING_MODEL` | `"gemini-embedding-001"` | `ai.embedding.model` |
+| `gemini_embedding_model` | `SUPERNOTE_GEMINI_EMBEDDING_MODEL` | `"gemini-embedding-2"` | `ai.embedding.model` |
 | `gemini_max_concurrency` | `SUPERNOTE_GEMINI_MAX_CONCURRENCY` | `5` | `ai.{ocr,summary,embedding}.max_concurrency` |
 
 ---

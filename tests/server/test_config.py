@@ -344,6 +344,11 @@ def test_server_config_legacy_gemini_syncs_to_ai(tmp_path: Path) -> None:
         model="gemini-3.5-flash-lite",
         max_concurrency=5,
     )
+    assert default_gemini.ai.embedding == ModelConfig(
+        provider="gemini",
+        model="gemini-embedding-2",
+        max_concurrency=5,
+    )
 
     direct = ServerConfig(
         gemini_api_key="legacy-key",

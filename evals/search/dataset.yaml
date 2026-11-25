@@ -1,0 +1,2099 @@
+---
+name: supernote-search-suite-v1
+notebooks:
+  - file_name: ocr_daily.note
+    description: Real notebook fixture imported from evals/ocr (daily.note).
+    pages:
+      - id: ocr_bujo_daily_friday
+        page_index: 0
+        page_id: P20261107080000DAILYLOGPAGE0001
+        keywords: []
+        text_content: |-
+          2026-11-07 Friday
+          * • Review Q4 infrastructure budget
+          X Send signed lease renewal to landlord
+          o 10:30 Design sync with Maya and Leo
+            - Agreed to ship local OCR before embeddings
+            • Follow up on latency benchmark numbers
+          > Migrate home NAS backup script to cron
+          • ~~Order replacement Ceramic nibs~~
+          o 17:45 Strength training session
+            - Deadlift 3x5 at 275 lbs felt solid
+          • Read two chapters of Designing Data Systems
+      - id: ocr_bujo_daily_saturday
+        page_index: 1
+        page_id: P20261108083000DAILYLOGPAGE0002
+        keywords: []
+        text_content: |-
+          2026-11-08 Saturday
+          * X Fix SQLite WAL lock timeout in PR #514
+          • Tag v0.25.0 release candidate
+            • Verify Linux wheel excludes pyobjc extras
+          o 09:00 Farmers market and coffee run
+          < Schedule annual dentist checkup for Dec
+          > Draft blog post on self-hosted e-ink cloud
+          • ~~Cancel unused staging VM instance~~
+          - Latency dropped from 920ms to 165ms after warmup
+  - file_name: bujo_daily_weekend.note
+    description: Real notebook fixture imported from evals/ocr (bujo_daily_weekend.note).
+    pages:
+      - id: ocr_bujo_daily_weekend
+        page_index: 0
+        page_id: P20261108095837587366otWAMvocmCqg
+        keywords: []
+        text_content: |-
+          11.08 SAT
+          X Build out test dataset
+          > transfer test notes to PC
+          • re-run evals
+          o Mel in SD
+          • Hike w/ the Boys
+
+          11.09 SUN
+          • transfer test notes to PC
+          • re-run evals
+          o Practice
+          • dishes befor Mel returns
+          • watch Pitt ep 5
+  - file_name: ocr_weekly.note
+    description: Real notebook fixture imported from evals/ocr (weekly.note).
+    pages:
+      - id: ocr_bujo_weekly_w45
+        page_index: 0
+        page_id: P20261102090000WEEKLYLOGPAGE001
+        keywords: []
+        text_content: |-
+          Week 45: Nov 2 - Nov 8
+
+          * X Finalize multi-provider AI config schema
+          * • Benchmark Apple Vision vs Ollama gemma3
+          > Clean garage workbench and donate boxes
+          o Wed 14:00 Quarterly roadmap review
+            - Keep core container RAM under 160MB
+          X Book Thanksgiving flights to Seattle
+
+          Weekly Review
+
+          - Shipped named providers and local macOS OCR
+          - Biggest challenge: context switching mid-week
+          • Next week focus: bounded summary chunking
+  - file_name: ocr_monthly.note
+    description: Real notebook fixture imported from evals/ocr (monthly.note).
+    pages:
+      - id: ocr_bujo_monthly_calendar
+        page_index: 0
+        page_id: P20261101070000MONTHLYCALPAGE01
+        keywords: []
+        text_content: |-
+          November 2026
+
+          o 1 Sun Daylight saving time ends
+          o 3 Tue Election day
+          * • 6 Fri Release v0.25.0 milestone
+          o 9 Mon Pediatrician appointment 11:15
+          o 14 Sat Trail half marathon in Marin
+          X 18 Wed Quarterly tax estimate due
+          o 21 Sat Host friendsgiving dinner
+          o 26 Thu Thanksgiving family trip
+          • 30 Mon Monthly budget and habit retro
+      - id: ocr_bujo_monthly_goals
+        page_index: 1
+        page_id: P20261101070500MONTHLYTASKPAGE2
+        keywords: []
+        text_content: |-
+          November Goals & Task List
+
+          * • Complete 12 strength workouts this month
+          X Publish OCR evaluation suite and docs
+          • Add per-notebook custom vocabulary hints
+            - Harvest keywords from .note metadata
+          > Upgrade home server UPS battery pack
+          < Move winter camping trip to January
+          • ~~Rewrite legacy mobile sync prototype~~
+          - Lesson learned: measure CER before tuning
+  - file_name: bujo_monthly_november.note
+    description: Real notebook fixture imported from evals/ocr (bujo_monthly_november.note).
+    pages:
+      - id: ocr_bujo_monthly_november_backlog
+        page_index: 0
+        page_id: P202611080950394396260ZJlaLTXwUdL
+        keywords: []
+        text_content: |-
+          NOVEMBER
+          - Backlog
+            X salad
+            ~~revamp plan for network~~
+            < cat carrier options
+            • call mom
+            • return faucet
+            • take out 3 bags ...
+
+          - A13
+            • rewrite entire sync engine
+            • reduce latency by 50%
+            • profile encoder
+      - id: ocr_bujo_monthly_november_calendar
+        page_index: 1
+        page_id: P20261108095246385228VY3W0224uuri
+        keywords: []
+        text_content: |-
+          NOVEMBER 2026
+          1 S
+          2 M
+          3 T
+          4 W
+          5 T
+          6 F
+          7 S o Mel in San Diego
+          8 S o Practice
+          9 M
+          10 T
+          11 W o Eng Review
+          12 T
+          13 F
+          14 S o Practice
+          15 S
+          16 M
+          17 T
+          18 W
+          19 T
+          20 F
+          21 S o Practice
+          22 S o L's Wedding
+          23 M o ACU Break - no school
+          24 T
+          25 W
+          26 T o Thanksgiving o San Diego
+          27 F
+          28 S o Practice
+          29 S
+          30 M
+  - file_name: 20251207_221454.note
+    description: Real notebook fixture imported from evals/ocr (20251207_221454.note).
+    pages:
+      - id: ocr_empty_dot_grid
+        page_index: 0
+        page_id: P20251207221459707987FP6NJhcNc54j
+        keywords: []
+        text_content: ''
+  - file_name: a5x-2.14.28.note
+    description: Real notebook fixture imported from evals/ocr (a5x-2.14.28.note).
+    pages:
+      - id: ocr_a5x_obsidian_prose
+        page_index: 0
+        page_id: P20240304154152724195fItGtTCBnxmZ
+        keywords: []
+        text_content: |-
+          Subject: Obsidian Supernote Integration
+          Test File
+
+          Let me know how this works, please. I've
+          been thinking about setting up an Obsidian
+          instance for a while now.
+  - file_name: rtr.note
+    description: Real notebook fixture imported from evals/ocr (rtr.note).
+    pages:
+      - id: ocr_rtr_paragraphs
+        page_index: 0
+        page_id: P20250122084153112881tqN4AcQ6JE5A
+        keywords: []
+        text_content: |-
+          Real time recognition paragraph test
+
+          With enough space a new paragraph
+          should be created. If lines are
+          close then the text should reflow.
+
+          This should be a new paragraph.
+
+          As well as this.
+
+          But this is the last paragraph and
+          should reflow together.
+  - file_name: manta.note
+    description: Real notebook fixture imported from evals/ocr (manta.note).
+    pages:
+      - id: ocr_manta_alphanumeric
+        page_index: 0
+        page_id: P202412181754578821102O0Z7AdARSSL
+        keywords: []
+        text_content: |-
+          This is a note created on
+          the A5X2 Manta.
+
+          It doesn't work. :(
+  - file_name: stroller.note
+    description: Real notebook fixture imported from evals/ocr (stroller.note).
+    pages:
+      - id: ocr_stroller_diagram_light
+        page_index: 0
+        page_id: P20250315133236053742tqUiN3F7RBJD
+        keywords:
+          - ks-tilt
+          - ks-trapezoid
+          - ks-shapes
+        text_content: |-
+          Baby
+          Handle bar
+          Rock
+          Happy Baby in a stroller
+      - id: ocr_stroller_diagram_dark
+        page_index: 1
+        page_id: P202410201815195784935Ilqe89X8m3F
+        keywords:
+          - ks-tilt
+          - ks-trapezoid
+          - ks-shapes
+        text_content: |-
+          Baby
+          Handle bar
+          Rock
+          Happy Baby in a stroller
+  - file_name: sn2md_20260618.note
+    description: Real notebook fixture imported from evals/ocr (sn2md_20260618.note).
+    pages:
+      - id: ocr_sn2md_rotated_quadrants
+        page_index: 0
+        page_id: P20260618074225100305hWVBgYPH8M8P
+        keywords: []
+        text_content: |-
+          deadlift
+          weights
+
+          bed
+          work
+
+          Studio
+          making
+
+          clogging
+          gig
+  - file_name: guitar_theory.note
+    description: Real notebook fixture imported from evals/ocr (guitar_theory.note).
+    pages:
+      - id: ocr_guitar_caged_shapes
+        page_index: 0
+        page_id: P20231228174201877470DZj4cQ3c93Wi
+        keywords: []
+        text_content: |-
+          GUITAR
+
+          C shape / #1
+            3 4 5
+            7 (R) 2
+            5 6
+            2 3 4
+            6 7 (R)
+            3 4 5
+
+          A Shape / #2
+            5 6
+            2 3 4
+            6 7 (R)
+            3 4 5
+            7 (R) 2
+            5 6
+
+          G Shape / #3
+            6 7 (R)
+            3 4 5
+            7 (R) 2
+            5 6 7
+            2 3 4
+            6 7 (R)
+
+          E Shape / #4
+            7 (R)
+            5 6
+            2 3 4
+            6 7 (R)
+            3 4 5
+            7 (R) 2
+
+          D Shape / #5
+            2 3 4
+            6 7 (R)
+            3 4 5
+            7 (R) 2
+            5 6
+            2 3 4
+      - id: ocr_guitar_tuning_grid
+        page_index: 1
+        page_id: P20240128210859017639qfzFJkp6gj2V
+        keywords: []
+        text_content: |-
+          C Tuning Analysis
+
+          C maj
+          E E F G   A   B C   D   E
+          B C D     E F   G   A   B
+          G   A   B C   D   E F   G
+          C   D   E F   G   A   B C
+          G   A   B C   D   E F   G
+          C   D   E F   G   A   B C
+            1 2 3 4 5 6 7 8 9 10 11 12
+
+          Song (AoT)
+          E               B       D
+          B           6
+          G   A   B C   D   E F       A A#
+          C   D E
+          G   A   B         E F       A A#
+          C
+            C maj?                  12
+            A min?
+          - A# is not in the key but
+            resolves
+  - file_name: turkish.note
+    description: Real notebook fixture imported from evals/ocr (turkish.note).
+    pages:
+      - id: ocr_turkish_diacritics
+        page_index: 0
+        page_id: P20240305110653910133E76KFYbWNElz
+        keywords: []
+        text_content: |-
+          Şimdi ben buraya neden çıktım?
+          Niçin çıktım?
+          Nasıl çıktım?
+          Bunu izaha gerek yok.
+          Gördünüz, yürüdüm çıktım.
+          Ama çıkmamış da olabilirim.
+  - file_name: french_phrases.note
+    description: Real notebook fixture imported from evals/ocr (french_phrases.note).
+    pages:
+      - id: ocr_french_cafe_bar
+        page_index: 0
+        page_id: P20240225203149557785BDv7rGfZYYrR
+        keywords: []
+        text_content: |-
+          CAFE / BAR
+
+          Bonjour, vous desirez-quoi?
+            , que désirez-vous commander?
+            , qu'est ce que vous prenez?
+          Bonjour, souhaitez-vous commander?
+
+          un café
+          un express
+          un noisette - cafe w/ drop of milk
+          un café crème
+
+          une evian
+          un perrier
+          un coca
+          un coca zero
+          un coca light
+          un limonade (sprite)
+
+          une biere => un demi
+          un verre de vin rouge
+          un verre de vin blanc
+          un verre de rosé
+
+          L'addition
+          ça fait combien
+
+          sil vous plaît
+      - id: ocr_french_travel_phrases
+        page_index: 1
+        page_id: P20240225204112005678mcwpftp9Wo6E
+        keywords: []
+        text_content: |-
+          Travel
+
+          Je ne parle pas français.
+          Je ne comprends pas.
+          Pouvez-vous repeter s'il vous plaît?
+          Pouvez-vous m'aider s'il vous plaît?
+            - Can you help me please?
+          Je veux acheter ça?
+            - I want to buy this
+          Où sont les toilettes?
+
+          Je voudrais - rarely used and is formal
+          Est-ce que je peux avoir un cafe svp?
+            - can I have a coffee
+          Je vais prendre un café
+            - I'll take a coffee
+      - id: ocr_french_verbs_list
+        page_index: 2
+        page_id: P20240225205133330212jAmW984X9gIc
+        keywords: []
+        text_content: |-
+          100 sentences
+          Verbs
+          Vouloir / Je veux / I want
+          Pouvoir / Je peux / I can
+          Devoir / Je dois / I must / have to
+
+          Savoir / Je sais / I know
+          Aimer / J'aime / I like / love
+          Souhaiter / Je souhaite / I wish
+
+          Préférer / Je préfère / I prefer
+          Adorer / J'adore / I adore
+          Détester / Je déteste / I hate
+          J'ai besoin de / I need to
+
+          manger / to eat
+          boire / to drink
+          Dormir / to sleep
+          Partir / to leave
+          Revenir / to come back / go back
+          Sortir / to go out / get out
+          Marcher / to walk
+          Rester / to stay
+          Arréter / to stop
+          Courir / to run
+          Visiter / to visit
+  - file_name: spanish_lessons.note
+    description: Real notebook fixture imported from evals/ocr (spanish_lessons.note).
+    pages:
+      - id: ocr_spanish_cognates_lesson_1
+        page_index: 0
+        page_id: P20240421112121036472Yh4yy8q86FpC
+        keywords: []
+        text_content: |-
+          QRoo Lesson 1
+
+          1. To educate -> education
+            educación -> educar
+          2. To observe -> observación
+            obervar
+          3. To reserve -> reservación
+            reservar
+          4. To legalize -> legalization
+            legalización -> legalizar
+          5. To facilitate -> facilitation
+            facilitación -> facilitar
+          6. To create -> creation
+            creación -> ~~creatar~~
+            crear
+          7. To document
+            documentation
+            documentación
+            documentar
+      - id: ocr_spanish_sentences_lesson_2
+        page_index: 1
+        page_id: P20240421115657632294KMEsbodbU7Qi
+        keywords: []
+        text_content: |-
+          - Roo Lesson 2
+          - I can't memorize the information
+          No puedo memorizar la información.
+          - I want to confirm the information but I can't
+          Quiero confirmar la información pero no puedo.
+          - I want to participate but I can't
+          Quiero participar pero no puedo.
+          - I want to cancel the reservation but I can't
+          Quiero cancelar la reservación pero no puedo.
+          - I want to celebrate but I can't
+          Quiero celebrar pero no puedo.
+  - file_name: ocr_test.note
+    description: Real notebook fixture imported from evals/ocr (test.note).
+    pages:
+      - id: ocr_inverted_banner_gray
+        page_index: 0
+        page_id: ''
+        keywords:
+          - Different
+        text_content: |-
+          Different title
+
+            Different
+      - id: ocr_inverted_banner_scribble_overlap
+        page_index: 1
+        page_id: ''
+        keywords:
+          - dummy
+        text_content: |-
+          Main title
+
+          write this on top!
+          ~~Dummy~~
+
+          I'm a keyword: dummy
+  - file_name: 2026_Platform_Eng_Notes.note
+    description: Distributed systems architecture, storage and queue debugging, incident notes, caching trade-offs, and on-call handoffs across 2026.
+    pages:
+      - id: work_eng_p0
+        page_index: 0
+        page_id: P20260114093000xK8mP2vL9nQz
+        keywords:
+          - postmortem
+          - kafka
+        text_content: |-
+          2026-01-14 - Billing Consumer Lag Spike (SEV-2)
+          - Alert fired 03:18 UTC: consumer group `billing-rollup-v2` lag > 1.4M msgs
+          - Root trigger: partition rebalance loop after deploy #4812 bumped `max.poll.records` 200 -> 1000
+          - Downstream ledger RPC p99 jumped 85ms -> 640ms, tripped 30s poll timeout
+          - Temp fix w/ Priya: rolled back env var + paused replay worker on shard-03
+          - RSS on worker pods peaked ~3.7 GB (limit 4Gi) right before OOMKill
+          - Next: cap batch bytes at 2MB + move idempotency check to local RocksDB state
+          - Ref issue PLAT-904 / PR #4819
+      - id: work_eng_p1
+        page_index: 1
+        page_id: P20260219141500bR4tY7uJ1wXe
+        keywords: []
+        text_content: |-
+          2026-02-19 - Primary DB Autovacuum & Bloat Debugging
+          - `events_outbox` table hit 420 GB on `postgresq1` primary (dead tuples ~68%)
+          - Long-running analytics read txn from Metabase held xmin horizon for 6h 40m
+          - Checkpointer write spikes causing p95 insert stall ~190ms every 5 min
+          - Tuned table storage params:
+            autovacuum_vacuum_scale_factor = 0.01
+            autovacuum_vacuum_cost_limit = 2400
+          - Set `idle_in_transaction_session_timeout = 5min` on reporting role
+          - Need to route BI queries to read replica `pg-ro-usw2-02` by end of Feb
+      - id: work_eng_p2
+        page_index: 2
+        page_id: P20260403110500mN6pQ9sV3cZa
+        keywords:
+          - architecture
+          - decision-needed
+        text_content: |-
+          2026-04-03 - Object Storage Tiering & Chunk Dedup Sketch
+          - Current S3 Standard spend ~$38k/mo for raw sync blobs (approx 610 TB)
+          - 74% of blobs untouched after day 14, except re-index sweeps
+          - Option A: S3 Intelligent-Tiering -> zero code change, monitoring fee on small objects (<128KB hurts us!)
+          - Option B: pack small deltas into 16MB tar-zstd segments + lifecycle to Glacier IR at 30d
+          - Marcus pointed out compaction job needs lease lock in etcd so 2 workers don't double-pack
+          - Est savings ~$14.5k/mo if we compact objects < 64KB first
+          - Prototype segment reader in PR #5102 before Q2 infra budget lock
+      - id: work_eng_p3
+        page_index: 3
+        page_id: P20260521164000dF2gH5jK8lPo
+        keywords: []
+        text_content: |-
+          2026-05-21 - Redis Cluster Stampede on Session Metadata
+          - Saw 42k req/s spike on hot key `org_cfg:9921` when enterprise tenant ran bulk CLI import
+          - Single shard CPU pegged at 98%, cross-slot pipeline calls timed out in auth-proxy
+          - Quick mitigation: 15s in-process TinyLFU cache w/ jittered TTL (12-18s)
+          - Also adding singleflight coalescing in Go gateway (`pkg/cache/loader.go`)
+          - Memory check: 50k entries * ~1.2KB = ~60MB per gateway pod -> totally fine
+          - Double-check revocation SLA w/ SecEng: is 15s stale org permission acceptable?
+          - Tracking under PLAT-1138
+      - id: work_eng_p4
+        page_index: 4
+        page_id: P20260709100000qW3eR6tY9uIo
+        keywords:
+          - oncall
+          - follow-up
+        text_content: |-
+          2026-07-09 - Primary On-Call Handoff (Dev -> Elena)
+          - Quiet weekend overall, 3 pages total (2 noisy disk alerts on build runners)
+          - Watch item 1: `search-indexer` queue depth creeps up around 14:00 UTC daily sync wave
+          - Watch item 2: gRPC keepalive mismatch w/ Envoy 1.31 upgrade in staging (`ENHANCE_YOUR_CALM`)
+          - Do NOT merge PR #5488 until schema migration `20260708_add_shard_epoch` finishes backfilling
+          - Backfill at 81% as of 09:45, ETA ~3 hrs at 5k rows/sec throttle
+          - If EU webhook workers flap again, drain node `ip-10-42-18-91` (suspect bad NIC)
+          - Pager rotation swap confirmed for July 16
+      - id: work_eng_p5
+        page_index: 5
+        page_id: P20260827152000zX1cV4bN7mLk
+        keywords: []
+        text_content: |-
+          2026-08-27 - Tail Latency Deep Dive: Sync Commit Path
+          - End-to-end p99 commit is 410ms (target < 220ms for Q3 reliability goal)
+          - Trace breakdown (Honeycomb sample n=12,000):
+            1) TLS + auth token introspection: 38ms
+            2) Postgres serializable manifest check: 165ms (contention on `folder_rev` index)
+            3) Synchronous webhook fanout enqueue: 112ms
+            4) Blob checksum verify: 95ms
+          - Why are we hashing SHA-256 twice?! Proxy already computes digest on stream upload
+          - Switching manifest lock to optimistic version counter (`WHERE rev = $expected`) cut step 2 -> 29ms in bench
+          - Move webhook enqueue to transactional outbox poller
+      - id: work_eng_p6
+        page_index: 6
+        page_id: P20261006113000pL9oK6iJ3uHy
+        keywords:
+          - blocker
+          - q4-planning
+        text_content: |-
+          2026-10-06 - Q4 Infra Capacity & Multi-Region DR Sizing
+          - Finance asked to keep Q4 AWS incremental spend under +$18k/mo
+          - Active-passive `us-east-2` warm standby needs:
+            - Cross-region Aurora global replica (~$4.8k/mo + replication IO)
+            - S3 CRR for encrypted customer vaults (~$7.2k/mo egress + PUTs)
+            - Minimal EKS control + 3x m7g.xlarge core nodes (~$1.9k/mo)
+          - Total ~$13.9k/mo -> fits budget IF we skip Kafka MirrorMaker for raw telemetry topics
+          - Open blocker: KMS multi-region key policy needs security sign-off (see SEC-412)
+          - Target RPO < 60s, RTO < 20 min for Tier-0 metadata
+      - id: work_eng_p7
+        page_index: 7
+        page_id: P20261112171000gT5rF8eD2wSq
+        keywords: []
+        text_content: |-
+          2026-11-12 - Webhook Delivery Retry Storm Debugging
+          - Partner endpoint (`acme-erp.io`) returned 502s for 45 mins, queued 380k retries
+          - Our exponential backoff lacked jitter -> synchronized thundering herd every 8m
+          - Worse: slow 10s connect timeout starved shared worker pool for healthy tenants!
+          - Design fix w/ Sam:
+            - Per-tenant concurrency semaphore (max 12 in-flight deliveries/org)
+            - Full jitter backoff + automatic circuit breaker after 50 consecutive 5xx
+            - Separate "fast lane" queue vs "retry lane" queue in SQS
+          - Ship behind flag `webhook_bulkhead_v2` on Monday (PR #5931)
+  - file_name: Product_Strategy_2026.note
+    description: Quarterly roadmap reviews, customer discovery interviews, pricing and packaging debates, funnel metrics, and launch readiness.
+    pages:
+      - id: work_prod_p0
+        page_index: 0
+        page_id: P20260122103000aS4dF7gH1jKl
+        keywords:
+          - roadmap
+        text_content: |-
+          2026-01-22 - H1 Product Roadmap Trade-offs w/ Exec Team
+          - Core tension: Enterprise admin controls (SSO, audit log export) vs Self-serve collaborative spaces
+          - ARR math from Nora: 9 mid-market deals ($420k pipeline) gated on SAML + SCIM
+          - Meanwhile self-serve weekly active teams grew 14% MoM in Dec w/ zero paid acquisition
+          - Agreed split: 65% eng capacity on Enterprise Trust track, 35% on Activation/Sharing
+          - Punting custom workflow templates + mobile offline annotations to Q3
+          - Need crisp positioning so Pro tier doesn't feel abandoned while we build Enterprise
+      - id: work_prod_p1
+        page_index: 1
+        page_id: P20260305150000zM8nB5vC2xQw
+        keywords: []
+        text_content: |-
+          2026-03-05 - User Interviews Synthesis: Research Leads (6 sessions)
+          - P1 (BioTech PM): dumps PDFs + handwritten lab notes in 1 folder, gives up searching after 20+ files
+          - P3 (Staff UX Researcher): "I remember WHEN I wrote it (after client workshop) + roughly a diagram, not exact title"
+          - P4 & P6 both keep a separate Notion index manually linking back to notebooks -> huge friction!
+          - Surprising takeaway: nobody asked for AI auto-summaries; 5 of 6 wanted fast cross-notebook search + saved filters
+          - Direct quote (P5): "Don't rewrite my messy bullets, just find the page from Tuesday's vendor call."
+          - Share clips w/ Design before Friday wireframe crit
+      - id: work_prod_p2
+        page_index: 2
+        page_id: P20260428134500eR7tY4uI9oPa
+        keywords:
+          - pricing
+          - decision-needed
+        text_content: |-
+          2026-04-28 - Packaging & Seat Model Debate (Pro vs Team vs Enterprise)
+          - Current pain: Team plan at $18/seat/mo includes unlimited OCR + storage -> power users cost us ~$6.40/mo in GPU/S3!
+          - Finance wants usage-based credit pack; Design + Sales hate unpredictable bills
+          - Proposal on whiteboard:
+            - Pro ($12): 1 user, 50 GB sync, standard search
+            - Team ($20/seat, min 3): shared vaults, guest read links, 250 GB pooled + webhook integrations
+            - Enterprise ($38/seat): SSO/OIDC, 7-yr audit retention, customer-managed keys, SLA
+          - Grandfather existing Team cohorts for 12 mos to avoid churn spike
+      - id: work_prod_p3
+        page_index: 3
+        page_id: P20260611091500kL3jH6gF9dSa
+        keywords: []
+        text_content: |-
+          2026-06-11 - Self-Serve `onboaridng` Funnel Drop-off Review
+          - May cohort (n=8,420 signups):
+            Signup -> Device paired: 68%
+            Paired -> First notebook synced: 54%
+            First sync -> Day-7 repeat sync: 31% (down from 37% in Q1!)
+          - Segmenting by OS: macOS companion app users convert 2.1x higher than web-only uploaders
+          - Biggest drop: Wi-Fi sync token screen times out after 90s while user hunts for tablet settings menu
+          - Quick wins for Sprint 14: QR code pairing flow + extend pairing code TTL to 10 min
+          - Target: lift Day-7 retained sync back above 38% by Aug 1
+      - id: work_prod_p4
+        page_index: 4
+        page_id: P20260804161000wE2rT5yU8iOp
+        keywords:
+          - okr-risk
+          - enterprise
+        text_content: |-
+          2026-08-04 - Q3 Mid-Quarter Check: Enterprise Beta Blockers
+          - KR1 (Close 5 design-partner upgrades -> $250k ARR): currently 2 signed, 3 stalled in InfoSec review
+          - Stalled deals (Vanguard Health, Kestrel Fin, Northstar) all asking for:
+            1) SOC2 Type II bridge letter + pen-test executive summary
+            2) Granular OAuth scopes on API tokens (read-only vs admin)
+            3) Sync commit latency under ~250ms on large 80-page notebooks
+          - Synced w/ Dev + Elena: commit path optimization landing late Aug
+          - Risk: if InfoSec questionnaires slip past Sept 15, deals push to Q4 bookings
+      - id: work_prod_p5
+        page_index: 5
+        page_id: P20260918112000vB6nM9kL2jHg
+        keywords: []
+        text_content: |-
+          2026-09-18 - Launch Readiness Checklist: Shared Vaults GA (Oct 14)
+          - [x] Pricing page copy + Grandfathering FAQ approved by Legal
+          - [x] Migration script tested on 1,200 internal/beta workspaces
+          - [ ] Permission downgrade edge case: what happens to active webhook subscriptions when admin demoted?
+          - [ ] Support macros + 90-sec Loom walkthrough for CS team (owner: Maya, due Oct 2)
+          - [ ] Rollout plan: 5% dark launch Oct 7 -> 25% Oct 9 -> 100% + blog post Oct 14
+          - Kill switch: feature flag `shared_vaults_acl_v1` in LaunchDarkly
+          - Need final go/no-go review w/ Security + Platform on Oct 5
+      - id: work_prod_p6
+        page_index: 6
+        page_id: P20261023140000cX4zA7sD1fGh
+        keywords:
+          - q4-planning
+          - follow-up
+        text_content: |-
+          2026-10-23 - Q4 Roadmap Lock & 2027 Early Bets
+          - Shared Vaults GA week-1: 410 workspaces created, +$34k net new MRR!
+          - Q4 focus locked:
+            1) Hybrid semantic + keyword notebook search beta (top user request from March study)
+            2) Multi-region DR tier for regulated accounts (capped at $18k/mo infra budget)
+            3) Webhook reliability overhaul (tenant bulkheads + signed replay UI)
+          - Explicit NOs for Q4: public plugin marketplace, Android widget rewrite, real-time multiplayer ink
+          - Follow up w/ ML team on local vs hosted embedding latency + GPU cost per 1k pages
+      - id: work_prod_p7
+        page_index: 7
+        page_id: P20261119104500qP1wO4eI7uYt
+        keywords: []
+        text_content: |-
+          2026-11-19 - Customer Advisory Board Debrief (4 Enterprise Admins)
+          - Overall sentiment on Shared Vaults: 8.5/10, pairing QR flow cut IT tickets noticeably
+          - Top complaint: audit log CSV export lacks IP address + OAuth client_id columns
+          - FinServ admin (claire@kestrel): needs automatic 90-day webhook secret rotation w/ dual-key grace window
+          - Asked about AI search beta: strong preference for zero-retention inference + strict per-vault ACL filtering
+          - Nobody wants cross-org model training—must make "no training on customer notes" front & center on trust page
+  - file_name: 2026_Work_BuJo_Q3_Q4.note
+    description: Daily and weekly Bullet Journal rapid logging from August through November 2026 covering sprint tasks, 1:1s, hiring, and reminders.
+    pages:
+      - id: work_bujo_p0
+        page_index: 0
+        page_id: P20260810084500mK2jN5hB8gVf
+        keywords: []
+        text_content: |-
+          Mon Aug 10, 2026 — Sprint 18 Kickoff
+          * Ship QR device pairing modal before Thu cut
+          X Review PR #5512 (token TTL bump 90s -> 10m)
+          • Sync w/ Priya on `folder_rev` optimistic locking bench
+            - p99 dropped to 29ms locally, staging test tomorrow
+          o 14:00 1:1 w/ Marcus
+            - feeling stretched across storage compaction + on-call interrupts
+            - agreed to shield him from hiring screens for 3 wks
+          > Draft SOC2 bridge letter request for auditor
+          • ~~Update staging Grafana dashboard JSON~~ (Elena already did it)
+      - id: work_bujo_p1
+        page_index: 1
+        page_id: P20260824091000rT6yU9iO3pLa
+        keywords:
+          - hiring
+        text_content: |-
+          Mon Aug 24, 2026 — Staff Systems Eng Loop Debrief
+          o 11:00 Panel debrief: Jordan Vance (Req #ENG-44)
+            - Systems design (Elena): Stronghire — nailed WAL backpressure + lease fencing
+            - Coding (Dev): Hire — clean Go concurrency, missed minor nil channel edge case
+            - Product collab (Nora): Hire — asked sharp questions on cost vs durability SLA
+          * Comp band approval needed from VP Eng ($215k base + 0.12% equity)
+          • Call Jordan w/ verbal offer before Friday (competing offer at Datadog)
+          < Move Q4 headcount req for Security Eng to Sept finance review
+          X Submit expense report for USENIX ATC travel ($1,140)
+      - id: work_bujo_p2
+        page_index: 2
+        page_id: P20260908083000sD3fG6hJ9kLz
+        keywords: []
+        text_content: |-
+          Tue Sept 08, 2026 (post-Labor Day catchup)
+          X Sign Jordan's offer letter packet — starts Oct 5!
+          • Triage 14 customer bugs from beta feedback channel
+            - 3 dupes on PDF export margin clipping
+            - 1 legit ACL bug: revoked guest link still cached for ~12 min on CDN
+          * Fix CDN `Cache-Control` header on `/v1/share/*` -> `private, no-store`
+          o 15:30 InfoSec call w/ Kestrel Financial
+            - walked thru KMS envelope encryption + OAuth scope roadmap
+          > Follow up on pen-test remediation ticket SEC-389
+          - Coffee w/ Sam: wants to lead webhook reliability epic in Q4
+      - id: work_bujo_p3
+        page_index: 3
+        page_id: P20260925090000xC7vB1nM4qWe
+        keywords:
+          - action-item
+          - follow-up
+        text_content: |-
+          Fri Sept 25, 2026 — End of Q3 Wrap
+          X Finalize Q3 OKR grading doc (landed 3.5 / 4 KRs; Kestrel signed $96k!)
+          • Review Maya's Shared Vaults support runbook
+            - added troubleshooting section for demoted admin webhook ownership
+          o 13:00 Architecture sync: DR region selection
+            - `us-east-2` won over `us-west-1` due to Aurora instance availability
+          > Reconcile AWS cloud spend forecast w/ Finance ($18k/mo Q4 cap)
+          • ~~Schedule dentist appt~~
+          < Prep Jordan's 30-60-90 onboarding doc before Oct 5
+      - id: work_bujo_p4
+        page_index: 4
+        page_id: P20261012085000pO8iU5yT2rEw
+        keywords: []
+        text_content: |-
+          Mon Oct 12, 2026 — Launch Week!
+          * Go/No-Go check at 10:00 for Shared Vaults GA
+            - load test passed 3x peak sync traffic, p99 commit `latnecy` held at 195ms!
+          X Approve LaunchDarkly 25% -> 100% ramp schedule for Oct 14
+          o 11:30 Jordan week-2 check-in
+            - already shipped small fix on outbox poller metrics (#5790)
+            - pairing w/ Sam on SQS retry bulkhead design next week
+          • Ping Legal on updated DPA subprocessor list (added Cloudflare R2 eval?) -> no, dropped R2
+          > Send thank-you chocolates/swag to beta design partners
+      - id: work_bujo_p5
+        page_index: 5
+        page_id: P20261028091500lK4jH7gF1dSa
+        keywords:
+          - okr-risk
+        text_content: |-
+          Wed Oct 28, 2026
+          • Check search prototype eval numbers w/ Lin
+            - pure MiniLM dense vectors missed exact ticket IDs (`PLAT-904`, `SEC-412`) badly
+            - hybrid BM25 + int8 embedding fusion looks way cleaner
+          o 14:00 1:1 w/ Elena
+            - worried DR KMS cross-region review is stuck behind Q4 SOC2 audit prep
+            - escalated SEC-412 to Dan in Security so Aurora replica Terraform isn't blocked
+          X Renew Apple Developer org cert before Nov 4 expiry!
+          > Draft 2027 headcount pitch (2 backend, 1 applied ML, 1 sec-eng)
+      - id: work_bujo_p6
+        page_index: 6
+        page_id: P20261106084000zA9sX6dC3fVb
+        keywords: []
+        text_content: |-
+          Fri Nov 06, 2026
+          X Cut release `v2026.11.1` w/ OIDC PKCE fix for desktop companion
+          • Review cloud invoice for Oct: $51.2k total (+$4.1k from Aurora DR pilot, on track)
+          o 10:30 Hiring calibration for Applied ML role
+            - too many candidates only know prompt wrappers; screen for IR fundamentals (nDCG, recall@k, quantization)
+          • ~~Cancel Friday team retro~~ -> moved to async Slack thread
+          > Ask Dan whether `acme-erp` webhook outage needs formal customer RCA
+          - Reminder: pick up winter tires at 17:30
+      - id: work_bujo_p7
+        page_index: 7
+        page_id: P20261120092000nM3bV6cX9zLk
+        keywords:
+          - follow-up
+          - q4-planning
+        text_content: |-
+          Fri Nov 20, 2026 — Pre-Thanksgiving Freeze Prep
+          * Code freeze starts Nov 24 17:00 UTC through Nov 30
+          X Merge `webhook_bulkhead_v2` rollout to 100% prod — zero retry storms all week!
+          • Follow up on CAB feedback w/ Nora & Dan:
+            - add `client_id` + source IP to audit CSV export (small PR, ~2 days)
+            - spec dual-secret webhook signing rotation for Q1
+          o 15:00 Holiday on-call swap check (Jordan covering Thu/Fri, Priya covering Sat/Sun)
+          > Finalize hybrid search beta invite list (first 50 Pro + Team workspaces)
+  - file_name: ML_Reading_Seminar.note
+    description: Handwritten reading group and seminar notes on LLM quantization, KV-cache compression, retrieval evaluation pitfalls, synthetic data, and VLM OCR.
+    pages:
+      - id: work_ml_p0
+        page_index: 0
+        page_id: P20260130120000hJ5kL8pO2iUy
+        keywords:
+          - quantization
+          - must-read
+        text_content: |-
+          2026-01-30 - Seminar #1: Weight-Only vs W8A8 Activation Quantization (Lin presenting)
+          - SmoothQuant + AWQ recap: salient activation channels (~0.1-1% of dims) have 20-100x magnitude outliers
+          - Naive per-tensor int8 crushes accuracy on >7B models because outliers stretch step size
+          - AWQ scales salient weights up before W4 group quantization (g=128) -> <0.4 ppl drop on Llama-3-8B
+          - Hardware catch: W4A16 is great at batch=1 (memory-bandwidth bound), but loses advantage around batch >= 32 where dequant overhead hits compute units
+          - For our embedding/reranker service (batch 16-64 on L4 GPUs), FP8 or W8A8 int8 TensorCore beats W4A16 throughput by ~1.6x
+      - id: work_ml_p1
+        page_index: 1
+        page_id: P20260313121500tR4eW7qA1sDf
+        keywords: []
+        text_content: |-
+          2026-03-13 - Seminar #4: Long-Context `kv-cahce` Memory Math & PagedAttention
+          - Quick back-of-envelope for 70B GQA (8 KV heads, d_head=128, 80 layers, fp16):
+            2 * 80 * 8 * 128 * 2 bytes = 327,680 bytes (~320 KB) per token!
+          - At 32k context, 1 sequence = ~10.2 GB just for KV state (weights alone ~140 GB fp16 / ~38 GB int4)
+          - Fragmentation waste without paging was 60-70%; vLLM block table (16 tok/block) drops waste < 4%
+          - KV int4/fp8 quantization w/ per-token K scaling + per-channel V scaling saves 2-4x VRAM
+          - Watch out: Needle-in-a-Haystack stays 99%, but multi-hop citation recall degrades first under aggressive KV eviction (H2O / StreamingLLM)
+      - id: work_ml_p2
+        page_index: 2
+        page_id: P20260508120000gH8jK2lP5oIu
+        keywords:
+          - evaluation
+          - must-read
+        text_content: |-
+          2026-05-08 - Seminar #7: IR & RAG Evaluation Pitfalls on Messy Personal Corpora
+          - BEIR / MS-MARCO benchmarks overestimate dense bi-encoder quality on personal notes!
+          - Why notes are weird:
+            1) Heavy shorthand, dates, ticket codes (`PLAT-904`), people's first names
+            2) High lexical overlap across weekly recurring 1:1 pages -> dense embeddings collapse them together
+            3) Incomplete pooling bias: judging only top-10 from baseline misses lexical-only or semantic-only hits
+          - Takeaway for our internal eval: construct graded relevance (0..3) w/ human-written queries BEFORE looking at retriever outputs
+          - Always report nDCG@5 + MRR + Recall@10 side-by-side; check zero-hit abstention precision too
+      - id: work_ml_p3
+        page_index: 3
+        page_id: P20260626121000yU3iO6pA9sDf
+        keywords: []
+        text_content: |-
+          2026-06-26 - Seminar #10: Synthetic Query Generation & Model Collapse Risks
+          - Paper discussion: using frontier LLMs to synthesize domain queries for retriever fine-tuning (Promptagator / InPars v2)
+          - Failure mode we reproduced: LLM copies rare 3-word phrases verbatim from passage -> student model learns lazy lexical matching!
+          - Fix: persona + intent conditioning + forbid >=3-gram exact spans from target doc during generation
+          - Also filter w/ cross-encoder consistency check (keep pairs where target is in top-3 of teacher)
+          - Cost math: generating 50k filtered hard-negative triples w/ open 32B model on 4x A100 took ~6 hrs (~$42)
+          - Never replace human test set w/ synthetic queries—only use synthetic for train/dev!
+      - id: work_ml_p4
+        page_index: 4
+        page_id: P20260814120500bN7mV4cX1zQw
+        keywords:
+          - vlm
+          - ocr
+        text_content: |-
+          2026-08-14 - Seminar #13: Vision-Language Models for Handwritten Ink & Diagrams
+          - Tested Qwen2-VL-7B vs Florence-2 + dedicated stroke recognizer on e-ink PNG exports (1404x1872 px)
+          - Naive ViT tiling downsamples thin 0.3mm pen strokes -> `0` vs `O`, `1` vs `l`, and `rn` vs `m` confusions spike
+          - Dynamic high-res patching (tiling up to 4x4 sub-crops) boosts character accuracy from 88.4% -> 96.7%, but visual tokens jump 256 -> 2,300/page!
+          - Hallucination trap: VLMs silently "autocorrect" domain acronyms or invent plausible bullet endings on messy cursive
+          - Hybrid win: keep stroke-level HWR engine for faithful text + lightweight VLM pass only on boxed diagrams/tables
+      - id: work_ml_p5
+        page_index: 5
+        page_id: P20261002120000kL9mN3bV6cXz
+        keywords: []
+        text_content: |-
+          2026-10-02 - Seminar #16: Matryoshka Embeddings & Binary/Int8 Vector Indexing
+          - MRL (Matryoshka Representation Learning) trains nested prefixes (d=1024 -> 512 -> 256 -> 128) w/ multi-scale InfoNCE loss
+          - Truncating 1024d float32 -> 256d int8 cuts vector index RAM by 16x! (4 KB/chunk -> 256 bytes/chunk)
+          - Two-stage funnel experiment on 1M note chunks:
+            Stage 1: 256d binary/int8 retrieve top-100 (~1.8ms CPU SIMD, zero GPU)
+            Stage 2: rescore top-100 w/ full int8 vectors + BM25 RRF fusion (~3.5ms)
+          - Retained 98.6% of full 1024d fp32 Recall@10!
+          - Huge product implication: per-user encrypted vector index is small enough to cache in memory on cheap CPU nodes
+      - id: work_ml_p6
+        page_index: 6
+        page_id: P20261113121500fG2hJ5kL8zXc
+        keywords:
+          - hardware
+          - latency
+        text_content: |-
+          2026-11-13 - Seminar #19: CPU vs L4 GPU Inference Economics for Multi-Tenant Search
+          - Benchmarked query-time embedding (384d / 512-tok max) for interactive search budget (< 35ms p99):
+            - ONNX Runtime int8 AVX-512 on c7i.2xlarge: p50 6.2ms, p99 14.8ms up to 90 QPS ($0.34/hr)
+            - NVIDIA L4 GPU w/ Triton dynamic batching (max delay 3ms): p50 4.1ms, p99 11.0ms up to 650 QPS ($0.81/hr)
+          - Surprise bottleneck: tokenizer + Python JSON serialization ate 2.8ms before switching to Rust `tokenizers` over gRPC
+          - Bulk notebook indexing is embarrassingly async -> run on spot L4s overnight; serve live user queries on CPU pods to avoid GPU cold-start/availability headaches in DR region!
+  - file_name: Security_And_Compliance.note
+    description: Security engineering and compliance notes on OAuth/OIDC, KMS key rotation, SOC2 audit evidence, webhook HMAC signing, tabletop exercises, and vendor reviews.
+    pages:
+      - id: work_sec_p0
+        page_index: 0
+        page_id: PLEGACY_WORK_SEC_P0
+        keywords: []
+        text_content: |-
+          2026-01-10 - Imported Legacy Note: KMS Envelope Encryption Hierarchy
+          - Root trust: AWS KMS CMK (`alias/prod-vault-root-v1`) -> never leaves HSM
+          - Per-organization DEK (AES-256-GCM) generated on workspace creation, stored wrapped (`encrypted_dek` bytea in `org_keys`)
+          - Each notebook blob gets fresh 96-bit random nonce + AAD bound to `(org_id, notebook_id, chunk_sha256)`
+          - Why AAD matters: prevents malicious or buggy storage worker from swapping ciphertext blob between two tenant paths!
+          - DEK cache in memory capped at 5 min TTL; wiped immediately on org offboarding event
+      - id: work_sec_p1
+        page_index: 1
+        page_id: P20260226110000wQ4eR7tY1uIo
+        keywords:
+          - oauth
+          - blocker
+        text_content: |-
+          2026-02-26 - Desktop & Tablet `0Auth` 2.1 + PKCE Threat Review
+          - Native companion apps cannot safely hold a `client_secret` -> require S256 PKCE on all `/oauth/authorize` flows
+          - Found gap in legacy tablet pairing: refresh tokens were non-rotating w/ 180-day lifetime!
+          - New policy (SEC-305):
+            1) Refresh token rotation on every exchange + reuse detection (if old RT replayed -> revoke entire token family)
+            2) Bind session metadata to device hardware fingerprint + user-visible device list in Settings
+            3) Narrow API token scopes: `notes:read`, `notes:write`, `webhooks:manage`, `org:admin`
+          - Coordinate rollout w/ companion app v2.8 so old clients get graceful re-auth prompt
+      - id: work_sec_p2
+        page_index: 2
+        page_id: P20260416143000aZ5sX8dC2vBn
+        keywords: []
+        text_content: |-
+          2026-04-16 - Outbound Webhook HMAC Signing & Replay Protection Spec
+          - Enterprise customers integrating w/ internal ERPs need cryptographic authenticity on webhook POSTs
+          - Header format:
+            `X-Supernote-Signature: t=1776349800,v1=<hex_hmac_sha256>`
+          - Signed payload string: `f"{timestamp}.{raw_request_body_bytes}"` (never re-serialize parsed JSON!)
+          - Recommended verifier tolerance: reject if `abs(now - t) > 300s` to block replay capture
+          - Rotation gap flagged by Dan: right now orgs only have 1 active `whsec_...` secret -> rotating breaks integrations during deploy
+          - Need dual-secret overlap (`v1=<sig_new>,v1=<sig_old>`) w/ configurable 24h-7d expiration window
+      - id: work_sec_p3
+        page_index: 3
+        page_id: P20260618101500mJ7nH4bG1vFc
+        keywords:
+          - audit-evidence
+          - soc2
+        text_content: |-
+          2026-06-18 - SOC2 Type II Observation Window Prep (Auditor: Schellman)
+          - Observation period closes Aug 31; bridge letter needed for Q3 enterprise pipeline (Vanguard, Kestrel)
+          - Missing / shaky evidence items:
+            1) CC6.2 Quarterly access review: 2 ex-contractors still had read access to staging Sentry (revoked today, document ticket SEC-371!)
+            2) CC7.3 Incident response test: must run + document annual tabletop exercise before July 31
+            3) CC8.1 Change management: 3 hotfix commits in Jan incident bypassed 2-approver rule -> attach postmortem PLAT-904 exception sign-off
+          - Automate GitHub branch protection + AWS IAM config snapshots via daily cron into `s3://sec-audit-worm-2026`
+      - id: work_sec_p4
+        page_index: 4
+        page_id: P20260723153000pL2oK5iJ8uHy
+        keywords: []
+        text_content: |-
+          2026-07-23 - Annual Security Tabletop Exercise: Compromised CI Runner Token
+          - Attendees: Dan (Sec), Elena (Platform), Priya, Nora (Product/Comms), Legal counsel
+          - Scenario injected: malicious transitive npm dependency in docs preview job exfiltrates short-lived AWS OIDC deploy role
+          - Good news: prod DB & KMS keys isolated in separate AWS account (`prod-core`), CI role only had ECR push + staging ECS deploy
+          - Gap 1: took 28 mins to figure out which GitHub Actions workflow minted the STS session (`SourceIdentity` tag wasn't set!)
+          - Gap 2: customer status page + legal notification draft assumed 72h GDPR window, but Kestrel MSA asks for 24h notice on confirmed breach
+          - Action items: enforce `sts:SourceIdentity` on all OIDC trust policies + pin GitHub Actions by full commit SHA (SEC-398)
+      - id: work_sec_p5
+        page_index: 5
+        page_id: P20260929132000qW9eR6tY3uIo
+        keywords:
+          - vendor-review
+          - escalation
+        text_content: |-
+          2026-09-29 - Vendor Security Review: Hosted Embedding / Reranker API vs Self-Hosted
+          - Evaluated external inference vendor ("VectorCloud AI") for Q4 semantic search beta
+          - Red flags in their security packet:
+            1) Default 30-day abuse-monitoring payload log retention unless on $5k/mo Enterprise BAA tier
+            2) Subprocessor list includes 2 shared GPU cloud providers w/o SOC2 Type II
+            3) Cannot cryptographically bind tenant ACLs inside their hosted index
+          - Recommendation (APPROVED by Dan + CTO): REJECT third-party inference API for customer notes
+          - Run open-weight embedding model entirely inside our VPC (CPU/L4 pods, zero payload logging, existing KMS boundary)
+      - id: work_sec_p6
+        page_index: 6
+        page_id: P20261030111000zX8cV5bN2mLk
+        keywords:
+          - audit-evidence
+        text_content: |-
+          2026-10-30 - SEC-412 Sign-off: Multi-Region KMS Key Policy for `us-east-2` DR
+          - Unblocked Elena's Aurora Global + S3 CRR Terraform after tightening multi-region key (`mrk-9941a8...`) policy:
+            - Replica key in `us-east-2` denies `kms:Decrypt` to standard app roles unless `dr_failover_active` IAM session tag is asserted by break-glass runbook
+            - Replication service principal restricted via `aws:SourceArn` + `kms:ViaService` conditions
+          - Verified CloudTrail logs both regions into central immutable security account
+          - Annual CMK backing-key auto-rotation enabled (`EnableKeyRotation: true`); wrapped tenant DEKs remain valid across key versions
+          - Ready for Nov DR failover game day!
+  - file_name: Home_And_Finance_2026.note
+    description: Household maintenance quotes, mortgage refinance math, estimated taxes, solar sizing, and insurance records
+    pages:
+      - id: life_home_p0
+        page_index: 0
+        page_id: P20251114201530aB3kL9mN2pQr
+        keywords:
+          - quote
+        text_content: |-
+          2025-11-14 - Heat Pump HVAC Bids (Replacing 2008 gas furnace)
+          House load calc (Manual J): ~34,500 BTU heating / 28,000 BTU cooling
+          1) Alpine Mechanical - Mitsubishi Hyper-Heat 3-ton ducted (MXZ-SM36NAMHZ)
+             - $16,850 gross -> -$2,000 federal 25C credit - $1,500 utility rebate = $13,350 net
+             - Includes new 4" media filter cabinet + condensate pump
+          2) Cascadia Comfort - Daikin Fit 3-ton side-discharge + backup 5kW heat strip
+             - $14,900 gross -> $11,400 net after incentives; quiet outdoor unit (54 dBA)
+          * Ask both if existing 200A panel has room for dual-pole 30A breaker or needs subpanel.
+      - id: life_home_p1
+        page_index: 1
+        page_id: P20260112194012xK7vM4nQ8wZt
+        keywords:
+          - tax-deductible
+        text_content: |-
+          2026-01-12 - Q4 2025 Estimated Tax Payment & 1099 Reconciliation
+          Due date: Jan 15, 2026 (IRS Direct Pay + state revenue portal)
+          - Side consulting gross (Nov-Dec): $11,400 across 2 invoices
+          - Home office allocation: 145 sq ft / 1,920 sq ft total = 7.55%
+          - Shared expenses to prorate: fiber internet ($75/mo), electric/gas ($218 avg), umbrella policy
+          - Equipment expense: Supernote folio + ceramic nib pen + ergonomic desk lamp ($184)
+          - Federal 1040-ES voucher #4: $2,650 | State Q4 payment: $740
+          -> Confirmation # saved in 2025 tax folder; check safe-harbor 110% threshold for 2026.
+      - id: life_home_p2
+        page_index: 2
+        page_id: P20260222110545cR5tY8uJ3hGf
+        keywords: []
+        text_content: |-
+          2026-02-22 - Mortgage Refinance Break-Even Math
+          Current loan: $412,600 balance @ 6.875% (27 yrs left), P&I = $2,796/mo
+          Credit union refi offer: 5.625% 30-yr fixed, 0.25 pts ($1,031) + $2,850 closing costs
+          - New P&I (recast on $412.6k): $2,375/mo -> monthly savings = $421/mo
+          - Total upfront cost (excl. escrow prepaids): $3,881
+          - Simple break-even: $3,881 / $421 = 9.2 months (~Dec 2026)
+          - Alt option: 20-yr fixed @ 5.375% -> P&I = $2,809/mo (same payment, shaves 7 yrs!)
+          Decision: wait for March CPI print, lock 20-yr if rate hits 5.25% w/ zero points.
+      - id: life_home_p3
+        page_index: 3
+        page_id: P20260405162210nH6jK2lP9sDf
+        keywords:
+          - solar
+        text_content: |-
+          2026-04-05 - Rooftop Solar + LFP Battery Sizing Notes
+          Last 12 mos utility usage: 9,420 kWh (will jump to ~12,800 kWh w/ heat pump + shop tools)
+          South-west roof plane fits 18x 425W REC Alpha Pure panels = 7.65 kW DC
+          - PVWatts est. production: ~9,850 kWh/yr (12% shading from neighbor's cedar in Dec/Jan)
+          - Battery backup goal: critical loads only (fridge, freezer, router, sump pump, 120v outlets)
+          - 1x 13.5 kWh LFP wall battery gives ~26 hrs backup if heat pump stays off
+          - Net metering changing to 1:0.65 export rate next year -> self-consumption mode matters.
+          Budget cap: $24k before 30% ITC; hold off until roof ridge vent is inspected.
+      - id: life_home_p4
+        page_index: 4
+        page_id: P20260519180833vB4nM7qW1eRt
+        keywords: []
+        text_content: |-
+          2026-05-19 - Exterior & Crawlspace Contractor Punchlist
+          Walkthrough w/ Marco (bonded handyman) before rainy season returns:
+          [x] Reseal flashing around bathroom exhaust roof boot (urethane sealant)
+          [ ] Replace rotted cedar belly band on north gable (~14 lin ft, prime all 6 sides!)
+          [ ] Crawlspace: re-tape torn 6-mil vapor barrier seam near main cast-iron cleanout
+          [ ] Adjust kitchen pantry soft-close Blum hinges (rubbing top frame)
+          [ ] Add 1/4" hardware cloth screen over dryer & soffit vents (keep rodents out)
+          Materials deposit paid: $350 Zelle; labor est. 1.5 days @ $85/hr = ~$1,020.
+      - id: life_home_p5
+        page_index: 5
+        page_id: P20260708145019zX9cV2bN5mKl
+        keywords:
+          - receipt-needed
+        text_content: |-
+          2026-07-08 - Hail / Wind Branch Damage & Homeowners Policy Info
+          Policy: Amica Mutual #HO-8841209-26 | Deductible: $2,500 | Agent: 800-242-6422
+          Big Douglas fir limb dropped onto detached garage corner during July 6 gust front:
+          - Crushed ~11 ft of seamless K-style aluminum gutter + dented 3 architectural shingles
+          - Arborist emergency limb haul-away: $475 paid via Visa
+          - Roofer repair estimate: $1,380 (gutter section + fascia board + 1 bundle Owens Corning)
+          Total = $1,855 -> BELOW $2,500 deductible! Do NOT open formal claim (avoid surcharge).
+          Save arborist + roofer paid invoices in house binder for future buyer disclosure.
+      - id: life_home_p6
+        page_index: 6
+        page_id: P20260903203105pL8oI3uY6tRe
+        keywords:
+          - warranty
+        text_content: |-
+          2026-09-03 - Kitchen & Laundry Appliance Serials / Filter Log
+          - Bosch 800 Dishwasher: Model SHX78B75UC | S/N FD040201984 (installed Mar 2024)
+            * Clean mesh sump trap monthly; use Finish rinse aid setting 3
+          - LG WashTower: Model WKEX200HBA | S/N 311KWNP04821 (5-yr motor coverage)
+          - Induction Range (GE Profile 30"): PHS930YPFS | S/N ZR819402B
+          - Fridge water filter: EveryDrop #EDR1RXD1 -> swapped 2026-09-03 (next due Mar 2027)
+          - Whole-house water shutoff valve: basement NE corner behind shelving unit (quarter-turn ball).
+      - id: life_home_p7
+        page_index: 7
+        page_id: P20261108171244qW3eR6tY9uIo
+        keywords: []
+        text_content: |-
+          2026-11-08 - 2027 Household Sinking Funds & Monthly Fixed Costs
+          Updating automated transfers on the 1st of each month (Ally buckets):
+          - Property tax + homeowners ins (if we drop escrow on refi): $640/mo
+          - Home repair / HVAC / roof reserve (1.5% rule): $550/mo
+          - Auto maintenance + tires (Outback @ 78k mi, needs CVT fluid soon): $175/mo
+          - Travel fund (post-Japan rebuild for 2027): $300/mo
+          - Woodshop & garden seasonal budget: $120/mo
+          Fixed baseline (mortgage + utilities + groceries + childcare): $5,480/mo.
+  - file_name: Health_Training_Log.note
+    description: Physical therapy rehab protocols, half-marathon block, strength numbers, lab bloodwork, and medical visits
+    pages:
+      - id: life_health_p0
+        page_index: 0
+        page_id: P20251109083015mN4bV7cX1zLk
+        keywords:
+          - rehab
+        text_content: |-
+          2025-11-09 - PT Eval: Right Supraspinatus Tendinopathy & Scapular Dyskinesis
+          Saw Maya (DPT) - impingement flares above 110 deg overhead reach & sleeping on R side.
+          Daily home program (4x/wk strength, daily mobility):
+          - Sidelying external rotation w/ rolled towel under elbow: 3x15 @ 5 lb dumbbell (3s eccentric)
+          - Prone Y-T-W on incline bench: 3x10 bodyweight, focus on lower trap depression, no upper shrug
+          - Serratus wall slides w/ foam roller + mini-band: 3x12
+          - Thoracic extension over foam roller: 2 min before desk work
+          Note: lower office desk height by 1.5" so elbows sit at ~95 deg without shoulder hike.
+      - id: life_health_p1
+        page_index: 1
+        page_id: P20260108174522jH8gF5dS2aPo
+        keywords: []
+        text_content: |-
+          2026-01-08 - Left Knee Patellofemoral Check-In + Single-Leg Strength
+          Mild anterior ache descending stairs after hilly 8-mi trail run last Sunday (3/10 pain).
+          PT adjustment: load quad tendon isometrically before runs, increase cadence 166 -> 174 spm.
+          - Spanish squats w/ heavy green rig strap: 4x45 sec hold (pain drops to 0/10 by set 3!)
+          - Lateral step-downs off 6" box (slow 4s lower, keep knee tracking 2nd toe): 3x12/side
+          - Soleus seated calf raises: 3x15 @ 45 lb plate on knee
+          - Trap bar deadlift: 3x6 @ 205 lb (RPE 7, zero knee irritation)
+          Avoid ibuprofin right before workouts so pain feedback stays honest.
+      - id: life_health_p2
+        page_index: 2
+        page_id: P20260218071509kL9pO4iU7yTr
+        keywords:
+          - bloodwork
+          - lipids
+        text_content: |-
+          2026-02-18 - Annual Fasting Lab Panel Results (Quest, 12h fast)
+          - ApoB: 84 mg/dL (down from 98 last yr! Target <80)
+          - LDL-C: 96 mg/dL | HDL-C: 62 mg/dL | Triglycerides: 74 mg/dL
+          - HbA1c: 5.2% | Fasting glucose: 86 mg/dL | Fasting insulin: 4.8 uIU/mL
+          - Ferritin: 41 ng/mL (borderline low for distance running -> add 2x/wk heme iron or Vit C w/ lentils)
+          - Vitamin D (25-OH): 29 ng/mL -> bump D3+K2 to 3,000 IU/day thru April
+          - TSH: 1.84 mIU/L | hs-CRP: 0.6 mg/L
+          PCP happy w/ soluble fiber swap (psyllium + oats); recheck ferritin + Vit D in Aug.
+      - id: life_health_p3
+        page_index: 3
+        page_id: P20260329101240wE5rT8yU2iOp
+        keywords:
+          - marathon
+        text_content: |-
+          2026-03-29 - Spring Half-Marathon Block (Weeks 5-8 Peak Plan)
+          Goal race: May 10 Waterfront Half | Target: sub-1:38:00 (~7:28/mi pace)
+          Weekly volume: 34 -> 38 -> 41 -> 30 (cutback) miles across 5 days:
+          - Tue: Threshold intervals - 2 mi WU + 4x1.5 mi @ 7:18/mi (90s jog) + 1.5 mi CD
+          - Thu: Easy aerobic 6 mi @ 8:45-9:05/mi (HR < 146 bpm) + 6x20s strides
+          - Sat: Progression long run 12-14 mi (last 3 mi @ HMP 7:25/mi), practice Maurten gel @ 40 & 80m
+          - Wed/Sun: 35m lifting maintenance (split squats, RDLs, shoulder cuff)
+          Shoe rotation: Superblast 2 for long runs (210 mi logged), Rebel v4 for easy days.
+      - id: life_health_p4
+        page_index: 4
+        page_id: P20260511092055dF3gH6jK9lZx
+        keywords: []
+        text_content: |-
+          2026-05-11 - Waterfront Half-Marathon Race Debrief
+          Chip time: 1:37:14 (7:25/mi avg) - PR by 2 min 18 sec! Weather: 51F, light mist.
+          Splits: Mi 1-4 @ 7:31 avg (stayed patient on bridge climb) | Mi 5-10 @ 7:23 | Mi 11-13.1 @ 7:19.
+          - Avg HR: 171 bpm (max 183 in final 800m kick)
+          - Fueling: 25g carbs 15m pre-start + Maurten 100 at mi 4.5 & mi 9 w/ water cups -> zero GI cramps
+          - Left knee held up 100%; right calf tight at mi 11, faded w/ slightly shorter stride
+          Recovery week: 4 days off impact, easy spin bike + swims, extra 40g carbs at dinner.
+      - id: life_health_p5
+        page_index: 5
+        page_id: P20260624153518sA7dF2gH5jKl
+        keywords:
+          - follow-up
+        text_content: |-
+          2026-06-24 - Dental Cleaning & Nightguard Check (Dr. Sato)
+          - Perio charting: mostly 2-3mm pockets; one 4mm spot lingual #19 (lower L molar) -> waterpik nightly
+          - Bitewing X-rays clear, no new interproximal decay; old composite on #14 showing slight margin wear
+          - Heavy bruxism wear facets on acrylic nightguard from spring work stress -> lab making new hard/soft dual laminate guard
+          - Cost: $620 total, Delta Dental covers 50% ($310 OOP paid on HSA card)
+          - Pickup impression fit appt scheduled July 9 @ 8:15 AM.
+      - id: life_health_p6
+        page_index: 6
+        page_id: P20260819215003xC4vB7nM1qWe
+        keywords: []
+        text_content: |-
+          2026-08-19 - Sleep Hygiene & HRV Recovery Experiment (3-Week Log)
+          Noticed resting HR creeping 49 -> 55 bpm and waking at 3:15 AM wired during hot weeks.
+          Protocol changes tested Aug 1-19:
+          1) Hard caffeine cutoff at 11:30 AM (switched afternoon espresso to decaf Swiss Water bean)
+          2) Bedroom mini-split set to 66F + blackout side channels on window shade
+          3) Magnesium glycinate 300mg + L-theanine 200mg 45m before lights out; Supernote reading only (no phone)
+          Result: 7-day avg sleep up 6h38m -> 7h24m; overnight RHR back to 48 bpm; morning grogginess gone.
+      - id: life_health_p7
+        page_index: 7
+        page_id: P20261102181047rT6yU9iO2pAs
+        keywords: []
+        text_content: |-
+          2026-11-02 - Autumn Strength Mesocycle (4-Week Hypertrophy / Joint Armor)
+          Running off-season (20 mpw easy), 3x/wk full-body gym sessions (~55 min):
+          - Day A: Front squat 4x6 @ 165 lb | Weighted chin-ups 4x6 (+20 lb) | DB incline press 3x10 @ 55s
+          - Day B: Romanian deadlift 4x8 @ 195 lb | Landmine 1-arm press 3x10 (shoulder-friendly!) | Chest-supported row 3x12
+          - Day C: Bulgarian split squat 3x8/leg @ 45s | Overhead kettlebell carry 3x40 yd | Face pulls 3x18
+          Bodyweight steady @ 164.5 lb; aiming for ~135g protein/day.
+  - file_name: Tokyo_Kyoto_Trip_2026.note
+    description: Bilingual English and Japanese travel itinerary, rail logistics, ryokan bookings, food spots, and yen budget for October 2026
+    pages:
+      - id: life_trip_p0
+        page_index: 0
+        page_id: P20260715201411hJ3kL6mN9bVc
+        keywords:
+          - 新幹線
+        text_content: |-
+          2026-07-15 - Rail Pass Math & IC Card Setup (Oct 10-22 Trip)
+          National 14-day JR Pass jumped to ¥80,000 -> NOT worth it for our route! Point-to-point wins:
+          - Narita Express (N'EX) -> Tokyo Station: ¥3,070
+          - 新幹線 Nozomi (SmartEX app, oversized baggage seat row): 東京 -> 京都駅 = ¥14,170
+          - 京都駅 -> Hakone (Odawara via Hikari + Hakone Freepass 2-day): ¥11,900 + ¥6,100
+          - Odawara -> Shinjuku Romancecar: ¥2,580
+          Total long-distance = ~¥37,820/person (saves >¥42,000 each vs JR Pass!)
+          Load mobile Suica in Apple Wallet w/ ¥8,000 upfront for Yamanote, Metro & conbini taps.
+      - id: life_trip_p1
+        page_index: 1
+        page_id: P20260804210539qA2wS5eD8rFt
+        keywords:
+          - 京都
+        text_content: |-
+          2026-08-04 - Lodging & 旅館 (Ryokan) Confirmations
+          1) Oct 10-14 (4n) Tokyo: Hotel Resol Poshtel Asakusa or Nohga Hotel Ueno (chose Nohga Ueno)
+             - Conf #JP-449182 | ¥29,500/nt twin | 6 min walk from Keisei Skyliner / JR Ueno
+          2) Oct 14-18 (4n) Kyoto: Machiya townhouse near 錦市場 (Nishiki) / Rokkaku-dori
+             - Conf #KY-90231 | ¥34,000/nt | Washer/dryer inside! Check-in code emailed 3 days prior
+          3) Oct 18-20 (2n) Hakone Gora: 温泉旅館 w/ private cedar open-air bath + 懐石料理 (kaiseki dinner)
+             - Conf #HK-7712 | ¥68,000/nt incl. half-board (notify 1 wk ahead: no raw shellfish for Sam)
+          4) Oct 20-22 (2n) Tokyo Shimokitazawa / Shibuya: Sequence Miyashita Park (¥31,000/nt).
+      - id: life_trip_p2
+        page_index: 2
+        page_id: P20260919193022gY6hU9jI2kOl
+        keywords:
+          - packing
+        text_content: |-
+          2026-09-19 - Carry-On Only Gear & Document List (40L + Sling)
+          Using Takkyubin (ヤマト運輸 luggage forwarding) only if we buy ceramics in Kyoto!
+          - Docs: Passports (exp 2031), Visit Japan Web QR screenshots, Charles Schwab debit (0% ATM fee @ 7-Eleven)
+          - Footwear: broken-in Hoka Clifton + slip-on shoes (easy off/on at temples & tatami dining!)
+          - Clothing (4-day merino rotation): 4x tees, 2x outlier pants, rain shell, light Uniqlo puff
+          - Tech: 2-prong US plugs work fine in 100V outlets, Anker 10k bank, Ubigi 10GB eSIM installed
+          - Small stuff: Hanko/oshikatsu stamp notebook (御朱印帳 + eki-stamp pad), coin pouch for ¥100/¥500, plastic trash bag.
+      - id: life_trip_p3
+        page_index: 3
+        page_id: P20261011221508zM8nB5vC2xLk
+        keywords:
+          - グルメ
+        text_content: |-
+          2026-10-11 - Tokyo Day 2: 築地 Outer Market, Yanaka & Specialty Coffee
+          Jet lag woke us at 4:45 AM -> walked to 築地場外市場 by 6:30 AM before tour buses!
+          - Tamagoyaki on a stick @ Marutake (¥200, piping hot dashi sweetness) +マグロ nigiri stand (¥2,400)
+          - Glitch Coffee Jinbocho: washed Colombia Geisha pourover (¥1,800) - wild bergamot/peach clarity, 91C water
+          - Afternoon stroll: Yanaka Ginza -> Nezu Shrine vermilion torii path -> Kayaba Coffee (egg sando)
+          - Dinner: ラーメン @ Mensho San Francisco/Tokyo Hongo - thick creamy tori-paitan + yuzu zest (¥1,350)
+          Steps today: 24,600! Feet tired, 20m Epsom soak in hotel tub saved our calves.
+      - id: life_trip_p4
+        page_index: 4
+        page_id: P20261015214050pQ7wE4rT1yUi
+        keywords: []
+        text_content: |-
+          2026-10-15 - Kyoto East Side Walk: 哲学の道 (Philosopher's Path) & Uji 抹茶
+          Started 7:10 AM at Nanzen-ji brick aqueduct -> totally quiet, cedar smell in damp morning air.
+          - Honen-in moss gate (my favorite small temple so far, raked white sand mounds w/ camellia leaves)
+          - Took Nara line down to 宇治 (Uji) after lunch for ceremonial 抹茶 tasting @ Nakamura Tokichi Honten:
+            * Koicha (thick tea) vs Usucha + bamboo tube matcha jelly set (¥1,750)
+            * Bought 2x 30g tins of "Seikan-no-Shiro" (¥2,160 ea, store in fridge back home)
+          - Evening walk along 鴨川 (Kamogawa) riverbanks from Sanjo to Gion; duck soba @ Honke Owariya.
+      - id: life_trip_p5
+        page_index: 5
+        page_id: P20261017205514aS3dF6gH9jKl
+        keywords:
+          - gift-idea
+        text_content: |-
+          2026-10-17 - Craft Shopping: Kappabashi Knives, Stationery & Woodwork Tools
+          Kept tax-free passport receipts sealed properly (¥5,500+ threshold):
+          - Kyoto Teramachi: Kyukyodo incense (sandalwood + aloeswood rolls for Mom, ¥3,800) & washi postcards
+          - Suigenkyo / local tool shop near Sanjo: 42mm Japanese smoothing plane blade + 24mm鑿 (chisel, white steel #2, ¥9,400) for my walnut shop projects!
+          - Loft + Itoya Ginza: Midori MD A5 grid pads, brass bookmark, Tombow Fudenosuke brush pens for sister
+          - Uji roasted hojicha loose leaf bags (3x ¥950) for office coffee crew.
+      - id: life_trip_p6
+        page_index: 6
+        page_id: P20261024161033uI8oP2aS5dFg
+        keywords: []
+        text_content: |-
+          2026-10-24 - Post-Trip Yen vs USD Spend Summary (12 Nights, 2 People)
+          Avg exchange rate realized on Visa Infinite / Schwab ATM: ¥148.5 = $1.00 USD
+          - Flights: booked on 110k ANA miles + $312 taxes/fees total!
+          - Lodging (12 nights incl. 2n Hakone kaiseki ryokan): ¥465,000 (~$3,131)
+          - Rail, Shinkansen, Suica reloads & 1 luggage forward: ¥98,400 (~$663)
+          - Food, coffee, ラーメン, bakeries & izakayas: ¥196,000 (~$1,320 -> amazing quality/$!)
+          - Temples, museums (TeamLab + Nezu) & craft shopping: ¥84,500 (~$569)
+          Grand total cash OOP: ~$5,995 vs $6,200 target budget. Zero regrets on Hakone splurge.
+  - file_name: Woodworking_And_Garden.note
+    description: Standing desk walnut build, finish recipes, shop dust collection, raised bed soil pH, tomato blight, and fruit tree pruning
+    pages:
+      - id: life_shop_p0
+        page_index: 0
+        page_id: P20251206142018lK4jH7gF2dSa
+        keywords:
+          - joinery
+        text_content: |-
+          2025-12-06 - Black Walnut Standing Desk Cutlist & Sit/Stand Ergonomics
+          Finished top target: 60" L x 30" D x 1.375" thick (5-board glue-up from 8/4 rough walnut, ~38 bd ft @ $11.50/bf = $437).
+          - Rough mill to 1.5", let sticker-acclimate in garage shop 2 weeks (moisture meter reads 7.8% MC)
+          - Domino #8x50 tenons every 9" for alignment ONLY (leave outer mortises on wide setting for glue squeeze)
+          - Underside: 2x C-channel steel stiffeners routed flush, elongated slots w/ threaded inserts (1/4-20) for seasonal wood movement!
+          - Pairing w/ Uplift v2 Commercial dual-motor frame: seated height 25.8" (matches PT shoulder note!), standing 41.5".
+      - id: life_shop_p1
+        page_index: 1
+        page_id: P20260125164509mZ3xC6vB9nMq
+        keywords: []
+        text_content: |-
+          2026-01-25 - Hardwax Oil Finish Test Board (Scrap Walnut Offcuts)
+          Sanded all 4 test panels 80 -> 120 -> 150 -> 180 grit (Festool ETS w/ dust extractor; water-popped before 180).
+          1) Rubio Monocoat Pure 2C (3:1 oil:accelerator): 1 coat buffed w/ white Scotch-Brite -> matte warm chocolate, super fast, slight water ring after 4h cold mug test.
+          2) Osmo Polyx-Oil 3054 Raw vs 3043 Clear Satin (2 thin coats): 3043 deepens amber chatoyance nicely, zero ring on coffee/water drip test!
+          3) Tried & True Danish Oil + paste wax: gorgeous feel, takes 5+ days cure in 55F shop.
+          Winner for desktop: 2x Osmo 3043 Satin + 1 maintenance coat N3 Nano or ceramic wax after 14d cure.
+      - id: life_shop_p2
+        page_index: 2
+        page_id: P20260208103051wQ5eR8tY1uIo
+        keywords: []
+        text_content: |-
+          2026-02-08 - Dormant Fruit Tree Pruning & Copper Spray Calendar
+          Dry 46F morning - sanitized Felco #2 bypass pruners w/ 70% isopropyl between trees!
+          - Espalier Honeycrisp & Liberty apples (south fence): pruned vertical water sprouts back to 3 buds to encourage fruiting spurs; kept 3 horizontal tiers clean.
+          - Shiro Japanese plum: open-center goblet cut; took out crossing inward limb (~1.5" dia, clean collar cut, NO wound paint).
+          - Fig ('Desert King'): left last year's green-tipped breba wood intact! Only pulled dead basal suckers.
+          Next weekend (before bud swell): dormant horticultural oil + fixed copper spray on peach/plum for leaf curl.
+      - id: life_shop_p3
+        page_index: 3
+        page_id: P20260321131527tY4uI7oP0aSd
+        keywords:
+          - maintenance
+        text_content: |-
+          2026-03-21 - Garage Shop 2.5 HP Cyclone Dust Collection Upgrade
+          Fine walnut sanding dust was spiking my Dylos air monitor >3,000 small particles (<0.5 micron).
+          - Mounted Oneida Supercell / 1.5HP high-static wall cyclone on French cleat w/ 30-gal fiber drum
+          - Ran 4" SDR-35 PVC trunk along ceiling joists w/ sweeping 45-deg wyes (no sharp 90s!) + blast gates at table saw, planer & miter station
+          - Grounded PVC exterior? Skip myth—used short flex hose Bond clamps to grounded tool chassis
+          - Dedicated 240V 20A circuit pulled from garage subpanel ($145 wire + breaker)
+          Ceiling-mounted Wynn MERV-15 filter box drops shop air back under 150 count in 8 mins.
+      - id: life_shop_p4
+        page_index: 4
+        page_id: P20260418114002fG6hJ9kL2zXc
+        keywords: []
+        text_content: |-
+          2026-04-18 - Raised Cedar Beds: Soil Test, pH & Spring Amendments
+          Tested Bed #1 (brassicas/greens), Bed #2 (solanums/tomatoes), Bed #3 (berries):
+          - Bed #1 & #2 pH = 6.3 (good!), organic matter high, nitrogen depleted from winter cover crop breakdown
+            * Top-dressed 1.5" municipal leaf compost + 3 cups Down-To-Earth Bio-Live (5-4-2) per 4x8 bed
+          - Bed #3 (4x Duke & Chandler blueberries) pH crept up to 5.8 from tap water alkalinity!
+            * Worked in 1.2 lb elemental sulfur pellets + pine bark fines + Holly-tone; target pH 4.6-5.0
+            * Checked pH pen calibraton w/ 4.01 & 7.00 buffer packets first (was drifting +0.2 high).
+      - id: life_shop_p5
+        page_index: 5
+        page_id: P20260726185540vB2nM5qW8eRt
+        keywords:
+          - tomatoes
+        text_content: |-
+          2026-07-26 - Tomato Early Blight (Alternaria) vs Septoria Leaf Spot Log
+          Humid week + overhead sprinkler hit lower leaves on 'Sungold' and 'Cherokee Purple' in Bed #2:
+          - Concentric bullseye brown rings w/ yellow halos on bottom 12" foliage -> classic Early Blight
+          - Action today: pruned all leaves below first ripening truss (trashed in municipal yard bin, NEVER home compost!), laid 3" clean wheat straw mulch to stop soil splash
+          - Switched watering 100% to 0.5 GPH drip emitters @ 6:00 AM (45m run 3x/wk)
+          - 'Juliet' plum & 'Legend' Oregon bred determinant right next door have ZERO spots -> plant 2x Legend next spring!
+      - id: life_shop_p6
+        page_index: 6
+        page_id: P20261115152011nM7qW1eR4tYu
+        keywords: []
+        text_content: |-
+          2026-11-15 - Hardneck Garlic Planting & Shop Winterization
+          Planted 54 cloves in Bed #1 (rotated away from 2025 leek patch), 6" spacing, 3" deep + 4" shredded maple leaf blanket:
+          - 30x 'Music' (huge porcelain cloves, reliable storage) + 24x 'Chesnok Red' (baking/roasting favorite)
+          Garden & shop cold-snap checklist before 26F freeze Tuesday:
+          - Drained & blew out drip irrigation manifold at 35 PSI max; brought brass timers + wood glues (Titebond III, hide glue) and Osmo cans indoors to laundry room shelf!
+          - Paste-waxed cast iron table saw + jointer beds so condensation doesn't flash-rust.
+  - file_name: Book_And_History_Notes.note
+    description: Reading notes on Late Bronze Age Mediterranean collapse, behavioral economics, urban mobility, Stoicism, and espresso chemistry
+    pages:
+      - id: life_books_p0
+        page_index: 0
+        page_id: P20251123211504kL2zX5cV8bNm
+        keywords:
+          - bronze-age
+        text_content: |-
+          2025-11-23 - Eric Cline, "1177 B.C.: The Year Civilization Collapsed" (Rev. Ed.)
+          Core thesis: NOT a single villain ("Sea Peoples"), but a "systems collapse" of hyper-connected palace economies around 1200-1150 BCE.
+          - Tin + copper network fragility: bronze needed ~90% Cu (Cyprus) + ~10% Sn hauled all the way from Badakhshan (Afghanistan) or Cornwall!
+          - Uluburun shipwreck (~1300 BCE) proves staggeringly cosmopolitan gift/trade exchange: 10 tons Cypriot copper, 1 ton tin, Canaanite jars, Baltic amber, Egyptian gold scarab of Nefertiti.
+          - Multipliers: 300-yr megadrought (pollen cores in Cyprus/Syria), earthquake storm along Aegean faults, internal peasant revolts at Mycenae/Ugarit cutting off grain & tin routes simultaneously.
+      - id: life_books_p1
+        page_index: 1
+        page_id: P20260117220538oP5aS8dF1gHj
+        keywords:
+          - reread
+        text_content: |-
+          2026-01-17 - Kahneman ("Thinking, Fast and Slow") & Thaler on Financial Heuristics
+          Notes connecting cognitive biases to how we make real household & investing decisions:
+          - Mental Accounting: treating a $2,000 tax refund or credit-card sign-up bonus as "house money" while agonizing over a $40 tool purchase -> dollars are fungible!
+          - Anchoring + Loss Aversion (~2x pain vs equivalent gain): holding a losing stock or refusing to lock a 5.5% mortgage refi because you anchor to 2021's anomalous 2.8% rates.
+          - Planning Fallacy: home renovation & woodshop time estimates always assume best-case path; apply "outside view" reference-class multiplier (1.6x time, 1.25x cost).
+      - id: life_books_p2
+        page_index: 2
+        page_id: PLEGACY_LIFE_BOOKS_P2
+        keywords: []
+        text_content: |-
+          Marcus Aurelius, "Meditations" (Hays translation, Books II, IV & V)
+          - IV.3: "People look for retreats for themselves, in the country, by the coast, or in the hills... Nowhere can a person find a quieter or more untroubled retreat than in his own mind."
+          - Dichotomy of control (via Epictetus): separate external shock (hail branch hitting garage, delayed flight, market drawdown) from our second-arrow judgment ("this ruined my week").
+          - Book V.1 on getting out of bed when unmotivated: we were built for cooperative work, not just staying warm under blankets—pair duty w/ gentleness toward irritable coworkers.
+          - View from above: zoom out in space and deep time (Bronze Age palaces -> dust) to shrink petty status anxiety.
+      - id: life_books_p3
+        page_index: 3
+        page_id: P20260429214019eR7tY0uI3oPa
+        keywords: []
+        text_content: |-
+          2026-04-29 - Urban Transit, Protected Bike Networks & Dutch CROW Design Principles
+          Reading "Curbing Traffic" (Bruntlett) + Jarrett Walker's "Human Transit":
+          - Frequency IS freedom: a bus/tram every 7-8 mins builds spontaneous ridership; 45-min headways require schedule memorization and kill network transfers.
+          - Painted bike gutters next to 35 mph arterials only serve the "strong & fearless" ~4% -> continuous Dutch kerbs, raised crosswalks at side streets, and tight corner radii bring out 8-to-80 yr olds.
+          - Modal filtering (diagonal diverters on residential grids): lets bikes/peds/fire trucks pass through while routing cut-through car commuters back onto boulevards -> noise drops 6-10 dB.
+      - id: life_books_p4
+        page_index: 4
+        page_id: P20260611202544sD4fG7hJ0kLz
+        keywords:
+          - espresso
+        text_content: |-
+          2026-06-11 - Jonathan Gagné, "The Physics of Filter Coffee" + Espresso Water Chemistry
+          Why city tap water vs RO matters so much for extraction & boiler scale:
+          - General Hardness (GH: Mg2+ & Ca2+) pulls flavor compounds; Alkalinity (KH: HCO3- bicarbonate buffer) neutralizes organic fruit acids!
+          - High KH (>70 ppm as CaCO3) makes washed Ethiopian/Colombian roasts taste flat, chalky, muted; zero KH tastes sour/battery-acid.
+          - DIY Hendon / RPavlis / Barista Hustle lotus drops recipe in 1 gal distilled water:
+            * Target ~55 ppm GH (mostly MgSO4 Epsom salt) + ~25 ppm KH (potassium bicarbonate -> zero scale in espresso thermoblock!).
+            * Turbo shot experiment on light roast: 18g in -> 45g out in 17 sec @ 6 bar = sweeter & more consistent than 9-bar 30s!
+      - id: life_books_p5
+        page_index: 5
+        page_id: P20260912215016cV6bN9mQ2wEr
+        keywords: []
+        text_content: |-
+          2026-09-12 - Edo-Period Urbanism & Japanese Joinery Reading Prep
+          Notes from "Just Enough: Lessons in Living Green from Traditional Japan" (Azby Brown) + Seike's "The Art of Japanese Joinery":
+          - Edo (~1750, pop >1 million) ran a closed-loop circular economy: nightsoil auctioned by landlords to suburban daikon farmers for silver; ash buyers supplied dye houses & potteries; zero timber wasted.
+          - Tsugite (lengthening joints) & Shiguchi (framing joints): wood houses flex as damped pendulums during earthquakes rather than snapping rigid iron fasteners (just like Kyoto machiya beams!).
+          - Kanna (pull plane) slices wood fibers cleanly -> leaves burnished surface that sheds rain without varnish.
+      - id: life_books_p6
+        page_index: 6
+        page_id: P20261118213507yU1iO4pA7sDf
+        keywords: []
+        text_content: |-
+          2026-11-18 - Fernand Braudel & Cyprian Broodbank ("The Making of the Middle Sea")
+          How geography & wind regimes shaped Mediterranean connectivity long before Rome:
+          - Three rhythms of history (Braudel): la longue durée (mountains, currents, seasonal transhumance), conjonctures (demographic/price cycles), and mere surface "events" (battles, treaties).
+          - Counterclockwise currents + summer northern Etesian (Meltemi) winds made sailing Crete -> Egypt easy, while returning north forced ships to hug the Levantine & Anatolian coast past Ugarit and Cyprus!
+          - Olive + vine + barley triad + maritime cabotage turned fragmented micro-ecologies into risk-sharing insurance against localized rain failure.
+queries:
+  - id: q_tag_01
+    category: tag_lookup
+    query: '#rehab'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup physical therapy shoulder rehab program tagged #rehab where the word rehab does not appear in body text, with partial credit for untagged knee PT rehab note.'
+    relevant_pages:
+      life_health_p0: 2
+      life_health_p1: 1
+  - id: q_tag_02
+    category: tag_lookup
+    query: '#tax-deductible'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup Q4 consulting estimated tax and home-office deduction note via #tax-deductible tag.'
+    relevant_pages:
+      life_home_p1: 2
+  - id: q_tag_03
+    category: tag_lookup
+    query: '#gift-idea'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup Kyoto and Tokyo craft shopping souvenirs for family and coworkers tagged #gift-idea.'
+    relevant_pages:
+      life_trip_p5: 2
+  - id: q_tag_04
+    category: tag_lookup
+    query: '#postmortem'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup SEV-2 billing consumer lag incident page tagged #postmortem without the word postmortem in its body, with partial credit for untagged production outage writeups.'
+    relevant_pages:
+      work_eng_p0: 2
+      work_eng_p3: 1
+      work_eng_p7: 1
+  - id: q_tag_05
+    category: tag_lookup
+    query: '#ks-trapezoid'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup both light and dark stroller diagram pages sharing the #ks-trapezoid keyword tag.'
+    relevant_pages:
+      ocr_stroller_diagram_light: 2
+      ocr_stroller_diagram_dark: 2
+  - id: q_tag_06
+    category: tag_lookup
+    query: '#京都'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup Japanese #京都 tag attached to the hotel and ryokan lodging confirmations page, with partial credit for other Kyoto rail, walk, and shopping pages.'
+    relevant_pages:
+      life_trip_p1: 2
+      life_trip_p0: 1
+      life_trip_p4: 1
+      life_trip_p5: 1
+  - id: q_tag_07
+    category: tag_lookup
+    query: '#グルメ'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup Tokyo Tsukiji market, specialty coffee, and ramen food log via #グルメ tag absent from body text, with partial credit for Kyoto matcha and duck soba dining log.'
+    relevant_pages:
+      life_trip_p3: 2
+      life_trip_p4: 1
+  - id: q_tag_08
+    category: tag_lookup
+    query: '#audit-evidence'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup all compliance pages tagged #audit-evidence across SOC2 prep and KMS DR key policy sign-off.'
+    relevant_pages:
+      work_sec_p3: 2
+      work_sec_p6: 2
+  - id: q_tag_09
+    category: tag_lookup
+    query: '#follow-up'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup all five pages across engineering, product, work BuJo, and personal health sharing the #follow-up tag.'
+    relevant_pages:
+      work_eng_p4: 2
+      work_prod_p6: 2
+      work_bujo_p3: 2
+      work_bujo_p7: 2
+      life_health_p5: 2
+  - id: q_tag_10
+    category: tag_lookup
+    query: '#quote'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Lookup contractor HVAC heat pump bids tagged #quote where the body text never uses the word quote, with partial credit for untagged household contractor estimates.'
+    relevant_pages:
+      life_home_p0: 2
+      life_home_p4: 1
+      life_home_p5: 1
+  - id: q_lex_01
+    category: exact_lexical
+    query: SHX78B75UC
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Exact Bosch 800 dishwasher model number lookup from home appliance log.
+    relevant_pages:
+      life_home_p6: 2
+  - id: q_lex_02
+    category: exact_lexical
+    query: ENHANCE_YOUR_CALM
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Exact gRPC/HTTP2 error code from Envoy 1.31 staging upgrade watch item.
+    relevant_pages:
+      work_eng_p4: 2
+  - id: q_lex_03
+    category: exact_lexical
+    query: PLAT-904
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Exact engineering incident ticket ID for the January billing consumer lag spike and downstream references.
+    relevant_pages:
+      work_eng_p0: 2
+      work_sec_p3: 1
+      work_bujo_p5: 1
+      work_ml_p2: 1
+  - id: q_lex_04
+    category: exact_lexical
+    query: 'PR #514'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Exact pull request number for the SQLite WAL lock timeout fix in daily BuJo.
+    relevant_pages:
+      ocr_bujo_daily_saturday: 2
+  - id: q_lex_05
+    category: exact_lexical
+    query: 哲学の道 抹茶
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Japanese kanji lookup for Philosopher's Path walk and Uji matcha tasting in Kyoto.
+    relevant_pages:
+      life_trip_p4: 2
+  - id: q_lex_06
+    category: exact_lexical
+    query: L'addition ça fait combien
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Exact French cafe/bar phrase for asking for the bill and total cost.
+    relevant_pages:
+      ocr_french_cafe_bar: 2
+  - id: q_lex_07
+    category: exact_lexical
+    query: Quiero cancelar la reservación
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Spanish practice sentence for canceling a reservation from Spanish lessons notebook.
+    relevant_pages:
+      ocr_spanish_sentences_lesson_2: 2
+      ocr_spanish_cognates_lesson_1: 1
+  - id: q_lex_08
+    category: exact_lexical
+    query: yürüdüm çıktım
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Turkish phrase with diacritics from handwritten Turkish OCR note.
+    relevant_pages:
+      ocr_turkish_diacritics: 2
+  - id: q_lex_09
+    category: exact_lexical
+    query: onboarding funnel
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Normal user spelling against page containing realistic OCR typo 'onboaridng' in self-serve funnel review.
+    relevant_pages:
+      work_prod_p3: 2
+  - id: q_lex_10
+    category: exact_lexical
+    query: OAuth 2.1 refresh token
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Normal user spelling against security threat review containing realistic OCR typo '0Auth'.
+    relevant_pages:
+      work_sec_p1: 2
+  - id: q_sem_01
+    category: semantic_paraphrase
+    query: preventing mice and pests from sneaking into house openings
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of installing hardware cloth over dryer and soffit vents to keep rodents out.
+    relevant_pages:
+      life_home_p4: 2
+  - id: q_sem_02
+    category: semantic_paraphrase
+    query: mineral balance for morning pour-over so beans aren't dull or overly sharp
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of brewing water hardness and alkalinity buffers preventing chalky or battery-acid coffee.
+    relevant_pages:
+      life_books_p4: 2
+  - id: q_sem_03
+    category: semantic_paraphrase
+    query: middle of the night insomnia and elevated pulse in warm weather
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of waking at 3:15 AM wired with higher resting heart rate during hot weeks.
+    relevant_pages:
+      life_health_p6: 2
+  - id: q_sem_04
+    category: semantic_paraphrase
+    query: comparing unlimited bullet train flat-rate package against buying individual tickets in Japan
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of calculating whether the 14-day JR Pass beats point-to-point Shinkansen fares.
+    relevant_pages:
+      life_trip_p0: 2
+  - id: q_sem_05
+    category: semantic_paraphrase
+    query: controlling fungal disease on summer vegetable vines in the backyard
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of managing Alternaria early blight and leaf spot on raised-bed tomatoes.
+    relevant_pages:
+      life_shop_p5: 2
+  - id: q_sem_06
+    category: semantic_paraphrase
+    query: how ancient eastern Mediterranean kingdoms fell apart when long-distance metal supply chains broke
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of Late Bronze Age palace systems collapse and tin-copper network fragility in 1177 B.C.
+    relevant_pages:
+      life_books_p0: 2
+  - id: q_sem_07
+    category: semantic_paraphrase
+    query: protecting cabinetry adhesives and oil finishes from subzero temperatures
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of bringing wood glues and Osmo cans indoors before a winter freeze.
+    relevant_pages:
+      life_shop_p6: 2
+  - id: q_sem_08
+    category: semantic_paraphrase
+    query: creating neighborhood avenues where children and seniors feel safe cycling
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of Dutch CROW protected kerbs, raised crosswalks, and modal filters for 8-to-80 riders.
+    relevant_pages:
+      life_books_p3: 2
+  - id: q_sem_09
+    category: semantic_paraphrase
+    query: collapsing concurrent duplicate requests when a heavy customer hammers the same lookup node
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of singleflight coalescing and TinyLFU caching during the Redis hot-key stampede.
+    relevant_pages:
+      work_eng_p3: 2
+  - id: q_sem_10
+    category: semantic_paraphrase
+    query: why we refused to send private user documents to an outside machine learning company
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of rejecting third-party VectorCloud AI over payload retention and self-hosting in VPC.
+    relevant_pages:
+      work_sec_p5: 2
+      work_prod_p7: 1
+  - id: q_sem_11
+    category: semantic_paraphrase
+    query: covering storm tree-fall on our structure out of pocket instead of reporting it to the insurer
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of paying arborist and roofer bills directly because garage limb damage was under deductible.
+    relevant_pages:
+      life_home_p5: 2
+  - id: q_sem_12
+    category: semantic_paraphrase
+    query: ancient stoic philosophy on remaining calm during setbacks and dealing patiently with difficult colleagues
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Conceptual recall of Marcus Aurelius Meditations notes on dichotomy of control and gentleness toward coworkers.
+    relevant_pages:
+      life_books_p2: 2
+  - id: q_hyb_01
+    category: hybrid_intent
+    query: '#follow-up teeth grinding mouthguard'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Combines shared #follow-up tag with bruxism/nightguard concept to isolate the dental visit page.'
+    relevant_pages:
+      life_health_p5: 2
+  - id: q_hyb_02
+    category: hybrid_intent
+    query: '#q4-planning disaster recovery standby cost'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Combines shared #q4-planning tag with multi-region DR cost sizing to prioritize infra capacity breakdown alongside supporting Q4 DR budget notes.'
+    relevant_pages:
+      work_eng_p6: 2
+      work_prod_p6: 1
+      work_bujo_p3: 1
+      work_bujo_p6: 1
+  - id: q_hyb_03
+    category: hybrid_intent
+    query: '#okr-risk customer security questionnaires delaying enterprise deals'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Combines shared #okr-risk tag with stalled InfoSec enterprise beta deals.'
+    relevant_pages:
+      work_prod_p4: 2
+      work_sec_p3: 1
+  - id: q_hyb_04
+    category: hybrid_intent
+    query: '#decision-needed archiving old cold sync files to cheaper cloud storage'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Combines shared #decision-needed tag with S3 blob compaction and Glacier lifecycle tiering.'
+    relevant_pages:
+      work_eng_p2: 2
+  - id: q_hyb_05
+    category: hybrid_intent
+    query: '#must-read why standard retrieval benchmarks fail on personal notes'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Combines shared #must-read seminar tag with IR evaluation pitfalls on messy personal corpora.'
+    relevant_pages:
+      work_ml_p2: 2
+      work_bujo_p5: 1
+  - id: q_hyb_06
+    category: hybrid_intent
+    query: '#blocker mobile tablet login token theft and rotation'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: 'Combines shared #blocker tag with companion tablet refresh token rotation policy.'
+    relevant_pages:
+      work_sec_p1: 2
+  - id: q_hyb_07
+    category: hybrid_intent
+    query: webhook HMAC signature verification timestamp replay window and dual-secret rotation
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Multi-aspect webhook query targeting cryptographic signing spec rather than retry storm or ACL edge cases.
+    relevant_pages:
+      work_sec_p2: 2
+      work_prod_p7: 1
+      work_bujo_p7: 1
+  - id: q_hyb_08
+    category: hybrid_intent
+    query: AES-GCM per-org data encryption key AAD binding to stop cross-tenant blob swapping
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Multi-aspect encryption query targeting envelope DEK hierarchy rather than DR replica key policy.
+    relevant_pages:
+      work_sec_p0: 2
+      work_bujo_p2: 1
+  - id: q_hyb_09
+    category: hybrid_intent
+    query: monthly Ally savings buckets for car maintenance, home repairs, and 2027 travel fund
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Multi-aspect budget query targeting 2027 household sinking funds rather than AWS cloud or Japan trip spend.
+    relevant_pages:
+      life_home_p7: 2
+  - id: q_hyb_10
+    category: hybrid_intent
+    query: off-season 3-day full-body lifting split with weighted chin-ups and shoulder-friendly pressing
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Multi-aspect training query targeting autumn hypertrophy mesocycle among many workout and PT pages.
+    relevant_pages:
+      life_health_p7: 2
+      life_health_p0: 1
+  - id: q_flt_01
+    category: scoped_filters
+    query: webhook
+    name_filter: Security
+    date_after: null
+    date_before: null
+    description: Broad webhook search scoped by filename substring 'Security' to Security_And_Compliance.note.
+    relevant_pages:
+      work_sec_p2: 2
+      work_sec_p1: 1
+  - id: q_flt_02
+    category: scoped_filters
+    query: coffee
+    name_filter: french
+    date_after: null
+    date_before: null
+    description: Broad coffee search scoped by case-insensitive filename substring 'french' to french_phrases.note.
+    relevant_pages:
+      ocr_french_cafe_bar: 2
+      ocr_french_travel_phrases: 2
+  - id: q_flt_03
+    category: scoped_filters
+    query: deadlift
+    name_filter: null
+    date_after: '2026-10-15'
+    date_before: '2026-11-20'
+    description: Recurring deadlift exercise query scoped to late autumn 2026, excluding January and June pages.
+    relevant_pages:
+      ocr_bujo_daily_friday: 2
+      life_health_p7: 2
+  - id: q_flt_04
+    category: scoped_filters
+    query: KMS encryption
+    name_filter: null
+    date_after: '2026-10-01'
+    date_before: '2026-11-15'
+    description: KMS encryption search scoped to October-November 2026, excluding undated legacy note work_sec_p0 and September notes.
+    relevant_pages:
+      work_sec_p6: 2
+      work_eng_p6: 2
+      work_bujo_p5: 1
+  - id: q_flt_05
+    category: scoped_filters
+    query: Kestrel
+    name_filter: BuJo
+    date_after: '2026-09-01'
+    date_before: '2026-10-01'
+    description: Customer account Kestrel scoped to BuJo notebooks during September 2026.
+    relevant_pages:
+      work_bujo_p2: 2
+      work_bujo_p3: 2
+  - id: q_flt_06
+    category: scoped_filters
+    query: walnut
+    name_filter: Woodworking
+    date_after: null
+    date_before: '2026-02-01'
+    description: Walnut project notes in Woodworking_And_Garden.note before Feb 2026, excluding March cyclone and October Japan chisel notes.
+    relevant_pages:
+      life_shop_p0: 2
+      life_shop_p1: 2
+  - id: q_flt_07
+    category: scoped_filters
+    query: latency
+    name_filter: daily
+    date_after: null
+    date_before: null
+    description: Broad latency query restricted to daily notebooks matching filename substring 'daily'.
+    relevant_pages:
+      ocr_bujo_daily_friday: 2
+      ocr_bujo_daily_saturday: 2
+  - id: q_flt_08
+    category: scoped_filters
+    query: half marathon
+    name_filter: null
+    date_after: '2026-05-01'
+    date_before: '2026-06-01'
+    description: Half marathon search scoped to May 2026 race month, excluding March training plan and November calendar.
+    relevant_pages:
+      life_health_p4: 2
+  - id: q_neg_01
+    category: unanswerable_negative
+    query: '#patent-filing'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Nonexistent tag for patent filings not present anywhere in the corpus.
+    relevant_pages: {}
+  - id: q_neg_02
+    category: unanswerable_negative
+    query: '#angel-investing'
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Nonexistent tag for startup angel investing with zero relevant notes.
+    relevant_pages: {}
+  - id: q_neg_03
+    category: unanswerable_negative
+    query: BGP anycast ASN peering and RPKI origin validation
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Plausible network routing infrastructure topic absent from the platform engineering notes.
+    relevant_pages: {}
+  - id: q_neg_04
+    category: unanswerable_negative
+    query: sourdough starter levain feeding and boule scoring
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Plausible home bread fermentation topic absent from household and food notes.
+    relevant_pages: {}
+  - id: q_neg_05
+    category: unanswerable_negative
+    query: dog rabies vaccine booster and heartworm prescription
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Plausible veterinary pet care topic absent from the corpus.
+    relevant_pages: {}
+  - id: q_neg_06
+    category: unanswerable_negative
+    query: PADI open water scuba diving regulator maintenance
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Plausible travel and recreation scuba topic absent from all notebooks.
+    relevant_pages: {}
+  - id: q_neg_07
+    category: unanswerable_negative
+    query: custom ski boot heat molding and bindings DIN chart
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Plausible winter gear fitting topic absent from health and outdoor notes.
+    relevant_pages: {}
+  - id: q_neg_08
+    category: unanswerable_negative
+    query: Vulkan SPIR-V tessellation shader barycentric frustum culling
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Plausible 3D graphics programming topic absent from engineering and ML notes.
+    relevant_pages: {}
+  - id: q_neg_09
+    category: unanswerable_negative
+    query: INFRA-7742 Cassandra tombstone compaction
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Unknown issue key and Cassandra database topic absent from corpus.
+    relevant_pages: {}
+  - id: q_neg_10
+    category: unanswerable_negative
+    query: amateur ham radio dipole antenna SWR and VHF transceiver callsign
+    name_filter: null
+    date_after: null
+    date_before: null
+    description: Plausible amateur radio hobby topic absent from woodworking, travel, and craft notes.
+    relevant_pages: {}

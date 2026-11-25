@@ -45,7 +45,7 @@ repos:
     rev: v2.4.3
     hooks:
       - id: codespell
-        exclude: '^evals/ocr/(dataset\.yaml|results/.*\.json)$'
+        exclude: '^evals/(ocr|search)/(dataset\.yaml|results/.*\.json)$'
         args:
           - --ignore-words-list=folde,linkprotocal
   - repo: https://github.com/adrienverge/yamllint.git
