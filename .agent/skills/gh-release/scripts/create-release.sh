@@ -1,9 +1,49 @@
 #!/bin/bash
 set -e
 
-VERSION=$1
-if [ -z "$VERSION" ]; then
-  echo "Usage: $0 <version>"
+VERSION=""
+NOTES_FILE=""
+
+usage() {
+  echo "Usage: $0 <version> [--notes-file <path>]"
+  exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --notes-file)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --notes-file requires a file path."
+        usage
+      fi
+      NOTES_FILE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      ;;
+    -*)
+      echo "Error: Unknown option: $1"
+      usage
+      ;;
+    *)
+      if [[ -z "$VERSION" ]]; then
+        VERSION="$1"
+        shift
+      else
+        echo "Error: Unexpected argument: $1"
+        usage
+      fi
+      ;;
+  esac
+done
+
+if [[ -z "$VERSION" ]]; then
+  usage
+fi
+
+if [[ -n "$NOTES_FILE" && ! -f "$NOTES_FILE" ]]; then
+  echo "Error: Release notes file not found: $NOTES_FILE"
   exit 1
 fi
 
@@ -19,15 +59,15 @@ if [[ -n $(git status -s) ]]; then
 fi
 
 if ! command -v gh &> /dev/null; then
-    echo "gh command could not be found, please install it first"
-    exit 1
+  echo "gh command could not be found, please install it first"
+  exit 1
 fi
 
 FILE_PATH="pyproject.toml"
 
 if [ ! -f "$FILE_PATH" ]; then
-    echo "Error: $FILE_PATH not found."
-    exit 1
+  echo "Error: $FILE_PATH not found."
+  exit 1
 fi
 
 # Update version in pyproject.toml using sed
@@ -47,4 +87,9 @@ if [ -f "uv.lock" ]; then
 fi
 git commit -m "chore(release): $VERSION"
 git push
-gh release create "$VERSION" --generate-notes
+
+if [[ -n "$NOTES_FILE" ]]; then
+  gh release create "$VERSION" --title "$VERSION" --notes-file "$NOTES_FILE"
+else
+  gh release create "$VERSION" --title "$VERSION" --generate-notes
+fi
