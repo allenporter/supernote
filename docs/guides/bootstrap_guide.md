@@ -84,14 +84,14 @@ services:
     container_name: supernote
     restart: unless-stopped
     ports:
-      - "8080:8080" # Main HTTP API, Web UI, Socket.IO, OAuth 2.1
+      - "8080:8080" # Main HTTP API, Web UI, live sync (Socket.IO), OAuth 2.1
       - "8081:8081" # MCP server (/mcp)
     volumes:
       - ./storage:/data
     environment:
       SUPERNOTE_STORAGE_DIR: /data
       SUPERNOTE_CONFIG_DIR: /data/config
-      SUPERNOTE_PROXY_MODE: relaxed
+      SUPERNOTE_PROXY_MODE: relaxed # Trust proxy headers from Caddy/Nginx; use "strict" if exposed directly
       # Optional: default per-user storage quota in bytes (0 = bounded by disk free space)
       # SUPERNOTE_DEFAULT_USER_QUOTA: "10737418240"
       # Optional: enable Gemini OCR, summaries, and hybrid search (or configure Ollama in config.yaml)
@@ -103,11 +103,24 @@ services:
 
 If you want to add handwriting OCR, summaries, or semantic search later, see [Choosing an AI Provider](./ai_providers.md) for Google Gemini and 100% local Ollama/vLLM setups.
 
+### How configuration works
+
+Settings resolve in four layers, from highest to lowest priority:
+
+1. `SUPERNOTE_*` environment variables
+2. `config.yaml` (`config/config.yaml` for Python, or `./storage/config/config.yaml` for Docker, mounted at `/data/config/config.yaml`)
+3. Dynamic component settings saved in the Web UI (stored in SQLite)
+4. Built-in defaults
+
+The server intentionally never auto-creates `config.yaml` on first boot so unpinned components remain editable in the Web UI. When you want to pin settings declaratively, create `config.yaml` or pass `SUPERNOTE_*` environment variables and restart the server for those changes to take effect; pinned settings override database values and appear read-only in the Web UI.
+
 ---
 
 ## Create your admin account
 
-Open Private Cloud starts with an admin-first bootstrap flow. When the database is empty, registration is open for one account. The first user you register becomes the administrator, gets the default Supernote folders (`NOTE`, `DOCUMENT`, `EXPORT`, `INBOX`, `SCREENSHOT`), and automatically locks public registration for everyone else.
+Open Private Cloud starts with an admin-first bootstrap flow. When the database is empty, registration is open for one account. The first user you register becomes the administrator, gets the default Supernote folders (`Note`, `Document`, `EXPORT`, `INBOX`, `SCREENSHOT`), and automatically locks public registration for everyone else.
+
+If you are running with Docker, you can run any `supernote` CLI command inside the container (`docker exec -it supernote supernote ...`) or manage API keys in the Web UI under **Settings → Access & API Keys**.
 
 ### 1. Register the first admin
 
@@ -115,7 +128,7 @@ Open Private Cloud starts with an admin-first bootstrap flow. When the database 
 supernote admin --url http://localhost:8080 user add you@example.com --name "Admin"
 ```
 
-You will be prompted for a password (or pass `--password`). You can also register the first account from the Web UI sign-up screen at `http://localhost:8080`.
+You will be prompted for a password (or pass `--password`). With Docker, prefix the command with `docker exec -it supernote` (for example, `docker exec -it supernote supernote admin --url http://localhost:8080 user add you@example.com --name "Admin"`).
 
 ### 2. Sign in with the CLI
 
@@ -182,7 +195,7 @@ Per-user quotas override the server-wide `default_user_quota` setting. When a us
 4. Under **Settings → Sync**, toggle the folders you want to sync (`Note`, `Document`, `EXPORT`, `INBOX`, `SCREENSHOT`).
 5. Tap the **Sync** icon in the top pull-down bar.
 
-Connected tablets keep a live Socket.IO connection to the server so changes made in the Web UI or on another device trigger sync automatically. While a multi-file sync session is running, background `.note` processing waits until the tablet finishes uploading so sync stays fast.
+Connected tablets keep a live real-time connection (Socket.IO) to the server so changes made in the Web UI or on another device trigger sync automatically. While a multi-file sync session is running, background `.note` processing waits until the tablet finishes uploading so sync stays fast.
 
 ---
 
@@ -195,6 +208,14 @@ Three things to configure on your proxy:
 1. Allow uploads up to `1 GB` so large `.note` files and PDFs do not fail with `413 Payload Too Large`.
 2. Forward HTTP/1.1 `Upgrade` and `Connection` headers on `/socket.io/` for real-time sync notifications.
 3. If you proxy port `8081` for remote MCP clients, disable response buffering on `/mcp` so streamed responses flush immediately.
+
+Add these settings to `config/config.yaml` (or use `SUPERNOTE_BASE_URL`, `SUPERNOTE_MCP_BASE_URL`, and `SUPERNOTE_PROXY_MODE`):
+
+```yaml
+base_url: https://notes.example.com
+mcp_base_url: https://mcp.notes.example.com
+proxy_mode: relaxed # Trust forwarded headers from your proxy; use "strict" if exposed directly
+```
 
 ### Caddy (`Caddyfile`)
 
@@ -273,3 +294,15 @@ You can skip `supernote-cache/` and `temp/`; missing cached page PNGs are re-ren
 ```bash
 supernote admin integrity --full-disk
 ```
+
+---
+
+## Next steps
+
+Once your tablet is syncing, enable any optional capabilities you want:
+
+- [Choosing an AI Provider](./ai_providers.md) to compare Google Gemini, local Ollama or vLLM, Apple Vision, and zero-AI setups.
+- [Handwriting OCR & Multimodal Workflows](./ocr_and_multimodal.md) to transcribe handwritten pages, Bullet Journals, diagrams, and photos.
+- [Search & Retrieval](./search.md) to search across your notebooks by keyword or meaning.
+- [MCP Server & AI Assistants](./mcp.md) to connect Claude Desktop, Claude Code, or Cursor to your notes.
+- [Webhooks, iCal (`.ics`) & Integrations](./webhooks_and_integrations.md) to export Supernote To-Dos or trigger Home Assistant and n8n workflows.

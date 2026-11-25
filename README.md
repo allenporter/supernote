@@ -20,8 +20,8 @@ Unlike the official multi-container Java, MariaDB, and Redis Private Cloud stack
 
 | Tier | Memory Footprint | What's Included | AI Required? |
 | :--- | :--- | :--- | :---: |
-| **1. Bare Sync Server** | ~135 MB RAM | Drop-in Private Cloud sync for Raspberry Pi / NAS, storage quotas (`web_enabled: false`, `mcp_enabled: false`) | No |
-| **2. Web Workspace & Integrations** | ~160 MB idle (~310 MB peak) | 4-tab Web UI (Files, Digests, Tasks, Wiki), `.ics` calendar feeds, webhooks, native page-keyword search | No |
+| **1. Bare Sync Server** | ~135 MB RAM | Drop-in Private Cloud sync for Raspberry Pi / NAS, storage quotas (disables Web UI and MCP) | No |
+| **2. Web Workspace & Integrations** | ~160 MB idle (~310 MB peak) | 4-tab Web UI (Files, Digests, Tasks, Wiki), `.ics` calendar feeds, webhooks, built-in Supernote keyword search | No |
 | **3. Optional AI & Knowledge Hub** | ~160 MB idle + chosen model | Handwriting & diagram OCR, standalone image OCR, hybrid semantic search, opt-in LLM Wiki + Obsidian export, MCP server for Claude/Cursor | Optional (Gemini or local Ollama/vLLM) |
 | **4. Offline `.note` Toolkit** | CLI / library only | Parse `.note` files, convert to PDF/PNG/SVG, or author Bullet Journal `.note` files from Markdown—no server needed | No |
 
@@ -37,7 +37,7 @@ Unlike the official multi-container Java, MariaDB, and Redis Private Cloud stack
 | Search across years of notebooks by keyword or meaning | [Search & Retrieval](docs/guides/search.md) |
 | Turn your synced notes and tasks into an Obsidian-ready personal wiki | [LLM Wiki](docs/guides/llm_wiki.md) |
 | Connect Claude Desktop, Claude Code, or Cursor to read notes and inspect sketches | [MCP Server & AI Assistants](docs/guides/mcp.md) |
-| Sync Supernote To-Dos to Apple Reminders, Google Calendar, or Home Assistant | [Webhooks, iCal (`.ics`) & Integrations](docs/guides/webhooks_and_integrations.md) |
+| Export Supernote To-Dos as a calendar feed (`.ics`) or trigger Home Assistant and n8n webhooks | [Webhooks, iCal (`.ics`) & Integrations](docs/guides/webhooks_and_integrations.md) |
 | Convert or author `.note` files offline from the terminal or Python | [CLI Reference](docs/reference/cli_reference.md) · [`supernote.notebook`](supernote/notebook/README.md) |
 
 ---
@@ -93,6 +93,12 @@ The first registered user becomes the administrator and closes public registrati
 
 ```bash
 supernote admin --url http://localhost:8080 user add you@example.com
+```
+
+If you are running with Docker, run the same command inside the container:
+
+```bash
+docker exec -it supernote-server supernote admin --url http://localhost:8080 user add you@example.com
 ```
 
 ### 3. Pair your Supernote
