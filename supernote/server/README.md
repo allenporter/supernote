@@ -69,7 +69,7 @@ supernote cloud keys create "local-agent"
 
 #### AI Configuration
 
-Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled). We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`; see `supernote.guides.ocr_benchmarks` and [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)):
+Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled). We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`; see `supernote.guides.ocr_benchmarks` and [Choosing an AI Provider](../../docs/guides/ai_providers.md)):
 
 ```yaml
 ai:
@@ -92,7 +92,7 @@ ai:
     max_concurrency: 5
 ```
 
-Gemini offers both a `$0` Free tier (which uses API data for model training) and a Paid tier when linked to a [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) (which does not; see [API Privacy](../../README.md#api-privacy-training--data-retention)).
+Gemini offers both a `$0` Free tier (which uses API data for model training) and a Paid tier when linked to a [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) (which does not; see [API Privacy](../../docs/guides/ai_providers.md#api-data-use-training-and-retention)).
 
 To run the models locally instead, use the `openai` provider with any server that implements the OpenAI API (e.g. Ollama, llama.cpp, vLLM, LM Studio). OCR needs a vision-capable chat model. Providers can be mixed per capability:
 
@@ -116,7 +116,7 @@ ai:
     max_concurrency: 1
 ```
 
-On macOS (`pip install "supernote[server,apple]"`), Apple's on-device `Vision` framework (`vision-accurate`) is supported as an offline fallback for basic prose search without an API key or model server. It is not recommended for diagrams, multi-column notes, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)); avoid `vision-fast`, which only detects machine-printed text:
+On macOS (`pip install "supernote[server,apple]"`), Apple's on-device `Vision` framework (`vision-accurate`) is supported as an offline fallback for basic prose search without an API key or model server. It is not recommended for diagrams, multi-column notes, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](../../docs/guides/ai_providers.md)); avoid `vision-fast`, which only detects machine-printed text:
 
 ```yaml
 ai:

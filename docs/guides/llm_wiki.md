@@ -33,7 +33,7 @@ wiki:
   auto_compile: true  # Compile automatically as notes and tasks sync
 ```
 
-By default, each user has a `daily_token_budget` of `200,000` tokens per day. That is plenty for everyday note-taking while keeping a large first-time backfill from burning through tokens in one go. You can raise or lower `daily_token_budget` and other limits (`debounce_seconds`, `max_pages_per_batch`, `lint_event_threshold`, `lint_interval_days`) in the [Configuration Reference](../reference/configuration.md).
+Setting `SUPERNOTE_WIKI_ENABLED=true` turns on the **Wiki** tab and lets you trigger manual or backfill compiles. Add `auto_compile: true` in `config/config.yaml` when you want background compilation to run automatically as notes and tasks sync. By default, each user has a `daily_token_budget` of `200,000` tokens per day. That is plenty for everyday note-taking while keeping a large first-time backfill from burning through tokens in one go. You can raise or lower `daily_token_budget` and other limits (`debounce_seconds`, `max_pages_per_batch`, `lint_event_threshold`, `lint_interval_days`) in the [Configuration Reference](../reference/configuration.md).
 
 ## Everyday use
 
