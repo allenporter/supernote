@@ -28,7 +28,7 @@ from supernote.server.services.user import UserService
 def ai_config() -> AiConfig:
     """Default fake embedding config for search HTTP route tests."""
     return AiConfig(
-        embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
+        embedding=ModelConfig(provider="fake_ai", model="fake-embedding-v1"),
     )
 
 

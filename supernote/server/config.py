@@ -12,12 +12,17 @@ For a complete table of YAML keys and environment variables, see
 `supernote.guides.configuration` and `supernote.guides.bootstrap_guide`.
 """
 
+import copy
 import logging
 import os
-from dataclasses import dataclass, field
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
+import yaml
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.yaml import DataClassYAMLMixin
 
@@ -26,6 +31,21 @@ from supernote.server.utils.image import DEFAULT_IMAGE_EXCLUDE_PATTERNS
 logger = logging.getLogger(__name__)
 
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+_COMPONENT_DOMAIN_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+class ComponentConfigSource(StrEnum):
+    """Origin tier for a component's effective configuration."""
+
+    ENV = "env"
+    YAML = "yaml"
+    DATABASE = "database"
+    DEFAULT = "default"
+
+    @property
+    def is_static(self) -> bool:
+        """Whether this tier comes from static startup configuration (`env` or `yaml`)."""
+        return self in (ComponentConfigSource.ENV, ComponentConfigSource.YAML)
 
 
 def _normalize_log_level(level_name: str) -> str:
@@ -39,12 +59,21 @@ def _normalize_log_level(level_name: str) -> str:
     return normalized
 
 
+def _parse_bool(val: Any) -> bool:
+    """Coerce a raw configuration or environment value to a boolean."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on")
+    return bool(val)
+
+
 def _get_bool_env(name: str, default: bool) -> bool:
     """Get a boolean value from an environment variable."""
     val = os.getenv(name)
     if val is None:
         return default
-    return val.lower() in ("true", "1", "yes", "on")
+    return _parse_bool(val)
 
 
 @dataclass
@@ -97,7 +126,7 @@ class ProviderConfig(DataClassYAMLMixin):
     """Optional custom base URL for the provider (e.g. local Ollama or vLLM server)."""
 
     type: str | None = None
-    """Backend implementation (`'gemini'`, `'openai'`, `'apple'`, `'fake'`). Defaults to the entry's name.
+    """Backend implementation (`'gemini'`, `'openai'`, `'apple'`, `'fake_ai'`). Defaults to the entry's name.
 
     Set it to configure several entries of one kind, e.g. two OpenAI-compatible
     servers named `ollama` and `llamacpp`.
@@ -169,6 +198,15 @@ class AiConfig(DataClassYAMLMixin):
             return provider_cfg.type
         return name
 
+    @property
+    def active_provider_types(self) -> set[str]:
+        """Return normalized backend provider types referenced by configured capability models."""
+        return {
+            self.provider_type(m.provider).strip().lower()
+            for m in (self.ocr, self.summary, self.embedding, self.text)
+            if m is not None
+        }
+
     class Config(BaseConfig):
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
@@ -188,8 +226,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_PORT`
     """
 
-    mcp_enabled: bool = True
+    mcp_enabled: bool = field(
+        default=True,
+        metadata={"component": ("mcp", "enabled")},
+    )
     """Whether to enable the Model Context Protocol (MCP) server and OAuth endpoints.
+
+    Aliases `mcp.enabled`.
 
     Env Var: `SUPERNOTE_MCP_ENABLED`
     """
@@ -315,8 +358,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_PROMPTS_DIR`
     """
 
-    metrics_enabled: bool = True
+    metrics_enabled: bool = field(
+        default=True,
+        metadata={"component": ("metrics", "enabled")},
+    )
     """Whether to enable the Prometheus metrics endpoint and logging middleware.
+
+    Aliases `metrics.enabled`.
 
     Env Var: `SUPERNOTE_METRICS_ENABLED`
     """
@@ -327,14 +375,25 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_METRICS_PATH`
     """
 
-    webhooks: dict[str, Any] = field(default_factory=dict)
+    webhooks: dict[str, Any] = field(
+        default_factory=dict,
+        metadata={"component": "webhooks"},
+    )
     """Raw configuration section for the outbound webhooks component."""
 
-    wiki: dict[str, Any] = field(default_factory=dict)
+    wiki: dict[str, Any] = field(
+        default_factory=dict,
+        metadata={"component": "wiki"},
+    )
     """Raw configuration section for the opt-in LLM wiki component."""
 
-    web_enabled: bool = True
+    web_enabled: bool = field(
+        default=True,
+        metadata={"component": ("web_ui", "enabled")},
+    )
     """Whether to serve the web frontend dashboard and static assets.
+
+    Aliases `web_ui.enabled`.
 
     Env Var: `SUPERNOTE_WEB_ENABLED`
     """
@@ -354,7 +413,41 @@ class ServerConfig(DataClassYAMLMixin):
             raise ValueError("default_user_quota must be a non-negative integer")
         if self.event_log_retention_days < 0:
             raise ValueError("event_log_retention_days must be >= 0")
+        self._root_component_configs: dict[str, dict[str, Any]] = {}
+        self._component_sources: dict[str, ComponentConfigSource] = {}
         self._sync_legacy_gemini_config()
+        self._seed_programmatic_component_sources()
+
+    def _seed_programmatic_component_sources(self) -> None:
+        """Record `ComponentConfigSource.YAML` provenance when `ServerConfig` is constructed with non-default component fields."""
+        for f in fields(self):
+            comp_meta = f.metadata.get("component")
+            if isinstance(comp_meta, str):
+                if getattr(self, f.name):
+                    self._component_sources.setdefault(
+                        comp_meta, ComponentConfigSource.YAML
+                    )
+            elif isinstance(comp_meta, tuple):
+                domain, _ = comp_meta
+                if getattr(self, f.name) != f.default:
+                    self._component_sources.setdefault(
+                        domain, ComponentConfigSource.YAML
+                    )
+        if self.ai.active_provider_types:
+            self._component_sources.setdefault("ai", ComponentConfigSource.YAML)
+
+    @property
+    def root_component_configs(self) -> Mapping[str, dict[str, Any]]:
+        """Root-level `<domain>:` sections loaded from `config.yaml`."""
+        return {
+            domain: copy.deepcopy(cfg)
+            for domain, cfg in self._root_component_configs.items()
+        }
+
+    @property
+    def component_sources(self) -> Mapping[str, ComponentConfigSource]:
+        """Static configuration source (`ENV` or `YAML`) recorded per component domain."""
+        return dict(self._component_sources)
 
     def _sync_legacy_gemini_config(self) -> None:
         """Synchronize legacy top-level `gemini_*` fields with `self.ai`."""
@@ -450,12 +543,50 @@ class ServerConfig(DataClassYAMLMixin):
             logger.info(f"Using config file: {config_file}")
 
         config = cls()
+        raw_yaml_data: dict[str, Any] = {}
         if config_file.exists():
             try:
-                with open(config_file, "r") as f:
-                    config = cls.from_yaml(f.read())
+                raw_text = config_file.read_text()
+                parsed_yaml = yaml.safe_load(raw_text)
+                if isinstance(parsed_yaml, dict):
+                    raw_yaml_data = parsed_yaml
+                config = cls.from_yaml(raw_text)
             except Exception as e:
                 logger.warning(f"Failed to load config file {config_file}: {e}")
+
+        config._component_sources.clear()
+        alias_by_target: dict[tuple[str, str], str] = {
+            comp_meta: f.name
+            for f in fields(cls)
+            if isinstance((comp_meta := f.metadata.get("component")), tuple)
+        }
+        for key, value in raw_yaml_data.items():
+            if (
+                isinstance(key, str)
+                and _COMPONENT_DOMAIN_RE.fullmatch(key)
+                and key not in ("ai", "auth")
+                and isinstance(value, dict)
+            ):
+                if "enabled" in value:
+                    value = {**value, "enabled": _parse_bool(value["enabled"])}
+                config._root_component_configs[key] = copy.deepcopy(value)
+                config._component_sources[key] = ComponentConfigSource.YAML
+                logger.debug(
+                    "Loaded root YAML component section for %r (keys=%s)",
+                    key,
+                    sorted(value.keys()),
+                )
+                for sub_key, sub_val in value.items():
+                    if (attr_name := alias_by_target.get((key, sub_key))) is not None:
+                        setattr(config, attr_name, sub_val)
+
+        for f in fields(cls):
+            if f.name in raw_yaml_data:
+                comp_meta = f.metadata.get("component")
+                if isinstance(comp_meta, tuple):
+                    config._component_sources[comp_meta[0]] = ComponentConfigSource.YAML
+        if "ai" in raw_yaml_data or "gemini_api_key" in raw_yaml_data:
+            config._component_sources["ai"] = ComponentConfigSource.YAML
 
         # 4. JWT Secret priority: Env > Config > Database (CoordinationService)
         env_secret = os.getenv("SUPERNOTE_JWT_SECRET")
@@ -484,6 +615,7 @@ class ServerConfig(DataClassYAMLMixin):
             config.mcp_enabled = _get_bool_env(
                 "SUPERNOTE_MCP_ENABLED", config.mcp_enabled
             )
+            config._component_sources["mcp"] = ComponentConfigSource.ENV
             logger.info(f"MCP Enabled: {config.mcp_enabled}")
 
         if os.getenv("SUPERNOTE_MCP_PORT"):
@@ -596,6 +728,7 @@ class ServerConfig(DataClassYAMLMixin):
             config.ai.providers.setdefault(
                 "gemini", ProviderConfig()
             ).api_key = gemini_api_key
+            config._component_sources["gemini"] = ComponentConfigSource.ENV
             logger.info(
                 f"Using SUPERNOTE_GEMINI_API_KEY: xxx...{config.gemini_api_key[-3:]}"
             )
@@ -642,6 +775,7 @@ class ServerConfig(DataClassYAMLMixin):
             config.metrics_enabled = _get_bool_env(
                 "SUPERNOTE_METRICS_ENABLED", config.metrics_enabled
             )
+            config._component_sources["metrics"] = ComponentConfigSource.ENV
             logger.info(f"Metrics Enabled: {config.metrics_enabled}")
 
         if metrics_path := os.getenv("SUPERNOTE_METRICS_PATH"):
@@ -653,6 +787,7 @@ class ServerConfig(DataClassYAMLMixin):
                 "SUPERNOTE_WEBHOOKS_ENABLED",
                 bool(config.webhooks.get("enabled", False)),
             )
+            config._component_sources["webhooks"] = ComponentConfigSource.ENV
             logger.info(f"Webhooks Enabled: {config.webhooks['enabled']}")
 
         if os.getenv("SUPERNOTE_WIKI_ENABLED"):
@@ -660,12 +795,14 @@ class ServerConfig(DataClassYAMLMixin):
                 "SUPERNOTE_WIKI_ENABLED",
                 bool(config.wiki.get("enabled", False)),
             )
+            config._component_sources["wiki"] = ComponentConfigSource.ENV
             logger.info(f"Wiki Enabled: {config.wiki['enabled']}")
 
         if os.getenv("SUPERNOTE_WEB_ENABLED"):
             config.web_enabled = _get_bool_env(
                 "SUPERNOTE_WEB_ENABLED", config.web_enabled
             )
+            config._component_sources["web_ui"] = ComponentConfigSource.ENV
             logger.info(f"Web Enabled: {config.web_enabled}")
 
         if os.getenv("SUPERNOTE_WEB_NOTEBOOK_PREVIEW"):
@@ -692,11 +829,6 @@ class ServerConfig(DataClassYAMLMixin):
             config.trace_log_file = str(
                 Path(config.storage_dir) / "system" / "trace.log"
             )
-
-        if not config_file.exists():
-            logger.info(f"Saving config to {config_file}")
-            config_file.parent.mkdir(parents=True, exist_ok=True)
-            config_file.write_text(cast(str, config.to_yaml()))
 
         return config
 

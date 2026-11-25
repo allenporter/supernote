@@ -588,3 +588,22 @@ async def test_async_load_all_platforms_loads_finalizes_and_rolls_back_on_error(
     with pytest.raises(RuntimeError, match="finalize boom"):
         await failing_loader.async_load_all_platforms(server_core)
     assert ("stop", "host") in failing_events
+
+
+async def test_unregister_removes_component_before_setup_and_rejects_after_setup(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    comp = RecordingComponent(domain="webhooks")
+    loader.register(comp)
+    assert loader.get("webhooks") is comp
+
+    removed = loader.unregister("webhooks")
+    assert removed is comp
+    assert loader.get("webhooks") is None
+    assert loader.unregister("webhooks") is None
+
+    loader.register(comp)
+    await loader.async_setup_all(server_core, {})
+    with pytest.raises(ComponentError, match="Cannot unregister component after setup"):
+        loader.unregister("webhooks")
+    await loader.async_stop_all(server_core)

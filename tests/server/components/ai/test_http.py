@@ -45,10 +45,10 @@ async def test_ai_status_endpoint_reports_configured_models(
     auth_headers: dict[str, str],
 ) -> None:
     component_core.config.ai = AiConfig(
-        providers={"fake": ProviderConfig()},
-        ocr=ModelConfig(provider="fake", model="fake-ocr"),
-        summary=ModelConfig(provider="fake", model="fake-summary"),
-        embedding=ModelConfig(provider="fake", model="fake-embed"),
+        providers={"fake_ai": ProviderConfig()},
+        ocr=ModelConfig(provider="fake_ai", model="fake-ocr"),
+        summary=ModelConfig(provider="fake_ai", model="fake-summary"),
+        embedding=ModelConfig(provider="fake_ai", model="fake-embed"),
     )
 
     await load_components("http", "ai", "fake_ai")

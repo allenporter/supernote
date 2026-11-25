@@ -27,17 +27,17 @@ async def test_fake_ai_component_registers_all_ai_platforms(
     await loader.async_load_all_platforms(component_core)
     ai_registrar = ai_component.get_platform_registrar()
 
-    assert ai_registrar.ocr_providers == ("fake",)
-    assert ai_registrar.summary_providers == ("fake",)
-    assert ai_registrar.embedding_providers == ("fake",)
-    assert ai_registrar.text_providers == ("fake",)
+    assert ai_registrar.ocr_providers == ("fake_ai",)
+    assert ai_registrar.summary_providers == ("fake_ai",)
+    assert ai_registrar.embedding_providers == ("fake_ai",)
+    assert ai_registrar.text_providers == ("fake_ai",)
 
     config = ServerConfig(
         ai=AiConfig(
-            providers={"fake": ProviderConfig()},
-            ocr=ModelConfig(provider="fake", model="fake-ocr"),
-            summary=ModelConfig(provider="fake", model="fake-summary"),
-            embedding=ModelConfig(provider="fake", model="fake-embed"),
+            providers={"fake_ai": ProviderConfig()},
+            ocr=ModelConfig(provider="fake_ai", model="fake-ocr"),
+            summary=ModelConfig(provider="fake_ai", model="fake-summary"),
+            embedding=ModelConfig(provider="fake_ai", model="fake-embed"),
         )
     )
     ocr = ai_registrar.create_ocr_model(config)

@@ -38,6 +38,16 @@ class BuiltinComponentSpec:
     """Dotted `module:ClassName` path imported lazily only when enabled."""
     default_enabled: bool = False
     """Whether the component loads by default when `enabled` is not set in config."""
+    config_schema_path: str | None = None
+    """Optional dotted `module:ClassName` path for the component's typed config dataclass.
+
+    TODO: Migrate remaining configurable components (`ai`, `events`, `gemini`,
+    `http`, `mcp`, `metrics`, `openai`, `web_ui`) off flat `core.config` fields
+    onto their own `DataClassDictMixin` config schemas so every component
+    consumes the `config` mapping passed to `async_setup(core, config)`.
+    """
+    runtime_configurable: bool = False
+    """Whether the component can be dynamically reconfigured at runtime without restarting the server."""
 
 
 BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
@@ -50,6 +60,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="apple",
         import_path="supernote.server.components.apple:AppleComponent",
         default_enabled=False,
+    ),
+    BuiltinComponentSpec(
+        domain="config",
+        import_path="supernote.server.components.config:ConfigComponent",
+        default_enabled=True,
     ),
     BuiltinComponentSpec(
         domain="conversion",
@@ -140,11 +155,14 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="webhooks",
         import_path="supernote.server.components.webhooks:WebhooksComponent",
         default_enabled=False,
+        config_schema_path="supernote.server.components.webhooks.config:WebhookConfig",
+        runtime_configurable=True,
     ),
     BuiltinComponentSpec(
         domain="wiki",
         import_path="supernote.server.components.wiki:WikiComponent",
         default_enabled=False,
+        config_schema_path="supernote.server.components.wiki.config:WikiConfig",
     ),
 )
 
@@ -188,6 +206,11 @@ def load_builtin_components(
 ) -> None:
     """Lazily import and register all enabled components from ``specs``."""
     for spec in specs:
-        if not is_component_enabled(spec, component_configs.get(spec.domain, {})):
+        enabled = is_component_enabled(spec, component_configs.get(spec.domain, {}))
+        existing = loader.get(spec.domain)
+        if not enabled:
+            if existing is not None:
+                loader.unregister(spec.domain)
             continue
-        loader.register(load_component_from_spec(spec))
+        if existing is None:
+            loader.register(load_component_from_spec(spec))

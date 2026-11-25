@@ -1,7 +1,7 @@
 """Deterministic in-memory AI model component (`FakeAiComponent`).
 
 Provides fake OCR, summary, and embedding models for testing and local
-verification, registering provider type ``"fake"`` onto the ``ocr``,
+verification, registering provider type ``"fake_ai"`` onto the ``ocr``,
 ``summary``, and ``embedding`` platforms hosted by `supernote.server.components.ai`.
 """
 
