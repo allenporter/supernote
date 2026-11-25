@@ -15,12 +15,12 @@ from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.summary import QuerySummaryDTO
 from supernote.server.app import create_app
+from supernote.server.components.conversion.processor import (
+    PngConversionModule,
+)
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.processor.page_hashing import PageHashingModule
-from supernote.server.components.processor.png_conversion import (
-    PngConversionModule,
-)
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.components.transcript.processor import OcrModule

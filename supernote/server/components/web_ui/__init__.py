@@ -5,15 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from aiohttp import web
-
 from supernote.server.core import ServerCore
 
-from .config import WebUiConfig
-
-__all__ = ["WEB_UI_CONFIG_KEY", "WebUiComponent", "WebUiConfig"]
-
-WEB_UI_CONFIG_KEY: web.AppKey[WebUiConfig] = web.AppKey("web_ui_config")
+__all__ = ["WebUiComponent"]
 
 
 class WebUiComponent:
@@ -24,8 +18,7 @@ class WebUiComponent:
     platforms: tuple[str, ...] = ("http",)
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Parse `WebUiConfig` and register it on `core.app`."""
-        core.app[WEB_UI_CONFIG_KEY] = WebUiConfig.from_dict(dict(config))
+        """No-op; static routes and cache headers are mounted via `http.py`."""
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; static assets are served directly by `aiohttp`."""

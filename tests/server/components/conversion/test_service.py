@@ -6,11 +6,11 @@ import pytest
 
 from supernote.models.summary import SummaryItem
 from supernote.server.components.conversion import ConversionService, ConvertedBlob
-from supernote.server.components.processor import ProcessorService
-from supernote.server.components.processor.page_hashing import PageHashingModule
-from supernote.server.components.processor.png_conversion import (
+from supernote.server.components.conversion.processor import (
     PngConversionModule,
 )
+from supernote.server.components.processor import ProcessorService
+from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager

@@ -19,8 +19,8 @@ async def test_conversion_component_lifecycle(
     component = loader.get("conversion")
     assert isinstance(component, Component)
     assert component.domain == "conversion"
-    assert component.dependencies == ("processor",)
-    assert component.platforms == ("http",)
+    assert component.dependencies == ("ai", "processor")
+    assert component.platforms == ("http", "processor")
     assert isinstance(component_core.app[CONVERSION_SERVICE_KEY], ConversionService)
 
     await loader.async_stop_all(component_core)

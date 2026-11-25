@@ -26,7 +26,7 @@ async def test_search_component_lifecycle_binds_embedding_model_on_start(
     component = loader.get("search")
     assert isinstance(component, Component)
     assert component.domain == "search"
-    assert component.dependencies == ("ai",)
+    assert component.dependencies == ("ai", "transcript")
     assert component.platforms == ("http", "mcp", "processor")
 
     service = component_core.app[SEARCH_SERVICE_KEY]

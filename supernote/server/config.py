@@ -426,13 +426,8 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_WEB_ENABLED`
     """
 
-    web_notebook_preview: bool = field(
-        default=True,
-        metadata={"component": ("web_ui", "notebook_preview")},
-    )
+    web_notebook_preview: bool = True
     """Whether to generate and display notebook page previews in the web UI.
-
-    Aliases `web_ui.notebook_preview`.
 
     When disabled, the web UI remains available for file, task, and metadata management,
     but skips CPU-heavy notebook rasterization.
@@ -846,7 +841,6 @@ class ServerConfig(DataClassYAMLMixin):
             config.web_notebook_preview = _get_bool_env(
                 "SUPERNOTE_WEB_NOTEBOOK_PREVIEW", config.web_notebook_preview
             )
-            config._component_sources["web_ui"] = ComponentConfigSource.ENV
             logger.info(f"Web Notebook Preview: {config.web_notebook_preview}")
 
         if raw_log_level := os.getenv("SUPERNOTE_LOG_LEVEL"):

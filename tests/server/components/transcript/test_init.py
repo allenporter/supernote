@@ -19,7 +19,7 @@ async def test_transcript_component_lifecycle(
     component = loader.get("transcript")
     assert isinstance(component, Component)
     assert component.domain == "transcript"
-    assert component.dependencies == ("ai",)
+    assert component.dependencies == ("ai", "conversion")
     assert component.platforms == ("http", "mcp", "processor")
     assert isinstance(component_core.app[TRANSCRIPT_SERVICE_KEY], TranscriptService)
 

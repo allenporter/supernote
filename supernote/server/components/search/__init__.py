@@ -50,7 +50,7 @@ class SearchComponent:
     """Vertical component managing hybrid notebook search, listing, and embedding generation."""
 
     domain = "search"
-    dependencies: tuple[str, ...] = ("ai",)
+    dependencies: tuple[str, ...] = ("ai", "transcript")
     platforms: tuple[str, ...] = ("http", "mcp", "processor")
 
     def __init__(self) -> None:

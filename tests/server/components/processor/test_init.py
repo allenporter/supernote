@@ -11,7 +11,6 @@ import pytest
 
 from supernote.models.base import TaskType
 from supernote.server.components import KNOWN_PLATFORMS
-from supernote.server.components.ai import AiComponent
 from supernote.server.components.processor import (
     PROCESSOR_SERVICE_KEY,
     ProcessorComponent,
@@ -32,7 +31,7 @@ class _CustomStage(ProcessorModule):
 
     @property
     def task_type(self) -> str:
-        return "CUSTOM_POST_OCR"
+        return "CUSTOM_POST_HASH"
 
     @property
     def scope(self) -> TaskScope:
@@ -40,7 +39,7 @@ class _CustomStage(ProcessorModule):
 
     @property
     def depends_on(self) -> tuple[str, ...]:
-        return (TaskType.PNG_CONVERSION,)
+        return (TaskType.PAGE_HASHING,)
 
     async def process(
         self,
@@ -71,7 +70,6 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
         comp.get_platform_registrar().register_module(_CustomStage())
     assert [m.task_type for m in service.task_graph.modules] == [
         TaskType.PAGE_HASHING,
-        TaskType.PNG_CONVERSION,
     ]
     assert len(service.workers) == service.concurrency
 
@@ -133,7 +131,6 @@ async def test_processor_platform_accepts_external_component_stages(
     sys.modules[platform_mod_name] = platform_mod
     try:
         loader = ComponentLoader()
-        loader.register(AiComponent())
         loader.register(ProcessorComponent())
         loader.register(_ExtComponent())
 
@@ -141,9 +138,9 @@ async def test_processor_platform_accepts_external_component_stages(
         await loader.async_load_all_platforms(component_core)
 
         service = component_core.app[PROCESSOR_SERVICE_KEY]
-        assert "CUSTOM_POST_OCR" in {m.task_type for m in service.task_graph.modules}
-        assert service.task_graph.ancestors("CUSTOM_POST_OCR") == frozenset(
-            {"HASHING", "PNG_CONVERSION"}
+        assert "CUSTOM_POST_HASH" in {m.task_type for m in service.task_graph.modules}
+        assert service.task_graph.ancestors("CUSTOM_POST_HASH") == frozenset(
+            {"HASHING"}
         )
     finally:
         await loader.async_stop_all(component_core)

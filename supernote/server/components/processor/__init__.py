@@ -81,7 +81,7 @@ class ProcessorComponent:
     """Platform host component managing `ProcessorService` and the `"processor"` platform."""
 
     domain = "processor"
-    dependencies: tuple[str, ...] = ("ai",)
+    dependencies: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ("http", "mcp", "processor")
     hosted_platforms: tuple[str, ...] = ("processor",)
 

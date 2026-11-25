@@ -35,8 +35,8 @@ class ConversionComponent:
     """Vertical component managing on-demand `.note` to PNG and PDF conversion."""
 
     domain = "conversion"
-    dependencies: tuple[str, ...] = ("processor",)
-    platforms: tuple[str, ...] = ("http",)
+    dependencies: tuple[str, ...] = ("ai", "processor")
+    platforms: tuple[str, ...] = ("http", "processor")
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `ConversionService` and expose it via `CONVERSION_SERVICE_KEY`."""
