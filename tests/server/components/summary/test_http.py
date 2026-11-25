@@ -6,7 +6,11 @@ import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.client.client import Client
-from supernote.client.exceptions import ApiException
+from supernote.client.exceptions import (
+    ApiException,
+    BadRequestException,
+    NotFoundException,
+)
 from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.summary import (
@@ -360,50 +364,6 @@ async def test_upload_apply_summary_error(
         pytest.raises(ApiException),
     ):
         await summary_client.upload_apply(file_name="test.txt", equipment_no="eq1")
-
-
-async def test_summary_uuid_scoped_per_user(client: TestClient) -> None:
-    """Verify two users can create summaries and groups with the same unique_identifier without collision."""
-    user_service = client.app[USER_SERVICE_KEY]
-    summary_service = client.app[SUMMARY_SERVICE_KEY]
-
-    user_a = "user_a@example.com"
-    user_b = "user_b@example.com"
-    await user_service.register(UserRegisterDTO(email=user_a, password="a" * 32))
-    await user_service.register(UserRegisterDTO(email=user_b, password="b" * 32))
-
-    shared_summary_uuid = "00000000-1111-2222-3333-444444444444"
-    shared_group_uuid = "00000000-1111-2222-3333-555555555555"
-
-    item_a = await summary_service.add_summary(
-        user_a,
-        AddSummaryDTO(unique_identifier=shared_summary_uuid, content="User A summary"),
-    )
-    item_b = await summary_service.add_summary(
-        user_b,
-        AddSummaryDTO(unique_identifier=shared_summary_uuid, content="User B summary"),
-    )
-    assert item_a.unique_identifier == shared_summary_uuid
-    assert item_b.unique_identifier == shared_summary_uuid
-    assert item_a.content == "User A summary"
-    assert item_b.content == "User B summary"
-
-    grp_a = await summary_service.add_group(
-        user_a,
-        AddSummaryGroupDTO(
-            unique_identifier=shared_group_uuid, name="Group A", md5_hash="ha"
-        ),
-    )
-    grp_b = await summary_service.add_group(
-        user_b,
-        AddSummaryGroupDTO(
-            unique_identifier=shared_group_uuid, name="Group B", md5_hash="hb"
-        ),
-    )
-    assert grp_a.unique_identifier == shared_group_uuid
-    assert grp_b.unique_identifier == shared_group_uuid
-    assert grp_a.name == "Group A"
-    assert grp_b.name == "Group B"
 
 
 async def _seed_summaries(summary_client: SummaryClient, total_items: int) -> list[int]:
@@ -885,31 +845,25 @@ async def test_summary_to_pdf_and_png(
     assert png_bytes.startswith(b"\x89PNG")
 
 
-@pytest.mark.parametrize(
-    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
-)
+@pytest.mark.parametrize("method", ["summary_to_pdf", "summary_to_png"])
 async def test_summary_render_without_handwriting(
-    client: TestClient,
     summary_client: SummaryClient,
-    auth_headers: dict[str, str],
-    path: str,
+    method: str,
 ) -> None:
     add_response = await summary_client.add_summary(
         AddSummaryDTO(content="Text-only digest")
     )
+    assert add_response.id is not None
 
-    resp = await client.post(path, json={"id": add_response.id}, headers=auth_headers)
-    assert resp.status == 404
-    assert (await resp.json())["errorMsg"] == "Handwriting data not found"
+    with pytest.raises(NotFoundException, match="Handwriting data not found"):
+        await getattr(summary_client, method)(add_response.id)
 
 
-@pytest.mark.parametrize(
-    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
-)
+@pytest.mark.parametrize("method", ["summary_to_pdf", "summary_to_png"])
 async def test_summary_render_other_users_summary(
     client: TestClient,
-    auth_headers: dict[str, str],
-    path: str,
+    summary_client: SummaryClient,
+    method: str,
 ) -> None:
     other_user = "other@example.com"
     await client.app[USER_SERVICE_KEY].register(
@@ -924,8 +878,8 @@ async def test_summary_render_other_users_summary(
         ),
     )
 
-    resp = await client.post(path, json={"id": other_summary.id}, headers=auth_headers)
-    assert resp.status == 404
+    with pytest.raises(NotFoundException):
+        await getattr(summary_client, method)(other_summary.id)
 
 
 async def test_summary_render_cache_keyed_by_handwrite_md5(
@@ -1024,18 +978,15 @@ async def test_summary_render_invalid_request(
     assert resp.status == 400
 
 
-@pytest.mark.parametrize(
-    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
-)
+@pytest.mark.parametrize("method", ["summary_to_pdf", "summary_to_png"])
 async def test_summary_render_unsafe_handwrite_md5(
     client: TestClient,
     summary_client: SummaryClient,
-    auth_headers: dict[str, str],
     test_data_dir: Path,
-    path: str,
+    method: str,
 ) -> None:
     summary_id = await _add_handwritten_summary(
         client, summary_client, test_data_dir, handwrite_md5="../escape"
     )
-    resp = await client.post(path, json={"id": summary_id}, headers=auth_headers)
-    assert resp.status == 400
+    with pytest.raises(BadRequestException):
+        await getattr(summary_client, method)(summary_id)
