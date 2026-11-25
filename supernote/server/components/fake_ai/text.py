@@ -69,11 +69,12 @@ class FakeTextGenerationModel(TextGenerationModel):
 
 def create_text_model(config: ServerConfig) -> TextGenerationModel | None:
     """Create a `FakeTextGenerationModel` from `ServerConfig`, or `None` if unconfigured."""
-    if config.ai.text is None:
+    model_cfg = config.ai.effective_text
+    if model_cfg is None:
         return None
     return FakeTextGenerationModel(
-        model_id=config.ai.text.model,
-        provider=config.ai.text.provider,
+        model_id=model_cfg.model,
+        provider=model_cfg.provider,
     )
 
 

@@ -189,7 +189,15 @@ class AiConfig(DataClassYAMLMixin):
     """Model configuration for page embedding generation."""
 
     text: ModelConfig | None = None
-    """Opt-in model configuration for structured JSON text generation (e.g. LLM wiki)."""
+    """Optional model configuration for structured JSON text generation (e.g. LLM wiki).
+
+    Falls back to ``summary`` when unset.
+    """
+
+    @property
+    def effective_text(self) -> ModelConfig | None:
+        """Return ``text`` model configuration, falling back to ``summary`` when unset."""
+        return self.text if self.text is not None else self.summary
 
     def provider_type(self, name: str) -> str:
         """Return the backend implementation for the `ai.providers` entry `name`."""

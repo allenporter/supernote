@@ -10,7 +10,7 @@ from supernote.server.components.wiki.config import WikiConfig
 def test_wiki_config_defaults() -> None:
     cfg = WikiConfig.from_dict({})
     assert cfg.enabled is False
-    assert cfg.auto_compile is False
+    assert cfg.auto_compile is True
     assert cfg.debounce_seconds == 15.0
     assert cfg.max_pages_per_batch == 5
     assert cfg.daily_token_budget == 200_000

@@ -24,6 +24,9 @@ from supernote.server.components.fake_ai.ocr import (
 from supernote.server.components.fake_ai.summary import (
     create_summary_model as create_fake_summary_model,
 )
+from supernote.server.components.fake_ai.text import (
+    create_text_model as create_fake_text_model,
+)
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import Component, PlatformHost, ServerCore
 from tests.server.components.conftest import LoadComponents
@@ -48,6 +51,7 @@ def test_ai_registrar_returns_none_when_capabilities_unconfigured() -> None:
     assert registrar.create_ocr_model(unconfigured) is None
     assert registrar.create_summary_model(unconfigured) is None
     assert registrar.create_embedding_model(unconfigured) is None
+    assert registrar.create_text_model(unconfigured) is None
 
 
 async def test_ai_registrar_creates_and_invokes_registered_models() -> None:
@@ -211,3 +215,52 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
     assert registrar.text_providers == ()
 
     await loader.async_stop_all(component_core)
+
+
+async def test_ai_registrar_text_model_falls_back_to_summary() -> None:
+    registrar = AiRegistrar()
+    registrar.register_text("fake", create_fake_text_model)
+
+    summary_only = ServerConfig(
+        ai=AiConfig(
+            providers={"local_fake": ProviderConfig(type="Fake")},
+            summary=ModelConfig(
+                provider="local_fake", model="fake-summary", max_concurrency=2
+            ),
+        )
+    )
+    fallback_model = registrar.create_text_model(summary_only)
+    assert fallback_model is not None
+    assert fallback_model.provider == "local_fake"
+    assert fallback_model.model_id == "fake-summary"
+
+    with_override = ServerConfig(
+        ai=AiConfig(
+            providers={"local_fake": ProviderConfig(type="Fake")},
+            summary=ModelConfig(provider="local_fake", model="fake-summary"),
+            text=ModelConfig(provider="local_fake", model="fake-wiki-override"),
+        )
+    )
+    override_model = registrar.create_text_model(with_override)
+    assert override_model is not None
+    assert override_model.model_id == "fake-wiki-override"
+
+
+def test_ai_registrar_text_fallback_skips_unregistered_summary_provider() -> None:
+    registrar = AiRegistrar()
+    summary_only = ServerConfig(
+        ai=AiConfig(
+            providers={"summary_only": ProviderConfig()},
+            summary=ModelConfig(provider="summary_only", model="m"),
+        )
+    )
+    assert registrar.create_text_model(summary_only) is None
+
+    explicit_unknown = ServerConfig(
+        ai=AiConfig(
+            providers={"unknown": ProviderConfig()},
+            text=ModelConfig(provider="unknown", model="m"),
+        )
+    )
+    with pytest.raises(ValueError, match="Unsupported text model provider type"):
+        registrar.create_text_model(explicit_unknown)

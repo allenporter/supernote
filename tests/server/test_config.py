@@ -632,3 +632,23 @@ def test_server_config_yaml_and_env_component_sources(tmp_path: Path) -> None:
     assert env_cfg.component_sources["wiki"] == "env"
     assert env_cfg.webhooks["enabled"] is False
     assert env_cfg.wiki["enabled"] is False
+
+
+def test_ai_config_effective_text_fallback() -> None:
+    """`AiConfig.effective_text` prefers explicit `text` and falls back to `summary`."""
+    assert AiConfig().effective_text is None
+
+    summary_cfg = ModelConfig(provider="gemini", model="gemini-3.5-flash-lite")
+    text_cfg = ModelConfig(provider="gemini", model="gemini-3.6-flash")
+
+    summary_only = AiConfig(summary=summary_cfg)
+    assert summary_only.effective_text == summary_cfg
+
+    both = AiConfig(summary=summary_cfg, text=text_cfg)
+    assert both.effective_text == text_cfg
+
+    legacy = ServerConfig(gemini_api_key="test-key")
+    assert legacy.ai.text is None
+    assert legacy.ai.effective_text == legacy.ai.summary
+    assert legacy.ai.effective_text is not None
+    assert legacy.ai.effective_text.provider == "gemini"

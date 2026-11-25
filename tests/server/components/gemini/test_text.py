@@ -69,3 +69,28 @@ async def test_gemini_text_model_invalid_json_raises(
     fake_gemini.text = "not valid json"
     with pytest.raises(AIError):
         await model.generate_json("Compile diff", response_schema=SCHEMA)
+
+
+async def test_gemini_text_model_falls_back_to_summary(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    gemini_base_url: str,
+    fake_gemini: FakeGeminiServer,
+) -> None:
+    component_core.config.ai = AiConfig(
+        providers={
+            "gemini": ProviderConfig(api_key="test-key", base_url=gemini_base_url)
+        },
+        summary=ModelConfig(provider="gemini", model="gemini-3.5-flash-lite"),
+    )
+    await load_components("ai", "gemini")
+
+    model = component_core.app[TEXT_MODEL_KEY]
+    assert model is not None
+    assert model.provider == "gemini"
+    assert model.model_id == "gemini-3.5-flash-lite"
+
+    fake_gemini.text = json.dumps({"page_ops": []})
+    assert await model.generate_json("Compile diff", response_schema=SCHEMA) == {
+        "page_ops": []
+    }
