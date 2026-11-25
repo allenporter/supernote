@@ -39,7 +39,7 @@ Setting `SUPERNOTE_WIKI_ENABLED=true` turns on the **Wiki** tab and lets you tri
 
 ### Backfill existing notebooks
 
-When you first turn the wiki on, open the **Wiki** tab (`#/wiki`) and run a **Backfill** if you want to compile older notebooks. Backfill works newest-first in small batches and pauses automatically if it hits your daily token cap.
+When you first turn the wiki on, open the **Wiki** tab (`#/wiki`) and click **Build Wiki from Existing Notebooks** (or **Backfill Notebooks** in the header) to compile older OCR'd notebooks. Each click processes the next 5 notebooks newest-first so you can build up your wiki in controlled batches.
 
 ### Browse, edit, and triage lint issues
 

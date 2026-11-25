@@ -11,6 +11,7 @@ import {
     fetchWikiPage,
     fetchWikiPages,
     fetchWikiStatus,
+    formatWikiActionResult,
     resolveWikiLintIssue,
     saveWikiPage,
     searchWikiPages,
@@ -47,6 +48,8 @@ export default {
         const isLoading = ref(true);
         const isDisabled = ref(false);
         const isBusy = ref(false);
+        /** @type {import('vue').Ref<'incremental' | 'backfill' | 'lint' | ''>} */
+        const runningAction = ref('');
         const error = ref('');
 
         /** @type {import('vue').Ref<import('../api/wiki.js').WikiPage[]>} */
@@ -282,13 +285,16 @@ export default {
          */
         async function handleRunAction(mode) {
             isBusy.value = true;
+            runningAction.value = mode;
             try {
-                await triggerWikiCompile(mode);
-                showToast(`Wiki ${mode} completed`, 'success');
+                const result = await triggerWikiCompile(mode);
+                const toast = formatWikiActionResult(mode, result);
+                showToast(toast.message, toast.type);
                 await loadAll(activePage.value?.slug || '');
             } catch (err) {
                 showToast(getErrorMessage(err), 'error');
             } finally {
+                runningAction.value = '';
                 isBusy.value = false;
             }
         }
@@ -352,6 +358,7 @@ export default {
             isLoading,
             isDisabled,
             isBusy,
+            runningAction,
             error,
             pages,
             searchHits,
@@ -403,9 +410,13 @@ export default {
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
                         New Page
                     </button>
+                    <button type="button" @click="handleRunAction('backfill')" :disabled="isDisabled || isBusy"
+                        class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
+                        {{ runningAction === 'backfill' ? 'Backfilling...' : 'Backfill Notebooks' }}
+                    </button>
                     <button type="button" @click="handleRunAction('incremental')" :disabled="isDisabled || isBusy"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
-                        Compile Diffs
+                        {{ runningAction === 'incremental' ? 'Updating...' : 'Update Wiki' }}
                     </button>
                     <button type="button" @click="showLintPanel = !showLintPanel" :disabled="isDisabled"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 transition-colors">
@@ -415,6 +426,15 @@ export default {
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
                         Export Obsidian .zip
                     </button>
+                </div>
+            </div>
+
+            <!-- Compiler Status / Error Banner -->
+            <div v-if="!isDisabled && !error && status?.last_error"
+                class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <span class="font-semibold">Wiki compiler {{ status.status }}:</span>
+                    {{ status.last_error }}
                 </div>
             </div>
 
@@ -458,7 +478,8 @@ export default {
 
                     <div v-if="isLoading" class="py-8 text-center text-xs text-stone-400">Loading pages...</div>
                     <div v-else-if="filteredPages.length === 0" class="py-8 text-center text-xs text-stone-400">
-                        No wiki pages yet. Click <strong>New Page</strong> or <strong>Compile Diffs</strong>.
+                        <template v-if="searchHits !== null || selectedKind">No matching wiki pages.</template>
+                        <template v-else>No wiki pages yet.</template>
                     </div>
                     <ul v-else class="divide-y divide-stone-100 max-h-[62vh] overflow-y-auto">
                         <li v-for="p in filteredPages" :key="p.slug">
@@ -618,6 +639,24 @@ export default {
                             </div>
                         </div>
                     </article>
+
+                    <div v-else-if="pages.length === 0 && !isLoading"
+                        class="bg-white border border-stone-200/80 rounded-xl p-8 text-center space-y-3 shadow-sm">
+                        <h3 class="text-sm font-semibold text-slate-900">Build your personal wiki</h3>
+                        <p class="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
+                            Compile your existing OCR’d notebooks into linked wiki pages (newest-first, 5 notebooks per batch), or create a page manually.
+                        </p>
+                        <div class="flex flex-wrap items-center justify-center gap-2 pt-1">
+                            <button type="button" @click="handleRunAction('backfill')" :disabled="isBusy"
+                                class="px-3.5 py-2 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
+                                {{ runningAction === 'backfill' ? 'Backfilling...' : 'Build Wiki from Existing Notebooks' }}
+                            </button>
+                            <button type="button" @click="startCreate" :disabled="isBusy"
+                                class="px-3.5 py-2 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
+                                New Page
+                            </button>
+                        </div>
+                    </div>
 
                     <div v-else class="bg-white border border-stone-200/80 rounded-xl p-10 text-center text-xs text-stone-400">
                         Select a wiki page from the left or create a new page to get started.

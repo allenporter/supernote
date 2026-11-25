@@ -193,8 +193,19 @@ export async function fetchWikiStatus() {
 }
 
 /**
+ * @typedef {Object} WikiCompileResult
+ * @property {string} mode
+ * @property {number} [events_processed]
+ * @property {number} [pages_updated]
+ * @property {number} [skipped_policy_pages]
+ * @property {number} [lint_issues_open]
+ * @property {string} [status]
+ * @property {WikiLintIssue[]} [issues]
+ */
+
+/**
  * @param {'incremental' | 'backfill' | 'lint'} [mode='incremental']
- * @returns {Promise<Record<string, any>>}
+ * @returns {Promise<WikiCompileResult>}
  */
 export async function triggerWikiCompile(mode = 'incremental') {
     return apiRequest('/api/extended/wiki/compile', {
@@ -202,6 +213,53 @@ export async function triggerWikiCompile(mode = 'incremental') {
         body: { mode },
         errorPrefix: `Failed to run wiki ${mode}`,
     });
+}
+
+/**
+ * Format a user-facing toast message and severity for a wiki compile/backfill/lint response.
+ *
+ * @param {'incremental' | 'backfill' | 'lint'} mode
+ * @param {WikiCompileResult | null | undefined} result
+ * @returns {{ message: string, type: 'success' | 'info' | 'error' }}
+ */
+export function formatWikiActionResult(mode, result) {
+    if (result?.status === 'paused') {
+        return {
+            message: 'Wiki compiler is paused — check the status banner for details.',
+            type: 'error',
+        };
+    }
+    if (mode === 'lint') {
+        const count = Array.isArray(result?.issues) ? result.issues.length : 0;
+        return {
+            message: `Wiki lint finished (${count} open ${count === 1 ? 'issue' : 'issues'}).`,
+            type: 'success',
+        };
+    }
+    const processed = result?.events_processed ?? 0;
+    const updated = result?.pages_updated ?? 0;
+    if (mode === 'backfill') {
+        if (processed === 0) {
+            return {
+                message: 'No remaining OCR’d notebooks to backfill.',
+                type: 'info',
+            };
+        }
+        return {
+            message: `Backfilled batch (${updated} ${updated === 1 ? 'page' : 'pages'} updated). Run Backfill again for older notebooks.`,
+            type: 'success',
+        };
+    }
+    if (processed === 0) {
+        return {
+            message: 'Wiki is up to date — no new notebook or task changes.',
+            type: 'info',
+        };
+    }
+    return {
+        message: `Updated ${updated} ${updated === 1 ? 'page' : 'pages'} from ${processed} recent ${processed === 1 ? 'change' : 'changes'}.`,
+        type: 'success',
+    };
 }
 
 /**

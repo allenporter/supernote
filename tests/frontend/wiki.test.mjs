@@ -9,6 +9,7 @@ import {
     fetchWikiPage,
     fetchWikiPages,
     fetchWikiStatus,
+    formatWikiActionResult,
     resolveWikiLintIssue,
     saveWikiPage,
     searchWikiPages,
@@ -117,4 +118,68 @@ test('wiki API client saves, searches, compiles, resolves lint, and deletes', as
         await logout({ reload: false });
         globalThis.fetch = origFetch;
     }
+});
+
+test('formatWikiActionResult formats paused, empty, and updated responses for each mode', () => {
+    assert.deepEqual(formatWikiActionResult('backfill', { mode: 'backfill', status: 'paused' }), {
+        message: 'Wiki compiler is paused — check the status banner for details.',
+        type: 'error',
+    });
+
+    assert.deepEqual(
+        formatWikiActionResult('backfill', {
+            mode: 'backfill',
+            events_processed: 0,
+            pages_updated: 0,
+            status: 'idle',
+        }),
+        {
+            message: 'No remaining OCR’d notebooks to backfill.',
+            type: 'info',
+        },
+    );
+
+    assert.deepEqual(
+        formatWikiActionResult('backfill', {
+            mode: 'backfill',
+            events_processed: 5,
+            pages_updated: 3,
+            status: 'idle',
+        }),
+        {
+            message: 'Backfilled batch (3 pages updated). Run Backfill again for older notebooks.',
+            type: 'success',
+        },
+    );
+
+    assert.deepEqual(
+        formatWikiActionResult('incremental', {
+            mode: 'incremental',
+            events_processed: 0,
+            pages_updated: 0,
+            status: 'idle',
+        }),
+        {
+            message: 'Wiki is up to date — no new notebook or task changes.',
+            type: 'info',
+        },
+    );
+
+    assert.deepEqual(
+        formatWikiActionResult('incremental', {
+            mode: 'incremental',
+            events_processed: 1,
+            pages_updated: 1,
+            status: 'idle',
+        }),
+        {
+            message: 'Updated 1 page from 1 recent change.',
+            type: 'success',
+        },
+    );
+
+    assert.deepEqual(formatWikiActionResult('lint', { mode: 'lint', issues: [{ issue_id: 1 }] }), {
+        message: 'Wiki lint finished (1 open issue).',
+        type: 'success',
+    });
 });
