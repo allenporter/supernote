@@ -5,7 +5,8 @@ settings from `SUPERNOTE_*` environment variables and `config.yaml` with dynamic
 overrides stored in the database (`CoordinationService`). Environment variables
 and explicit `config.yaml` sections always take precedence over database
 settings, while unpinned components fall back to database overrides or their
-built-in defaults.
+built-in defaults and can be reconfigured by administrators through the HTTP
+management endpoints.
 """
 
 from __future__ import annotations
@@ -32,11 +33,11 @@ __all__ = [
 
 
 class ConfigComponent:
-    """Built-in vertical component managing component configuration resolution and persistence."""
+    """Built-in vertical component managing component configuration resolution and runtime updates."""
 
     domain: str = "config"
     dependencies: tuple[str, ...] = ()
-    platforms: tuple[str, ...] = ()
+    platforms: tuple[str, ...] = ("http",)
 
     def build_static_configs(self, config: ServerConfig) -> dict[str, dict[str, Any]]:
         """Build the static per-component configuration map from `ServerConfig`."""
@@ -56,8 +57,7 @@ class ConfigComponent:
         del config
         loader = core.app[COMPONENT_LOADER_KEY]
         core.app[CONFIG_SERVICE_KEY] = ConfigService(
-            server_config=core.config,
-            coordination=core.coordination,
+            core=core,
             loader=loader,
         )
 

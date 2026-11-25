@@ -317,6 +317,7 @@ async def test_all_builtin_components_http_platform_end_to_end(
         "/api/extended/events",
         "/api/extended/file/summary/list",
         "/api/extended/search",
+        "/api/extended/system/components",
         "/api/extended/transcript",
         "/api/file/add/summary",
         "/api/schedule/feed.ics",

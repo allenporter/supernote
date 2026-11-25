@@ -11,17 +11,22 @@ import pytest
 import yaml
 
 from supernote.server.components import BuiltinComponentSpec
+from supernote.server.components.config.models import (
+    ComponentFieldSpecVO,
+    ComponentFieldType,
+)
 from supernote.server.components.config.service import (
     _COMPONENT_CONFIG_KEY_PREFIX,
     ConfigService,
     async_resolve_component_configs,
     async_save_component_config,
+    extract_component_field_specs,
     load_component_config_schema,
 )
 from supernote.server.components.webhooks.config import WebhookConfig
 from supernote.server.components.wiki.config import WikiConfig
-from supernote.server.config import ServerConfig
-from supernote.server.core import ComponentError, ComponentLoader
+from supernote.server.config import ComponentConfigSource, ServerConfig
+from supernote.server.core import ComponentError, ComponentLoader, ServerCore
 from supernote.server.services.coordination import CoordinationService
 
 _WEBHOOKS_SPEC = BuiltinComponentSpec(
@@ -180,14 +185,11 @@ async def test_async_resolve_component_configs_ignores_invalid_db_payload(
 
 
 async def test_config_service_resolve_all(
-    tmp_path: Path,
-    coordination_service: CoordinationService,
+    component_core: ServerCore,
 ) -> None:
     """`ConfigService.resolve_all` reflects persisted database overrides."""
-    server_config = ServerConfig.load(tmp_path / "empty_cfg")
     service = ConfigService(
-        server_config=server_config,
-        coordination=coordination_service,
+        core=component_core,
         loader=ComponentLoader(),
         specs=(_WIKI_SPEC,),
     )
@@ -197,7 +199,7 @@ async def test_config_service_resolve_all(
     assert initial["wiki"].source == "default"
 
     await async_save_component_config(
-        coordination_service,
+        component_core.coordination,
         "wiki",
         {"enabled": True, "debounce_seconds": 120},
     )
@@ -205,3 +207,45 @@ async def test_config_service_resolve_all(
     assert updated["wiki"].enabled is True
     assert updated["wiki"].source == "database"
     assert updated["wiki"].config["debounce_seconds"] == 120
+
+
+async def test_config_service_list_and_update_component_config(
+    component_core: ServerCore,
+) -> None:
+    """`ConfigService.list_component_statuses` and `update_component_config` validate and persist updates."""
+    loader = ComponentLoader()
+    await loader.async_setup_all(component_core, {})
+    await loader.async_start_all(component_core)
+    service = ConfigService(
+        core=component_core,
+        loader=loader,
+        specs=(_WIKI_SPEC, _WEBHOOKS_SPEC),
+    )
+
+    statuses = await service.list_component_statuses()
+    assert [s.domain for s in statuses] == ["wiki", "webhooks"]
+
+    updated_wiki = await service.update_component_config(
+        "wiki", {"enabled": True, "debounce_seconds": 45.0}
+    )
+    assert updated_wiki.domain == "wiki"
+    assert updated_wiki.enabled is True
+    assert updated_wiki.running is False
+    assert updated_wiki.restart_required is True
+    assert updated_wiki.source is ComponentConfigSource.DATABASE
+    assert updated_wiki.config["debounce_seconds"] == 45.0
+
+    await loader.async_stop_all(component_core)
+
+
+def test_extract_component_field_specs() -> None:
+    """`extract_component_field_specs` returns typed `ComponentFieldSpecVO` descriptors."""
+    fields = extract_component_field_specs(_WIKI_SPEC)
+    by_name = {f.name: f for f in fields}
+    assert by_name["enabled"] == ComponentFieldSpecVO(
+        name="enabled",
+        type=ComponentFieldType.BOOLEAN,
+        default=False,
+    )
+    assert by_name["debounce_seconds"].type is ComponentFieldType.NUMBER
+    assert by_name["max_pages_per_batch"].type is ComponentFieldType.INTEGER
