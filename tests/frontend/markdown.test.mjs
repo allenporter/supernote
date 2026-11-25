@@ -102,12 +102,93 @@ test('markdown.js: adds target/_blank + noopener noreferrer on href anchors and 
 
 test('renderWikiMarkdown converts safe [[wikilinks]], skips code, and rejects XSS/traversal', () => {
     const html = renderWikiMarkdown(
-        'See [[entities/Alice|Alice]] and [[../bad]] and `[[projects/in-code]]` and [[entities/bob|<script>alert(1)</script>]].',
+        'See [[entities/Alice|Alice]] and [[../bad]] and [[a/./b]] and `[[projects/in-code]]` and [[entities/bob|<script>alert(1)</script>]].',
     );
     assert.ok(html.includes('href="#/wiki/entities/alice"'));
     assert.ok(html.includes('data-wiki-link="entities/alice"'));
     assert.ok(!html.includes('../bad"'));
+    assert.ok(!html.includes('a/./b"'));
     assert.ok(html.includes('[[projects/in-code]]'));
     assert.ok(!html.includes('data-wiki-link="projects/in-code"'));
     assert.ok(!html.includes('<script>'));
+});
+
+test('renderWikiMarkdown strips unsafe raw data-wiki-link attributes in DOM mode', () => {
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    try {
+        Object.defineProperty(globalThis, 'document', {
+            value: {
+                createElement() {
+                    let html = '';
+                    return {
+                        set innerHTML(value) {
+                            html = String(value);
+                        },
+                        get innerHTML() {
+                            return html;
+                        },
+                        content: {
+                            querySelectorAll() {
+                                const anchors = [...html.matchAll(/<a\b([^>]*)>(.*?)<\/a>/g)];
+                                return anchors.map((match) => {
+                                    let attrs = match[1];
+                                    const full = match[0];
+                                    let current = full;
+                                    const update = (nextAttrs) => {
+                                        const next = `<a${nextAttrs}>${match[2]}</a>`;
+                                        html = html.replace(current, next);
+                                        current = next;
+                                        attrs = nextAttrs;
+                                    };
+                                    return {
+                                        hasAttribute: (name) =>
+                                            new RegExp(`\\b${name}=`).test(attrs),
+                                        getAttribute: (name) =>
+                                            attrs.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ??
+                                            null,
+                                        setAttribute: (name, value) => {
+                                            if (new RegExp(`\\b${name}="[^"]*"`).test(attrs)) {
+                                                update(
+                                                    attrs.replace(
+                                                        new RegExp(`\\b${name}="[^"]*"`),
+                                                        `${name}="${value}"`,
+                                                    ),
+                                                );
+                                            } else {
+                                                update(`${attrs} ${name}="${value}"`);
+                                            }
+                                        },
+                                        removeAttribute: (name) => {
+                                            update(
+                                                attrs.replace(
+                                                    new RegExp(`\\s*\\b${name}="[^"]*"`),
+                                                    '',
+                                                ),
+                                            );
+                                        },
+                                        replaceWith: () => {},
+                                        childNodes: [],
+                                    };
+                                });
+                            },
+                        },
+                    };
+                },
+            },
+            configurable: true,
+        });
+
+        const html = renderWikiMarkdown(
+            'Raw <a href="#/wiki/ok" data-wiki-link="../../secret">Trap</a> and [[projects/ok]]',
+        );
+        assert.ok(!html.includes('data-wiki-link="../../secret"'));
+        assert.ok(html.includes('data-wiki-link="projects/ok"'));
+        assert.ok(!html.includes('target="_blank"'));
+    } finally {
+        if (originalDocument) {
+            Object.defineProperty(globalThis, 'document', originalDocument);
+        } else {
+            delete globalThis.document;
+        }
+    }
 });

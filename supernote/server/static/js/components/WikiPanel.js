@@ -119,6 +119,7 @@ export default {
                     await selectSlug(targetSlug, { replaceHistory: true });
                 } else {
                     activePage.value = null;
+                    emit('select-slug', '', true);
                 }
             } catch (err) {
                 if (seq === loadSeq) {
@@ -236,7 +237,11 @@ export default {
                     err instanceof ApiError && err.status === 409
                         ? /** @type {{ actual?: number } | null} */ (err.data)
                         : null;
-                if (activePage.value && typeof conflictData?.actual === 'number') {
+                if (
+                    !isCreating.value &&
+                    activePage.value &&
+                    typeof conflictData?.actual === 'number'
+                ) {
                     activePage.value = { ...activePage.value, version: conflictData.actual };
                     showToast(
                         `Page updated elsewhere (now v${conflictData.actual}). Click Save Page again to overwrite.`,
@@ -252,13 +257,19 @@ export default {
 
         async function handleDeleteConfirmed() {
             if (!confirmDeleteSlug.value) return;
+            const deletedSlug = confirmDeleteSlug.value;
             isBusy.value = true;
             try {
-                await deleteWikiPage(confirmDeleteSlug.value);
+                await deleteWikiPage(deletedSlug);
                 confirmDeleteSlug.value = '';
                 activePage.value = null;
+                if (searchHits.value !== null) {
+                    searchHits.value = searchHits.value.filter((h) => h.slug !== deletedSlug);
+                }
+                emit('select-slug', '', true);
                 showToast('Wiki page deleted', 'success');
-                await loadAll();
+                const nextSlug = pages.value.find((p) => p.slug !== deletedSlug)?.slug || '';
+                await loadAll(nextSlug);
             } catch (err) {
                 showToast(getErrorMessage(err), 'error');
             } finally {
@@ -545,10 +556,10 @@ export default {
                     <article v-else-if="activePage"
                         class="bg-white border border-stone-200/80 rounded-xl p-5 shadow-sm space-y-4">
                         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-stone-100 pb-3">
-                            <div>
-                                <div class="flex items-center gap-2">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-2">
                                     <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">{{ activePage.page_kind }}</span>
-                                    <span class="text-[11px] text-stone-400 font-mono">{{ activePage.slug }}</span>
+                                    <span class="text-[11px] text-stone-400 font-mono break-all">{{ activePage.slug }}</span>
                                     <span class="text-[11px] text-stone-400">v{{ activePage.version }} · {{ activePage.edit_policy }}</span>
                                 </div>
                                 <h1 class="text-lg font-semibold text-slate-900 mt-1.5">{{ activePage.title }}</h1>

@@ -397,6 +397,11 @@ test('useRouter.js: handles #/wiki/<slug> deep links and navigateToWikiSlug', as
         router.navigateToWikiSlug('entities/alice');
         assert.equal(router.selectedWikiSlug.value, 'entities/alice');
         assert.equal(globalThis.window.location.hash, '#/wiki/entities/alice');
+
+        globalThis.window.history.back();
+        await router.syncFromUrl();
+        assert.equal(router.selectedWikiSlug.value, 'projects/alpha');
+        assert.equal(globalThis.window.location.hash, '#/wiki/projects/alpha');
     } finally {
         await logout({ reload: false });
         globalThis.window = origWindow;
