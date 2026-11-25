@@ -177,6 +177,14 @@ class _FileUpsertResult:
 
 
 BlobReferenceProvider = Callable[[AsyncSession, set[str]], Awaitable[set[str]]]
+"""Async callback returning the subset of candidate `USER_DATA_BUCKET` keys still referenced outside `UserFileDO`.
+
+Exists so core `FileService` blob garbage collection (`cleanup_unreferenced_blobs`)
+stays decoupled from component ORM tables (such as `SummaryDO.handwrite_inner_name`)
+while still preventing deletion of physical blobs referenced by another component.
+New components should prefer their own `BlobStorage` bucket rather than sharing
+`USER_DATA_BUCKET`.
+"""
 
 
 class FileService:
@@ -208,12 +216,13 @@ class FileService:
     def register_blob_reference_provider(
         self, provider: BlobReferenceProvider
     ) -> Callable[[], None]:
-        """Register a callback returning keys still referenced in `USER_DATA_BUCKET`.
+        """Register a provider that protects component-referenced `USER_DATA_BUCKET` blobs during GC.
 
-        Components that store pointers to `USER_DATA_BUCKET` blobs outside
-        `UserFileDO` register a provider during setup so `cleanup_unreferenced_blobs`
-        never deletes blobs still referenced by those tables. Returns a callable
-        to unregister the provider during shutdown.
+        Components that store pointers to blobs in the shared `USER_DATA_BUCKET`
+        outside `UserFileDO` register a `BlobReferenceProvider` during `async_setup`
+        so `cleanup_unreferenced_blobs` checks their tables before deleting a
+        physical blob—without forcing core `FileService` to import component models.
+        Returns an idempotent unregister callback to invoke during `async_stop`.
         """
         if provider not in self._blob_reference_providers:
             self._blob_reference_providers.append(provider)

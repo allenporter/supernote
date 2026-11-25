@@ -178,6 +178,12 @@ class HttpRegistrar:
 
 
 HTTP_REGISTRAR_KEY: web.AppKey[HttpRegistrar] = web.AppKey("http_registrar")
+"""Typed `AppKey` exposing the active `HttpRegistrar` on `core.app`.
+
+Used at request time by `jwt_auth_middleware` (to check registered public
+prefixes and ASGI resources) and `metrics` (to resolve bounded route labels)
+without coupling core `keys.py` to the `http` component.
+"""
 
 
 class HttpComponent:

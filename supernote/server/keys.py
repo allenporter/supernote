@@ -1,10 +1,10 @@
 """Typed `aiohttp.web.AppKey` registry for core server application and request state.
 
-This module centralizes core `web.AppKey` constants (`CONFIG_KEY`, `CORE_KEY`,
-`SESSION_MANAGER_KEY`, `FILE_SERVICE_KEY`, `USER_SERVICE_KEY`, etc.) populated
-during `supernote.server.app.create_app` startup and consumed by core routes
-and components. Component-owned service keys live inside their owning component
-packages under `supernote.server.components`.
+Centralizes only the `web.AppKey` and `web.RequestKey` constants owned by core
+infrastructure (`create_app`, `ServerCore`, and per-request auth context).
+Feature- and component-specific `AppKey`s live inside their owning packages
+under `supernote.server.components.<domain>` so core stays lazily isolated from
+optional components and sibling components depend on each other explicitly.
 """
 
 from __future__ import annotations
