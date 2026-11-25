@@ -60,6 +60,7 @@ You don't need to run a server to use `supernote`. Use the CLI (`supernote analy
 | **[Configuration Reference](docs/configuration.md)** | Complete reference for `config.yaml` and `SUPERNOTE_*` environment variables, storage quotas, Gemini, named local OpenAI-compatible servers (Ollama/vLLM), and macOS Vision. |
 | **[AI Pipeline, Custom Prompts & MCP Server](docs/mcp.md)** | How the 5-stage OCR/Embedding/Summary pipeline works, routing custom prompts by filename or `page_style`, static API keys (`sn_...`), and connecting Claude or Cursor via MCP. |
 | **[OCR Provider Benchmarks](evals/ocr/RESULTS.md)** | 30-page Supernote handwriting & Bullet Journal benchmark comparing Gemini 3.5 Flash-Lite, Gemini 3.6/3.8 Flash, Supernote On-Device (`MyScript iink`), and Apple Vision. |
+| **[Search & Embedding Benchmarks](evals/search/RESULTS.md)** | 100-page, 60-query retrieval benchmark comparing keyword, dense vector, and hybrid search across `gemini-embedding-2`, `gemini-embedding-001`, `text-embedding-3-small`, and local Ollama (`embeddinggemma`, `qwen3-embedding`). |
 | **[Prometheus & Grafana Monitoring](docs/monitoring.md)** | Scraping `/metrics`, importing the reference Grafana dashboard, and configuring Prometheus recording and alerting rules. |
 | **[Webhooks, iCal (`.ics`) & Integrations](docs/webhooks_and_integrations.md)** | Subscribing to RFC 5545 `VTODO` task feeds in Apple/Google/Outlook calendars and Home Assistant, plus HMAC-signed outbound webhooks. |
 | **[CLI Reference (`supernote`)](docs/cli_reference.md)** | Every command and flag for local `.note` conversion and authoring (`create`), server hosting (`serve`), cloud operations, API keys (`cloud keys`), search, and admin management. |
@@ -251,7 +252,7 @@ supernote cloud search "What were my project goals for February?"
 
 ## Choosing an AI Provider
 
-We recommend Google Gemini (`gemini-3.5-flash-lite` by default, or `gemini-3.6-flash`) for OCR, summarization, and embeddings based on our [30-page Supernote OCR benchmark](evals/ocr/RESULTS.md) and public multimodal evaluations. Quality for summaries and handwriting OCR extraction may be lower when using smaller local or other OpenAI-compatible models.
+We recommend Google Gemini (`gemini-3.5-flash-lite` for OCR/summaries and `gemini-embedding-2` for embeddings, or `embeddinggemma` via Ollama for local self-hosted embeddings) based on our [30-page Supernote OCR benchmark](evals/ocr/RESULTS.md), [100-page Search & Embedding benchmark](evals/search/RESULTS.md), and public multimodal evaluations. Quality for summaries and handwriting OCR extraction may be lower when using smaller local or other OpenAI-compatible models.
 
 <p align="center">
   <img src="evals/ocr/pareto_frontier.svg" alt="OCR Quality vs. Latency Pareto Frontier" width="840">
@@ -272,6 +273,21 @@ Results across 30 `.note` pages (25 real handwritten pages covering Bullet Journ
 
 - **Gemini**: `gemini-3.5-flash-lite` (the default) reads nearly every word accurately (99.0% Word F1, 0.0% Median CER) in ~1.2 s per page for under `$0.001` per page, while preserving Bullet Journal signifiers (`•`, `X`, `>`, `<`, `o`, `-`, `*`), nested indentation (100%), and `~~strikethroughs~~` (100%). `gemini-3.6-flash` reaches 99.7% Word F1 and 2.3% multilingual CER; its higher diagram CER comes from adding ASCII `|` fret dividers on guitar tablature (99.3% Word F1 on those pages).
 - **Apple Vision**: Supported on macOS (`vision-accurate`) as an offline fallback for plain English prose (93.0% Word F1 on `english_prose`), **not** as a recommended provider. Overall accuracy matches the tablet's built-in recognizer (73.7% vs 75.5% Word F1), multi-column layouts are read out of order (30.2% diagram CER), and because Vision cannot take a prompt it drops almost all handwritten Bullet Journal task symbols (4.5% recall) and strikethroughs (0%). Avoid `vision-fast`, which only detects machine-printed text.
+
+### Hybrid Search & Embedding Benchmark ([`evals/search/`](evals/search/))
+
+Results across 100 pages in 26 notebooks and 60 blind ground-truth queries (`#tag` lookups, exact IDs/typos/CJK, zero-overlap semantic paraphrases, hybrid intent, scoped filters, and unanswerable negatives; full breakdown in [`evals/search/RESULTS.md`](evals/search/RESULTS.md)):
+
+| Mode | Embedding Model | nDCG@5 | MRR@5 | Recall@5 | nDCG@10 | Recall@10 | Median Latency |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `hybrid` *(recommended cloud)* | `gemini:gemini-embedding-2` | **97.1%** | **100.0%** | **93.7%** | **97.6%** | **95.5%** | 68.8 ms |
+| `hybrid` | `gemini:gemini-embedding-001` | 95.5% | 98.0% | 93.2% | 96.0% | 95.5% | 69.4 ms |
+| `hybrid` | `openai:text-embedding-3-small` | 94.0% | 98.0% | 89.5% | 94.2% | 90.5% | 50.9 ms |
+| `hybrid` *(recommended local)* | `ollama:embeddinggemma` | **93.7%** | **97.0%** | **90.2%** | **94.3%** | **93.3%** | **23.5 ms** |
+| `hybrid` | `ollama:qwen3-embedding:4b` | 92.2% | 95.7% | 89.7% | 93.2% | 93.4% | 58.9 ms |
+| `hybrid` | `ollama:qwen3-embedding:0.6b` | 91.3% | 95.7% | 89.8% | 92.5% | 94.3% | 28.9 ms |
+| `keyword_only` | `none` | 54.8% | 59.0% | 49.3% | 54.8% | 49.3% | 4.0 ms |
+| `random` | `none` | 16.0% | 16.1% | 20.9% | 15.0% | 20.3% | 1.7 ms |
 
 ### Multimodal Benchmarks: Gemini vs. Claude
 
