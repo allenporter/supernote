@@ -2,14 +2,14 @@
 
 You can connect Open Private Cloud to external task apps and automation tools in two ways:
 
-- Subscribe to your Supernote tasks as an RFC 5545 iCalendar (`.ics`) feed. This works out of the box with zero AI configured.
+- Subscribe to your Supernote tasks as a standard iCalendar (`.ics`) to-do feed. This works out of the box with zero AI configured.
 - Send signed HTTP webhooks to Home Assistant, n8n, or your own scripts whenever files sync, tasks change, or notes finish processing. Webhooks are opt-in and disabled by default.
 
 ---
 
 ## iCalendar (`.ics`) task feeds
 
-Tasks created on your Supernote tablet (including handwritten To-Do items linked to specific notebook pages) and tasks created in the Web UI are available as a standard `.ics` stream of `VTODO` items.
+Tasks created on your Supernote tablet (including handwritten To-Do items linked to specific notebook pages) and tasks created in the Web UI are available as standard `.ics` to-do items (`VTODO`).
 
 <p align="center">
   <img src="../static-assets/web-tasks-dashboard.png" alt="Tasks and Schedule Dashboard with task lists, priorities, due dates, and iCal feed export" width="840">
@@ -28,7 +28,7 @@ curl -fsSL \
   -o tasks.ics
 ```
 
-Pass `?taskListId=<list_id>` to export a single task list instead of all lists. You can also fetch the feed from Python with `ScheduleClient.get_ical_feed(group_id=None)`.
+Pass `?taskListId=<list_id>` to export a single task list instead of all lists. You can also fetch the feed programmatically using the Python client (`supernote.client`).
 
 ### Subscribing from URL-only calendar clients
 
@@ -45,7 +45,7 @@ location = /api/schedule/feed.ics {
 }
 ```
 
-### How Supernote tasks map to `VTODO`
+### How Supernote task fields map to calendar apps
 
 | Supernote field | `VTODO` property | Behavior |
 | :--- | :--- | :--- |
@@ -73,7 +73,7 @@ webhooks:
   endpoints:
     - url: "https://n8n.example.com/webhook/supernote-sync"
       user: "you@example.com"
-      secret: "0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a39281706f5e4d3c2b1a"
+      secret: "0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a39281706f5e4d3c2b1a"  # Generate with: openssl rand -hex 32
       events:
         - "file.created"
         - "note.*"
@@ -113,6 +113,46 @@ The JSON body uses the same event envelope returned by `/api/extended/events` an
 Each attempt times out after 10 seconds, redirects are not followed, and up to 5 requests run concurrently. Server (`5xx`) and network errors retry up to 3 attempts with linear backoff (1 s, then 2 s). Client (`4xx`) responses are logged and not retried. Credentials, query strings, and secrets are stripped from server logs.
 
 See the [Configuration Reference](../reference/configuration.md) for all webhook settings.
+
+---
+
+## Home Assistant example
+
+To trigger a Home Assistant notification whenever a notebook finishes background OCR and summarization, add your Home Assistant webhook URL to `config/config.yaml`:
+
+```yaml
+webhooks:
+  enabled: true
+  endpoints:
+    - url: "http://homeassistant.local:8123/api/webhook/supernote_note_ready_secret_id"
+      user: "you@example.com"
+      events:
+        - "note.processing_completed"
+```
+
+Then add a matching automation in Home Assistant (`automations.yaml`):
+
+```yaml
+alias: "Supernote: Notify when a notebook finishes processing"
+description: "Fires when background OCR and summarization complete for a .note file"
+triggers:
+  - trigger: webhook
+    webhook_id: "supernote_note_ready_secret_id"
+    allowed_methods:
+      - POST
+    local_only: true
+conditions:
+  - condition: template
+    value_template: "{{ trigger.json.eventType == 'note.processing_completed' }}"
+actions:
+  - action: notify.persistent_notification
+    data:
+      title: "Supernote Note Processed"
+      message: >-
+        Finished processing {{ trigger.json.payload.file_path }}
+        (ID: {{ trigger.json.payload.file_id }}).
+mode: queued
+```
 
 ---
 
@@ -163,40 +203,7 @@ export function verifySupernoteWebhook(
 
 ---
 
-## Home Assistant example
+## Next steps
 
-To trigger a Home Assistant notification whenever a notebook finishes background OCR and summarization, add your Home Assistant webhook URL to `config/config.yaml`:
-
-```yaml
-webhooks:
-  enabled: true
-  endpoints:
-    - url: "http://homeassistant.local:8123/api/webhook/supernote_note_ready_secret_id"
-      user: "you@example.com"
-      events:
-        - "note.processing_completed"
-```
-
-Then add a matching automation in Home Assistant (`automations.yaml`):
-
-```yaml
-alias: "Supernote: Notify when a notebook finishes processing"
-description: "Fires when background OCR and summarization complete for a .note file"
-triggers:
-  - trigger: webhook
-    webhook_id: "supernote_note_ready_secret_id"
-    allowed_methods:
-      - POST
-    local_only: true
-conditions:
-  - condition: template
-    value_template: "{{ trigger.json.eventType == 'note.processing_completed' }}"
-actions:
-  - action: notify.persistent_notification
-    data:
-      title: "Supernote Note Processed"
-      message: >-
-        Finished processing {{ trigger.json.payload.file_path }}
-        (ID: {{ trigger.json.payload.file_id }}).
-mode: queued
-```
+- See the [Configuration Reference](../reference/configuration.md) for all webhook and schedule settings.
+- Want an AI assistant to read your notebooks and manage tasks directly? See [MCP Server & AI Assistants](./mcp.md).
