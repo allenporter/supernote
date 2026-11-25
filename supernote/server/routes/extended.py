@@ -1,11 +1,10 @@
-"""Open Private Cloud extension routes (`/api/extended/*`) for notebook covers, API keys, and OAuth grants.
+"""Open Private Cloud extension routes (`/api/extended/*`) for API keys and OAuth grants.
 
 Exposes non-device HTTP endpoints consumed by the Web UI and `supernote.client.extended.ExtendedClient`:
-- `POST /api/extended/file/note/cover`: Lightweight first-page PNG thumbnail generation.
 - `GET/POST/DELETE /api/extended/keys*`: Static Bearer API key management.
 - `GET/DELETE /api/extended/oauth/grants*`: Revocable MCP OAuth client grant management.
 
-See `supernote.guides.mcp` and `supernote.guides.note_processing_design`.
+See `supernote.guides.mcp`.
 """
 
 import json
@@ -21,66 +20,18 @@ from supernote.models.extended import (
     CreateApiKeyDTO,
     CreateApiKeyResponseVO,
     OAuthGrantListResponseVO,
-    WebNoteCoverRequestDTO,
-    WebNoteCoverVO,
 )
-from supernote.server.config import ServerConfig
-from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
-    CONFIG_KEY,
-    CONVERSION_SERVICE_KEY,
     REQUEST_USER_KEY,
-    URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.conversion import ConversionService
 from supernote.server.services.user import UserService
-from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 from .decorators import interactive_session_only
 
 logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
-
-
-@routes.post("/api/extended/file/note/cover")
-async def handle_extended_note_cover(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/extended/file/note/cover
-    # Purpose: Convert/fetch only the first page (page 0) PNG for lightweight explorer thumbnails.
-    user_email = request[REQUEST_USER_KEY]
-    try:
-        data = await request.json()
-        req_dto = WebNoteCoverRequestDTO.from_dict(data)
-    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
-
-    config: ServerConfig = request.app[CONFIG_KEY]
-    if not (config.web_enabled and config.web_notebook_preview):
-        return web.json_response(WebNoteCoverVO(url=None).to_dict())
-
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-
-    try:
-        page_numbers = await conversion_service.convert_note_to_png(
-            user_email, req_dto.file_id, page_indices={0}
-        )
-        if not page_numbers:
-            return web.json_response(WebNoteCoverVO(url=None).to_dict())
-
-        page_no = page_numbers[0]
-        path_to_sign = f"/api/oss/png/{req_dto.file_id}/{page_no}"
-        signed_path = await url_signer.sign(
-            path_to_sign, user=user_email, single_use=False
-        )
-        download_url = f"{get_request_base_url(request)}{signed_path}"
-        return web.json_response(WebNoteCoverVO(url=download_url).to_dict())
-    except SupernoteError as err:
-        return err.to_response()
-    except Exception as err:
-        logger.exception("Error fetching note cover preview")
-        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.get("/api/extended/keys")

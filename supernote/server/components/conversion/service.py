@@ -1,12 +1,10 @@
 """On-demand `.note` to PNG and PDF conversion service with blob cache lookup.
 
 `ConversionService` serves page PNG previews and multi-page vector PDF exports
-of notes and of summary handwriting `.mark` blobs, requested by hardware devices
-(`supernote.server.routes.file_device`), the Web UI (`supernote.server.routes.file_web`),
-the summary component (`supernote.server.components.summary.http`), and signed OSS URLs
-(`supernote.server.routes.oss`).
-It checks `CACHE_BUCKET` via `supernote.server.services.blob.BlobStorage` first and
-delegates missing page PNGs to `supernote.server.services.processor.ProcessorService`
+of notes and summary handwriting `.mark` blobs for hardware devices, the Web UI,
+the summary component, and signed OSS URLs. It checks `CACHE_BUCKET` via
+`supernote.server.services.blob.BlobStorage` first and delegates missing page
+PNGs to `supernote.server.components.processor.ProcessorService`
 or renders PDFs in a worker thread via `supernote.notebook.converter.PdfConverter`.
 """
 
@@ -18,6 +16,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from aiohttp import web
 from sqlalchemy import select
 
 from supernote.models.base import TaskType
@@ -41,6 +40,12 @@ from supernote.server.utils.paths import (
 if TYPE_CHECKING:
     from supernote.server.components.processor import ProcessorService
 
+__all__ = [
+    "CONVERSION_SERVICE_KEY",
+    "ConversionService",
+    "ConvertedBlob",
+]
+
 
 @dataclass(frozen=True)
 class ConvertedBlob:
@@ -51,7 +56,7 @@ class ConvertedBlob:
 
 
 def _convert_note_to_pdf_sync(blob_content: bytes, page_no_list: list[int]) -> bytes:
-    """Helper to parse a note file and convert requested pages to PDF in a synchronous context."""
+    """Parse a note file and convert requested pages to PDF in a worker thread."""
     note = load_notebook(BytesIO(blob_content), policy="loose")
     converter = PdfConverter(note)
     return converter.convert(page_no_list if page_no_list else -1)
@@ -308,3 +313,6 @@ class ConversionService:
             storage_key=storage_key,
             file_name=f"summary_{summary.id}_page_{page_no}.png",
         )
+
+
+CONVERSION_SERVICE_KEY: web.AppKey[ConversionService] = web.AppKey("conversion_service")

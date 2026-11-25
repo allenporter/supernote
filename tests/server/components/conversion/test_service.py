@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from supernote.models.summary import SummaryItem
+from supernote.server.components.conversion import ConversionService, ConvertedBlob
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.components.processor.png_conversion import (
@@ -16,7 +17,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus
 from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
-from supernote.server.services.conversion import ConversionService, ConvertedBlob
 from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_conversion_pdf_path

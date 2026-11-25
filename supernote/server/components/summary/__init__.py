@@ -61,7 +61,7 @@ class SummaryComponent:
     """Vertical component managing summaries, groups, tags, HTTP routes, and AI summarization."""
 
     domain = "summary"
-    dependencies: tuple[str, ...] = ()
+    dependencies: tuple[str, ...] = ("conversion",)
     platforms: tuple[str, ...] = ("http", "processor")
 
     def __init__(self) -> None:

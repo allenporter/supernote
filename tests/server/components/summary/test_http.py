@@ -20,13 +20,13 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.components.summary.service import DEFAULT_SUMMARY_PAGE_SIZE
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
-    CONVERSION_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )

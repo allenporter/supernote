@@ -27,13 +27,11 @@ from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     COMPONENT_LOADER_KEY,
     CONFIG_KEY,
-    CONVERSION_SERVICE_KEY,
     COORDINATION_SERVICE_KEY,
     CORE_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
     INTEGRITY_SERVICE_KEY,
-    PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
     SESSION_MANAGER_KEY,
     URL_SIGNER_KEY,
@@ -56,7 +54,6 @@ from .routes import (
     system,
 )
 from .services.blob import LocalBlobStorage
-from .services.conversion import ConversionService
 from .services.coordination import CoordinationService, SqliteCoordinationService
 from .services.file import FileService
 from .services.integrity import IntegrityService
@@ -178,12 +175,6 @@ def create_app(config: ServerConfig) -> web.Application:
             await bootstrap_ephemeral_user(app)
 
         await component_loader.async_setup_all(core, component_configs)
-        app[CONVERSION_SERVICE_KEY] = ConversionService(
-            session_manager=session_manager,
-            blob_storage=blob_storage,
-            user_service=user_service,
-            processor_service=app[PROCESSOR_SERVICE_KEY],
-        )
         await component_loader.async_load_all_platforms(core)
 
         logger.info("Starting background services...")

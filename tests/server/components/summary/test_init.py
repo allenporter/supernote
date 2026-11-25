@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from supernote.server.components.ai import AiComponent
+from supernote.server.components.conversion import ConversionComponent
+from supernote.server.components.processor import ProcessorComponent
 from supernote.server.components.summary import (
     SUMMARY_SERVICE_KEY,
     SummaryComponent,
@@ -17,10 +20,13 @@ async def test_summary_component_full_lifecycle(
     component = SummaryComponent()
     assert isinstance(component, Component)
     assert component.domain == "summary"
-    assert component.dependencies == ()
+    assert component.dependencies == ("conversion",)
     assert component.platforms == ("http", "processor")
 
     loader = ComponentLoader()
+    loader.register(AiComponent())
+    loader.register(ProcessorComponent())
+    loader.register(ConversionComponent())
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
@@ -42,6 +48,9 @@ async def test_summary_component_stop_after_setup_only(
 ) -> None:
     """Verify stopping after async_setup (without async_start) is clean."""
     loader = ComponentLoader()
+    loader.register(AiComponent())
+    loader.register(ProcessorComponent())
+    loader.register(ConversionComponent())
     loader.register(SummaryComponent())
 
     await loader.async_setup_all(component_core, {})
