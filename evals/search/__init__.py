@@ -1,0 +1,43 @@
+"""Hybrid search retrieval evaluation dataset, metrics, and ablation runner."""
+
+from .harness import (
+    ALL_MODES,
+    DEFAULT_CUTOFFS,
+    CachingEmbeddingModel,
+    CutoffMetrics,
+    ModeReport,
+    QueryModeResult,
+    RetrievalMode,
+    SearchEvalDataset,
+    SearchEvalNotebook,
+    SearchEvalPage,
+    SearchEvalQuery,
+    SearchEvalSuiteReport,
+    SliceSummary,
+    evaluate_search_dataset,
+    format_markdown_report,
+    merge_suite_reports,
+    rescore_suite_report,
+    score_ranked_hits,
+)
+
+__all__ = [
+    "ALL_MODES",
+    "DEFAULT_CUTOFFS",
+    "CachingEmbeddingModel",
+    "CutoffMetrics",
+    "ModeReport",
+    "QueryModeResult",
+    "RetrievalMode",
+    "SearchEvalDataset",
+    "SearchEvalNotebook",
+    "SearchEvalPage",
+    "SearchEvalQuery",
+    "SearchEvalSuiteReport",
+    "SliceSummary",
+    "evaluate_search_dataset",
+    "format_markdown_report",
+    "merge_suite_reports",
+    "rescore_suite_report",
+    "score_ranked_hits",
+]

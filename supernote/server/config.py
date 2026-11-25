@@ -282,7 +282,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_OCR_MODEL`
     """
 
-    gemini_embedding_model: str = "gemini-embedding-001"
+    gemini_embedding_model: str = "gemini-embedding-2"
     """Legacy Gemini model to use for Embeddings.
 
     Env Var: `SUPERNOTE_GEMINI_EMBEDDING_MODEL`

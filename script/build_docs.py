@@ -78,6 +78,12 @@ GUIDE_SPECS: list[GuideSpec] = [
         path=ROOT_DIR / "evals" / "ocr" / "README.md",
     ),
     GuideSpec(
+        slug="search_benchmarks",
+        title="Search & Embedding Benchmarks",
+        section="Self-Hosting & Guides",
+        path=ROOT_DIR / "evals" / "search" / "README.md",
+    ),
+    GuideSpec(
         slug="monitoring",
         title="Prometheus & Grafana Monitoring",
         section="Self-Hosting & Guides",
@@ -207,6 +213,12 @@ class MarkdownGuideModule(pdoc.doc.Module):
                     text = text.replace(target, f"{target}\n\n{results_body.strip()}\n")
                 else:
                     text = f"{text}\n\n{results_body}"
+        elif self._guide_spec.slug == "search_benchmarks":
+            results_path = ROOT_DIR / "evals" / "search" / "RESULTS.md"
+            if results_path.exists():
+                results_body = results_path.read_text(encoding="utf-8")
+                results_body = re.sub(r"^#\s+[^\n]+\n+", "", results_body, count=1)
+                text = f"{text.rstrip()}\n\n{results_body.strip()}\n"
         return text.replace(r"$\rightarrow$", "→")
 
     @cached_property
@@ -311,6 +323,8 @@ def _install_markdown_link_rewriter() -> None:
         "docs/CONTRIBUTING.md": "supernote.guides.contributing",
         "evals/ocr/RESULTS.md": "supernote.guides.ocr_benchmarks",
         "evals/ocr/README.md": "supernote.guides.ocr_benchmarks",
+        "evals/search/RESULTS.md": "supernote.guides.search_benchmarks",
+        "evals/search/README.md": "supernote.guides.search_benchmarks",
         "RESULTS.md": "supernote.guides.ocr_benchmarks",
     }
     for spec in GUIDE_SPECS:

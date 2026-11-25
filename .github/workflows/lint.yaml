@@ -22,7 +22,7 @@ jobs:
         with:
           check_hidden: false
           ignore_words_list: folde
-          skip: ./.git,./evals/ocr/dataset.yaml,./evals/ocr/results
+          skip: ./.git,./evals/ocr/dataset.yaml,./evals/ocr/results,./evals/search/dataset.yaml,./evals/search/results
       - name: Run yamllint
         uses: ibiqlik/action-yamllint@2576378a8e339169678f9939646ee3ee325e845c # v3
         with:

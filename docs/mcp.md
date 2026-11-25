@@ -58,7 +58,9 @@ supernote admin reprocess --type all --file-id 42
 AI capabilities (`ocr`, `summary`, `embedding`) are configured independently in `config/config.yaml` via `supernote.server.config.AiConfig`. You can use cloud providers (`gemini`, hosted `openai`), local inference servers (`openai` provider pointed at Ollama, vLLM, llama.cpp, or LM Studio), macOS on-device Vision (`apple`), or mix them per capability.
 
 > [!TIP]
-> **Model Recommendation & Benchmarks**: We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`) for its strong multimodal handwriting recognition accuracy and low cost. For detailed CER/WER accuracy numbers, Bullet Journal structure fidelity, and latency comparisons across Gemini, Supernote On-Device (`MyScript iink`), and Apple Vision, see `supernote.guides.ocr_benchmarks` ([OCR Provider Benchmarks](../evals/ocr/RESULTS.md)).
+> **Model Recommendation & Benchmarks**:
+> - **OCR & Summaries**: We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`) for handwriting accuracy and Bullet Journal structure fidelity; see `supernote.guides.ocr_benchmarks` ([OCR Provider Benchmarks](../evals/ocr/RESULTS.md)).
+> - **Hybrid Search Embeddings**: We recommend `gemini-embedding-2` for cloud deployments (`97.1%` nDCG@5, `100.0%` MRR@5) and `embeddinggemma` via Ollama/llama.cpp for local self-hosted deployments (`93.7%` nDCG@5, `23.5 ms` latency, `768`-dim vectors); see `supernote.guides.search_benchmarks` ([Search & Embedding Benchmarks](../evals/search/RESULTS.md)).
 
 ### Mixing Cloud & Local Providers per Capability
 
