@@ -651,7 +651,7 @@ def build_site(output_dir: Path) -> None:
         shutil.copy2(favicon_src, output_dir / "favicon.ico")
 
     # If building to an external directory (e.g. site/), copy static assets if needed
-    for asset_dir_name in ("static-assets", "images"):
+    for asset_dir_name in ("static-assets",):
         src_assets = ROOT_DIR / "docs" / asset_dir_name
         dst_assets = output_dir / asset_dir_name
         if src_assets.exists() and src_assets.resolve() != dst_assets.resolve():

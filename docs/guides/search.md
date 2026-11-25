@@ -40,6 +40,10 @@ See the [Configuration Reference](../reference/configuration.md) for all provide
 
 In the Web UI, press `Cmd+K` (macOS) or `Ctrl+K` (Windows/Linux) from any tab to search across notebooks and standalone images, filter by notebook name or date range, and jump directly to the matching page.
 
+<p align="center">
+  <img src="../static-assets/guides/web-hybrid-search.png" alt="Global Cmd/Ctrl+K search modal showing ranked notebook content and file matches" width="840">
+</p>
+
 From the terminal:
 
 ```bash

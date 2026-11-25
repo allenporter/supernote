@@ -48,12 +48,20 @@ In the **Wiki** tab you can filter pages by folder, search across titles and bod
 Open the **Lint** drawer to review broken links, stale sources, contradictions, and OCR alias merge proposals, then resolve or dismiss them with one click.
 
 <p align="center">
-  <img src="../static-assets/web-wiki-lint.png" alt="LLM Wiki Lint Triage drawer and human-protected wiki page" width="840">
+  <img src="../static-assets/guides/web-wiki-lint.png" alt="LLM Wiki Lint Triage drawer and human-protected wiki page" width="840">
 </p>
 
 ### Export to Obsidian
 
 Click **Export `.zip`** in the Wiki header to download all active pages as a standard Obsidian vault with YAML frontmatter and `[[wikilinks]]`.
+
+### Browse on mobile
+
+The wiki reader adapts to phone screens so you can read compiled pages, follow `[[wikilinks]]`, and check lint items on the go.
+
+<p align="center">
+  <img src="../static-assets/guides/web-mobile.png" alt="Responsive mobile view of the LLM Wiki reader on a phone screen" width="320">
+</p>
 
 ## Using the wiki with AI assistants
 

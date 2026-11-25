@@ -10,6 +10,10 @@ Open Private Cloud for Supernote provides two primary integration mechanisms for
 
 Tasks created on your physical Supernote tablet (including handwritten tasks converted via the To-Do app with notebook page deep-links) or via the Web UI / Python SDK can be exported as an RFC 5545 `VCALENDAR` stream of `VTODO` items.
 
+<p align="center">
+  <img src="../static-assets/web-tasks-dashboard.png" alt="Tasks and Schedule Dashboard with task lists, priorities, due dates, and iCal feed export" width="840">
+</p>
+
 ### Endpoint Specification
 
 ```http
