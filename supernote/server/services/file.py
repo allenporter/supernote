@@ -57,6 +57,7 @@ from ..metrics import (
     init_oss_and_upload_metrics,
     record_note_upload,
 )
+from ..utils.image import is_processable_filename
 from .blob import BlobStorage
 from .user import UserService
 from .vfs import VirtualFileSystem
@@ -665,7 +666,7 @@ class FileService:
                     md5=node.md5,
                 )
             )
-        if node.file_name.endswith(".note"):
+        if is_processable_filename(node.file_name):
             await self.event_bus.publish(
                 NoteUpdatedEvent(
                     file_id=node.id,

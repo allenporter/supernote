@@ -120,11 +120,20 @@ class WikiSourceService:
         is `None` when no more active `.note` files remain.
         """
         async with self._session_manager.session() as session:
+            has_transcribed_page = (
+                select(NotePageContentDO.id)
+                .where(
+                    NotePageContentDO.file_id == UserFileDO.id,
+                    NotePageContentDO.text_content.is_not(None),
+                )
+                .correlate(UserFileDO)
+                .exists()
+            )
             stmt = select(UserFileDO).where(
                 UserFileDO.user_id == user_id,
                 UserFileDO.is_active == "Y",
                 UserFileDO.is_folder == "N",
-                UserFileDO.file_name.like("%.note"),
+                has_transcribed_page,
             )
             if before_file_id is not None:
                 stmt = stmt.where(UserFileDO.id < before_file_id)

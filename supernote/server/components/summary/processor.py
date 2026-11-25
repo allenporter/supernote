@@ -122,6 +122,10 @@ class SummaryModule(ProcessorModule):
     def enabled(self) -> bool:
         return self.summary_model is not None
 
+    @property
+    def supports_standalone_images(self) -> bool:
+        return False
+
     async def run_if_needed(
         self,
         file_id: int,
@@ -142,6 +146,14 @@ class SummaryModule(ProcessorModule):
             return False
 
         async with session_manager.session() as session:
+            file_name = (
+                await session.execute(
+                    select(UserFileDO.file_name).where(UserFileDO.id == file_id)
+                )
+            ).scalar_one_or_none()
+            if not file_name or not file_name.lower().endswith(".note"):
+                return False
+
             pages = (
                 (
                     await session.execute(

@@ -14,7 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
-from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
+from supernote.server.ai.prompts import (
+    PageMetadata,
+    format_image_ocr_prompt,
+    format_ocr_prompt,
+)
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorRegistrar,
@@ -28,6 +32,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
 from supernote.server.keys import OCR_MODEL_KEY
 from supernote.server.services.file import FileService
+from supernote.server.utils.image import is_image_filename
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
@@ -195,7 +200,11 @@ class OcrModule(ProcessorModule):
             if page_meta is not None:
                 page_metadata.page_style = page_meta.page_style
                 page_metadata.keywords = page_meta.keyword_texts
-            prompt = format_ocr_prompt(page_metadata)
+            prompt = (
+                format_image_ocr_prompt(page_metadata)
+                if is_image_filename(file_do.file_name)
+                else format_ocr_prompt(page_metadata)
+            )
 
         png_path = get_page_png_path(file_id, page_id)
         chunks = [

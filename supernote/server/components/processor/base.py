@@ -290,6 +290,13 @@ class ProcessorModule(abc.ABC):
         """Whether this module is currently enabled."""
         return True
 
+    # TODO: Replace single-format boolean with a general document-kind capability
+    # (e.g. `supported_document_kinds`) once additional formats like `.pdf` are added.
+    @property
+    def supports_standalone_images(self) -> bool:
+        """Whether this module applies to standalone raster image files."""
+        return True
+
     @property
     def version(self) -> str | None:
         """Optional version or model identifier for the module's output."""

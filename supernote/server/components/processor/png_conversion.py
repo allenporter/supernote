@@ -22,6 +22,12 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
+from supernote.server.utils.image import (
+    MAX_ALLOWED_IMAGE_DIMENSION,
+    MAX_SOURCE_IMAGE_BYTES,
+    is_image_filename,
+    normalize_image_to_png,
+)
 from supernote.server.utils.paths import get_page_png_path
 
 from .base import ProcessorModule, TaskScope
@@ -143,6 +149,7 @@ class PngConversionModule(ProcessorModule):
                 logger.error(f"File {file_id} not found or missing storage_key")
                 return
             storage_key = user_file.storage_key
+            file_name = user_file.file_name
 
             if page_id is None:
                 page_result = await session.execute(
@@ -168,11 +175,26 @@ class PngConversionModule(ProcessorModule):
             logger.error(f"File {abs_path} does not exist on disk")
             raise FileNotFoundError(f"File {abs_path} does not exist on disk")
 
-        # Run Conversion in Thread Pool
         loop = asyncio.get_running_loop()
-        png_data = await loop.run_in_executor(
-            None, partial(_convert_helper, str(abs_path), page_index)
-        )
+        if is_image_filename(file_name):
+            raw_size = abs_path.stat().st_size
+            if raw_size > MAX_SOURCE_IMAGE_BYTES:
+                raise ValueError(
+                    f"Image file {file_id} exceeds maximum size of {MAX_SOURCE_IMAGE_BYTES} bytes"
+                )
+            raw_bytes = await loop.run_in_executor(None, abs_path.read_bytes)
+            png_data, _, _ = await loop.run_in_executor(
+                None,
+                partial(
+                    normalize_image_to_png,
+                    raw_bytes,
+                    max_dimension=MAX_ALLOWED_IMAGE_DIMENSION,
+                ),
+            )
+        else:
+            png_data = await loop.run_in_executor(
+                None, partial(_convert_helper, str(abs_path), page_index)
+            )
 
         # Upload to Blob Storage
         blob_path = get_page_png_path(file_id, page_id)

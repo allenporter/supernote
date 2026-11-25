@@ -2203,3 +2203,195 @@ async def test_multi_user_queue_and_system_task_isolation(
     )
     assert len(await processor_service.list_system_tasks(user_id=user_a)) == 2
     assert await processor_service.list_system_tasks(user_id=user_b) == []
+
+
+async def test_standalone_image_pipeline_end_to_end_and_search(
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    summary_service: SummaryService,
+    test_user_id: int,
+) -> None:
+    """Standalone images run Hash -> PNG -> Image OCR -> Embed, skip Summary, and appear in search."""
+    event_bus = LocalEventBus()
+    captured_prompts: list[str] = []
+
+    class _CapturingOcr(OcrModel):
+        @property
+        def provider(self) -> str:
+            return "fake"
+
+        @property
+        def model_id(self) -> str:
+            return "capturing-ocr"
+
+        async def extract_text(self, png_data: bytes, prompt: str) -> str:
+            assert png_data.startswith(b"\x89PNG\r\n\x1a\n")
+            captured_prompts.append(prompt)
+            return "Whiteboard sketch of QuantumFlux architecture."
+
+    buf = io.BytesIO()
+    Image.new("RGB", (320, 200), color=(255, 255, 255)).save(buf, format="JPEG")
+    jpg_bytes = buf.getvalue()
+    md5_hex = hashlib.md5(jpg_bytes).hexdigest()
+    storage_key = f"images/{md5_hex}.jpg"
+    await file_service.blob_storage.put(USER_DATA_BUCKET, storage_key, jpg_bytes)
+
+    async with session_manager.session() as db:
+        screenshot_dir = UserFileDO(
+            user_id=test_user_id,
+            directory_id=0,
+            file_name="SCREENSHOT",
+            is_folder="Y",
+            is_active="Y",
+        )
+        db.add(screenshot_dir)
+        await db.flush()
+        img_file = UserFileDO(
+            user_id=test_user_id,
+            directory_id=screenshot_dir.id,
+            file_name="whiteboard.jpg",
+            storage_key=storage_key,
+            md5=md5_hex,
+            size=len(jpg_bytes),
+            is_folder="N",
+            is_active="Y",
+        )
+        db.add(img_file)
+        await db.commit()
+        file_id = int(img_file.id)
+
+    processor = ProcessorService(
+        event_bus=event_bus,
+        session_manager=session_manager,
+        file_service=file_service,
+    )
+    processor.set_modules(
+        [
+            PageHashingModule(file_service),
+            PngConversionModule(file_service),
+            OcrModule(file_service, _CapturingOcr()),
+            EmbeddingModule(file_service, FakeEmbeddingModel()),
+            SummaryModule(file_service, summary_service, FakeSummaryModel()),
+        ]
+    )
+
+    ok = await processor.process_file(file_id, user_id=test_user_id)
+    assert ok is True
+    assert len(captured_prompts) == 1
+    assert "Image Filename: whiteboard.jpg" in captured_prompts[0]
+    assert "Rapid Logging" not in captured_prompts[0]
+
+    png_key = get_page_png_path(file_id, "img")
+    assert await file_service.blob_storage.exists(CACHE_BUCKET, png_key)
+
+    tasks = await processor.list_system_tasks(user_id=test_user_id, file_id=file_id)
+    task_types = {t.task_type for t in tasks}
+    assert TaskType.PAGE_HASHING.value in task_types
+    assert TaskType.PNG_CONVERSION.value in task_types
+    assert TaskType.OCR_EXTRACTION.value in task_types
+    assert TaskType.EMBEDDING_GENERATION.value in task_types
+    assert TaskType.SUMMARY_GENERATION.value not in task_types
+
+    # Completed standalone image should not be re-enqueued by recover_missing_tasks.
+    await processor.recover_missing_tasks(user_id=test_user_id)
+    assert (test_user_id, file_id) not in processor.processing_files
+
+    # Standalone image appears in hybrid search, while list_notebooks stays .note-only.
+    search_service = SearchService(session_manager, FakeEmbeddingModel())
+    hits = await search_service.search_chunks(user_id=test_user_id, query="QuantumFlux")
+    assert [h.file_id for h in hits] == [file_id]
+    assert hits[0].page_id == "img"
+    notebooks = await search_service.list_notebooks(user_id=test_user_id)
+    assert all(nb.file_id != file_id for nb in notebooks)
+
+    # Purging cleans up cached PNG, NotePageContentDO, and SystemTaskDO.
+    await processor.handle_vfs_item_purged(
+        VfsItemPurgedEvent(item_id=file_id, user_id=test_user_id, name="whiteboard.jpg")
+    )
+    assert not await file_service.blob_storage.exists(CACHE_BUCKET, png_key)
+    assert (
+        await processor.list_system_tasks(user_id=test_user_id, file_id=file_id) == []
+    )
+
+
+async def test_standalone_image_exclusions_for_mystyle_and_export(
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    test_user_id: int,
+) -> None:
+    """Verify MyStyle/ and EXPORT/ images are skipped while SCREENSHOT/ images are enqueued."""
+    event_bus = LocalEventBus()
+
+    async with session_manager.session() as db:
+        mystyle = UserFileDO(
+            user_id=test_user_id,
+            directory_id=0,
+            file_name="MyStyle",
+            is_folder="Y",
+            is_active="Y",
+        )
+        export = UserFileDO(
+            user_id=test_user_id,
+            directory_id=0,
+            file_name="EXPORT",
+            is_folder="Y",
+            is_active="Y",
+        )
+        screenshot = UserFileDO(
+            user_id=test_user_id,
+            directory_id=0,
+            file_name="SCREENSHOT",
+            is_folder="Y",
+            is_active="Y",
+        )
+        db.add_all([mystyle, export, screenshot])
+        await db.flush()
+        f_style = UserFileDO(
+            user_id=test_user_id,
+            directory_id=mystyle.id,
+            file_name="grid.png",
+            storage_key="k1",
+            is_folder="N",
+            is_active="Y",
+        )
+        f_export = UserFileDO(
+            user_id=test_user_id,
+            directory_id=export.id,
+            file_name="Daily_1.png",
+            storage_key="k2",
+            is_folder="N",
+            is_active="Y",
+        )
+        f_shot = UserFileDO(
+            user_id=test_user_id,
+            directory_id=screenshot.id,
+            file_name="shot.png",
+            storage_key="k3",
+            is_folder="N",
+            is_active="Y",
+        )
+        db.add_all([f_style, f_export, f_shot])
+        await db.commit()
+        style_id, export_id, shot_id = int(f_style.id), int(f_export.id), int(f_shot.id)
+
+    processor = ProcessorService(
+        event_bus=event_bus,
+        session_manager=session_manager,
+        file_service=file_service,
+    )
+    processor.set_modules([PageHashingModule(file_service)])
+
+    await processor.handle_note_updated(
+        NoteUpdatedEvent(
+            file_id=style_id, user_id=test_user_id, file_path="MyStyle/grid.png"
+        )
+    )
+    await processor.handle_note_updated(
+        NoteUpdatedEvent(
+            file_id=export_id, user_id=test_user_id, file_path="EXPORT/Daily_1.png"
+        )
+    )
+    assert processor.processing_files == set()
+
+    await processor.recover_missing_tasks(user_id=test_user_id)
+    assert processor.processing_files == {(test_user_id, shot_id)}
