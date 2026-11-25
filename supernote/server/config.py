@@ -308,14 +308,21 @@ class ServerConfig(DataClassYAMLMixin):
 
     # TODO(#403): Revisit per-format image_* config fields alongside declarative
     # path/extension processing and prompt routing so both share one config model.
-    enable_image_processing: bool = True
+    enable_image_processing: bool = field(
+        default=True,
+        metadata={"component": ("processor", "enable_image_processing")},
+    )
     """Whether standalone raster images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`) are indexed by the background OCR pipeline."""
 
-    image_include_patterns: list[str] = field(default_factory=list)
+    image_include_patterns: list[str] = field(
+        default_factory=list,
+        metadata={"component": ("processor", "image_include_patterns")},
+    )
     """Optional VFS path globs restricting standalone image indexing (empty = allow all paths not excluded)."""
 
     image_exclude_patterns: list[str] = field(
-        default_factory=lambda: list(DEFAULT_IMAGE_EXCLUDE_PATTERNS)
+        default_factory=lambda: list(DEFAULT_IMAGE_EXCLUDE_PATTERNS),
+        metadata={"component": ("processor", "image_exclude_patterns")},
     )
     """VFS path globs excluded from standalone image indexing (defaults to `MyStyle/**` and `EXPORT/**`)."""
 
@@ -426,8 +433,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_WEB_ENABLED`
     """
 
-    web_notebook_preview: bool = True
+    web_notebook_preview: bool = field(
+        default=True,
+        metadata={"component": ("conversion", "notebook_preview")},
+    )
     """Whether to generate and display notebook page previews in the web UI.
+
+    Aliases `conversion.notebook_preview`.
 
     When disabled, the web UI remains available for file, task, and metadata management,
     but skips CPU-heavy notebook rasterization.
@@ -841,6 +853,7 @@ class ServerConfig(DataClassYAMLMixin):
             config.web_notebook_preview = _get_bool_env(
                 "SUPERNOTE_WEB_NOTEBOOK_PREVIEW", config.web_notebook_preview
             )
+            config._component_sources["conversion"] = ComponentConfigSource.ENV
             logger.info(f"Web Notebook Preview: {config.web_notebook_preview}")
 
         if raw_log_level := os.getenv("SUPERNOTE_LOG_LEVEL"):

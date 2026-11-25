@@ -9,11 +9,14 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.device import DeviceClient
 from supernote.client.extended import ExtendedClient
-from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
+from supernote.server.components.conversion import (
+    CONVERSION_CONFIG_KEY,
+    CONVERSION_SERVICE_KEY,
+)
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import BLOB_STORAGE_KEY, CONFIG_KEY, URL_SIGNER_KEY
+from supernote.server.keys import BLOB_STORAGE_KEY, URL_SIGNER_KEY
 
 
 async def _seed_note_file(
@@ -77,7 +80,7 @@ async def test_note_to_png_returns_empty_when_preview_disabled(
         client, session_manager, test_user_id, 9204, "Disabled.note", test_note_path
     )
     assert client.app is not None
-    client.app[CONFIG_KEY].web_notebook_preview = False
+    client.app[CONVERSION_CONFIG_KEY].notebook_preview = False
 
     disabled_vo = await device_client.note_to_png(9204)
     assert disabled_vo.png_page_vo_list == []
@@ -155,7 +158,7 @@ async def test_extended_note_cover_returns_none_when_preview_disabled(
         client, session_manager, test_user_id, 9102, "NoPreview.note", test_note_path
     )
     assert client.app is not None
-    client.app[CONFIG_KEY].web_notebook_preview = False
+    client.app[CONVERSION_CONFIG_KEY].notebook_preview = False
 
     disabled_vo = await extended_client.get_note_cover(file_id=9102)
     assert disabled_vo.success is True

@@ -37,6 +37,8 @@ from supernote.server.utils.image import (
 )
 from supernote.server.utils.paths import get_page_png_path
 
+from . import CONVERSION_CONFIG_KEY
+
 logger = logging.getLogger(__name__)
 
 # Use zlib compression level 1 (fastest) to minimize CPU overhead during background PNG rendering.
@@ -215,8 +217,14 @@ async def async_setup_processor(
 ) -> None:
     """Register `PngConversionModule` with the `"processor"` platform."""
     ocr_model = core.app.get(OCR_MODEL_KEY)
+    conversion_cfg = core.app.get(CONVERSION_CONFIG_KEY)
+    notebook_preview = (
+        conversion_cfg.notebook_preview
+        if conversion_cfg is not None
+        else core.config.web_notebook_preview
+    )
     png_enabled = (ocr_model is not None) or (
-        core.config.web_enabled and core.config.web_notebook_preview
+        core.config.web_enabled and notebook_preview
     )
     registrar.register_module(
         PngConversionModule(file_service=core.file_service, enabled=png_enabled)

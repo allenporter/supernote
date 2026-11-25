@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from supernote.server.components.conversion import (
+    CONVERSION_CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
+    ConversionConfig,
     ConversionService,
 )
 from supernote.server.core import Component, ServerCore
@@ -15,13 +17,20 @@ async def test_conversion_component_lifecycle(
     load_components: LoadComponents,
 ) -> None:
     """Verify ConversionComponent registers ConversionService and supports idempotent lifecycle."""
-    loader = await load_components("conversion")
+    loader = await load_components(
+        "conversion",
+        configs={"conversion": {"notebook_preview": False}},
+    )
     component = loader.get("conversion")
     assert isinstance(component, Component)
     assert component.domain == "conversion"
     assert component.dependencies == ("ai", "processor")
     assert component.platforms == ("http", "processor")
     assert isinstance(component_core.app[CONVERSION_SERVICE_KEY], ConversionService)
+    assert component_core.app[CONVERSION_CONFIG_KEY] == ConversionConfig(
+        enabled=True,
+        notebook_preview=False,
+    )
 
     await loader.async_stop_all(component_core)
     await loader.async_stop_all(component_core)

@@ -33,6 +33,7 @@ from .base import (
     TaskGraphError,
     TaskScope,
 )
+from .config import ProcessorConfig
 from .service import ProcessorService
 
 __all__ = [
@@ -96,14 +97,15 @@ class ProcessorComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `ProcessorService`, bind `PROCESSOR_SERVICE_KEY`, and initialize `ProcessorRegistrar`."""
+        cfg = ProcessorConfig.from_dict(dict(config))
         service = ProcessorService(
             event_bus=core.event_bus,
             session_manager=core.session_manager,
             file_service=core.file_service,
             coordination_service=core.coordination,
-            enable_image_processing=core.config.enable_image_processing,
-            image_include_patterns=core.config.image_include_patterns,
-            image_exclude_patterns=core.config.image_exclude_patterns,
+            enable_image_processing=cfg.enable_image_processing,
+            image_include_patterns=cfg.image_include_patterns,
+            image_exclude_patterns=cfg.image_exclude_patterns,
         )
         core.app[PROCESSOR_SERVICE_KEY] = service
         self._service = service

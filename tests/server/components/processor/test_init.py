@@ -57,7 +57,16 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
     load_components: LoadComponents,
 ) -> None:
     """ProcessorComponent satisfies Component + PlatformHost and tears down idempotently."""
-    loader = await load_components("processor")
+    loader = await load_components(
+        "processor",
+        configs={
+            "processor": {
+                "enable_image_processing": False,
+                "image_include_patterns": ["Docs/**"],
+                "image_exclude_patterns": ["Archive/**"],
+            }
+        },
+    )
     comp = loader.get("processor")
     assert isinstance(comp, ProcessorComponent)
     assert set(comp.hosted_platforms) <= KNOWN_PLATFORMS
@@ -66,6 +75,9 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
 
     service = component_core.app[PROCESSOR_SERVICE_KEY]
     assert isinstance(service, ProcessorService)
+    assert service.enable_image_processing is False
+    assert service.image_include_patterns == ("Docs/**",)
+    assert service.image_exclude_patterns == ("Archive/**",)
     with pytest.raises(RuntimeError, match="after platforms are finalized"):
         comp.get_platform_registrar().register_module(_CustomStage())
     assert [m.task_type for m in service.task_graph.modules] == [

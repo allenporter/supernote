@@ -70,6 +70,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="conversion",
         import_path="supernote.server.components.conversion:ConversionComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.conversion.config:ConversionConfig",
     ),
     BuiltinComponentSpec(
         domain="events",
@@ -123,6 +124,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="processor",
         import_path="supernote.server.components.processor:ProcessorComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.processor.config:ProcessorConfig",
     ),
     BuiltinComponentSpec(
         domain="schedule",

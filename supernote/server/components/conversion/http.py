@@ -36,6 +36,7 @@ from supernote.server.routes.oss import stream_blob_response
 from supernote.server.services.blob import BlobStorage
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
+from . import CONVERSION_CONFIG_KEY
 from .service import CONVERSION_SERVICE_KEY, ConversionService, ConvertedBlob
 
 __all__ = [
@@ -56,7 +57,13 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
         return web.json_response({"error": err.message}, status=err.status_code)
 
     config: ServerConfig = request.app[CONFIG_KEY]
-    if not (config.web_enabled and config.web_notebook_preview):
+    conversion_cfg = request.app.get(CONVERSION_CONFIG_KEY)
+    notebook_preview = (
+        conversion_cfg.notebook_preview
+        if conversion_cfg is not None
+        else config.web_notebook_preview
+    )
+    if not (config.web_enabled and notebook_preview):
         return web.json_response(WebNoteCoverVO(url=None).to_dict())
 
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
@@ -93,8 +100,14 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
 
     user_email = request[REQUEST_USER_KEY]
     config: ServerConfig = request.app[CONFIG_KEY]
+    conversion_cfg = request.app.get(CONVERSION_CONFIG_KEY)
+    notebook_preview = (
+        conversion_cfg.notebook_preview
+        if conversion_cfg is not None
+        else config.web_notebook_preview
+    )
 
-    if not (config.web_enabled and config.web_notebook_preview):
+    if not (config.web_enabled and notebook_preview):
         return web.json_response(PngVO(png_page_vo_list=[]).to_dict())
 
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
