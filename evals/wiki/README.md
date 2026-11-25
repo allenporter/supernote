@@ -6,7 +6,7 @@ Repeatable multi-notebook corpus and evaluation harness for measuring LLM Wiki b
 
 `dataset.yaml` seeds an isolated ephemeral SQLite database with:
 
-- **18 notebooks** (16 OCR'd multi-page/daily/project notes spanning 4 backfill batches of 5, plus 2 un-OCR'd scratchpads).
+- **19 notebooks** (17 OCR'd notebooks totaling **56 transcribed pages**—including a 24-page daily bullet journal and 3–4 page project/reading notebooks spanning 4 backfill batches of 5—plus 2 un-OCR'd scratchpads).
 - **8 Schedule tasks** tied to the same projects.
 - **Recurring cross-notebook themes & evolving decisions**:
   - **Aurora Home Server** (32GB non-ECC + Unraid -> 64GB ECC + TrueNAS Scale, 28W idle).
