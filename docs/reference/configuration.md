@@ -10,7 +10,7 @@ When `supernote.server.config.ServerConfig.load` runs at server startup:
 
 1. **Config File Discovery**:
    - Checks `--config-dir` CLI flag, or `SUPERNOTE_CONFIG_DIR` environment variable (defaults to `config` locally, `/data/config` in Docker).
-   - Reads `<config_dir>/config.yaml` if it exists. If `<config_dir>/config.yaml` does not exist, the server writes the resolved configuration to `<config_dir>/config.yaml` on first startup.
+   - Reads `<config_dir>/config.yaml` if it exists; otherwise uses built-in defaults plus any `SUPERNOTE_*` environment variables.
 2. **Environment Variable Overrides**:
    - Any `SUPERNOTE_*` environment variable overrides the corresponding value from `config.yaml`.
 3. **Database Fallbacks**:
@@ -186,13 +186,16 @@ webhooks:
 | `mcp_base_url` | `SUPERNOTE_MCP_BASE_URL` | `str \| None` | `None` *(falls back to `http://<host>:<mcp_port>`)* | Publicly reachable base URL of the MCP server (port `8081`). Used in RFC 9728 Protected Resource metadata (`/.well-known/oauth-protected-resource`). |
 | `storage_dir` | `SUPERNOTE_STORAGE_DIR` | `str` | `"storage"` *(`"/data"` in Docker)* | Root directory for SQLite (`system/supernote.db`), trace logs, user file blobs (`supernote-user-data/`), and PNG/PDF cache (`supernote-cache/`). |
 | `default_user_quota` | `SUPERNOTE_DEFAULT_USER_QUOTA` | `int` | `0` | Default per-user storage quota in bytes (`0` = uncapped per-user quota, bounded by storage volume free space). Individual users can override this via `UserDO.total_capacity` (`supernote admin user set-quota`). |
+| `enable_image_processing` | — *(YAML only)* | `bool` | `true` | Enables background OCR and indexing for standalone raster images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`). |
+| `image_include_patterns` | — *(YAML only)* | `list[str]` | `[]` | Optional VFS path globs restricting standalone image indexing (empty allows all paths not excluded). |
+| `image_exclude_patterns` | — *(YAML only)* | `list[str]` | `["MyStyle/**", "EXPORT/**"]` | VFS path globs excluded from standalone image indexing. |
 | `event_log_retention_days` | `SUPERNOTE_EVENT_LOG_RETENTION_DAYS` | `int` | `90` | Number of days to retain domain events in `f_user_event` (`UserEventDO`, managed by `supernote.server.components.events.service.EventLogService`). Set `0` to retain indefinitely. |
 | `proxy_mode` | `SUPERNOTE_PROXY_MODE` | `str \| None` | `None` | Reverse proxy header handling: `None`/`"disabled"` (ignore `X-Forwarded-*`), `"relaxed"` (trust immediate upstream proxy and disable MCP DNS rebinding check), or `"strict"` (only trust `trusted_proxies`). |
 | `trusted_proxies` | `SUPERNOTE_TRUSTED_PROXIES` | `list[str]` *(comma-separated in env)* | `["127.0.0.1", "::1", "172.17.0.0/16"]` | IP addresses or CIDR ranges trusted when `proxy_mode` is `"strict"`. |
 | `web_enabled` | `SUPERNOTE_WEB_ENABLED` | `bool` | `true` | Serves the single-page Web UI dashboard at `/` and static assets at `/static/`. |
 | `web_notebook_preview` | `SUPERNOTE_WEB_NOTEBOOK_PREVIEW` | `bool` | `true` | Enables background PNG rasterization of `.note` pages for Web UI viewing. Automatically enabled if `ai.ocr` is configured. |
 | `prompts_dir` | `SUPERNOTE_PROMPTS_DIR` | `str \| None` | `None` | Path to a directory containing custom Markdown prompt overrides for `ocr/` and `summary/`. |
-| `metrics_enabled` | `SUPERNOTE_METRICS_ENABLED` | `bool` | `true` | Enables Prometheus request, processing, and blob storage inventory metrics (`supernote.server.services.storage_metrics.StorageMetricsCollector`) and exposes the metrics endpoint. |
+| `metrics_enabled` | `SUPERNOTE_METRICS_ENABLED` | `bool` | `true` | Enables Prometheus request, processing, and blob storage inventory metrics (`supernote.server.components.metrics.storage.StorageMetricsCollector`) and exposes the metrics endpoint. |
 | `metrics_path` | `SUPERNOTE_METRICS_PATH` | `str` | `"/metrics"` | URL path on the main server (`port`) where Prometheus metrics are exposed. |
 | `log_level` | `SUPERNOTE_LOG_LEVEL` | `str` | `"INFO"` | Server logging verbosity (`"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`). |
 | `trace_log_file` | `SUPERNOTE_TRACE_LOG_FILE` | `str \| None` | `<storage_dir>/system/trace.log` | File path for structured HTTP request/response trace logging. Set to `""` (empty string) to disable writing trace logs to disk. |
@@ -225,13 +228,13 @@ Defined as entries under `ai.providers.<provider_name>`:
 
 | YAML Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `ai.providers.<name>.type` | `str \| None` | `None` *(defaults to `<name>`)* | Backend implementation (`"gemini"`, `"openai"`, `"apple"`, `"fake"`). Set explicitly (e.g. `type: openai`) to configure multiple servers of the same kind under distinct entry names (`ollama`, `llamacpp`). |
+| `ai.providers.<name>.type` | `str \| None` | `None` *(defaults to `<name>`)* | Backend implementation (`"gemini"`, `"openai"`, `"apple"`, `"fake_ai"`). Set explicitly (e.g. `type: openai`) to configure multiple servers of the same kind under distinct entry names (`ollama`, `llamacpp`). |
 | `ai.providers.<name>.api_key` | `str \| None` | `None` | API key for authenticating with the provider (required for `gemini` and hosted `openai`; optional for local Ollama/vLLM/llama.cpp). |
 | `ai.providers.<name>.base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible servers (e.g. `"http://localhost:11434/v1"` for Ollama). |
 
 ### Capability Model Configuration (`supernote.server.config.ModelConfig`)
 
-Defined at `ai.ocr`, `ai.summary`, and `ai.embedding`:
+Defined at `ai.ocr`, `ai.summary`, `ai.embedding`, and `ai.text`:
 
 | YAML Key | Type | Default | Validation & Behavior |
 | :--- | :--- | :--- | :--- |

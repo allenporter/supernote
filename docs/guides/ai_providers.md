@@ -114,7 +114,7 @@ ai:
     max_concurrency: 2
 ```
 
-When running Open Private Cloud in Docker and Ollama on your host, set `base_url: "http://host.docker.internal:11434/v1"` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
+When running Open Private Cloud in Docker and Ollama on your host, set `base_url: "http://host.docker.internal:11434/v1"` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`). `gemma3:27b` needs ~18–20 GB of VRAM or unified memory; on smaller machines, swap in a lighter vision model like `gemma3:12b` or `qwen2.5vl:7b` (expect lower handwriting accuracy on dense notes than Gemini).
 
 ### Mixing cloud and local models
 
@@ -144,8 +144,6 @@ ai:
     model: embeddinggemma
     max_concurrency: 2
 ```
-
-When running Open Private Cloud in Docker and Ollama on your host, set `base_url: "http://host.docker.internal:11434/v1"` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
 
 ### Multiple local servers
 

@@ -541,7 +541,7 @@ Inspect background processing records in `f_system_task` (`SystemTaskDO`) with o
 ```bash
 supernote admin tasks \
   [--status {pending,processing,completed,failed}] \
-  [--type {hashing,png,ocr,embedding,summary,png_conversion,ocr_extraction,embedding_generation,summary_generation}] \
+  [--type TYPE] \
   [--file-id FILE_ID] \
   [--limit LIMIT] \
   [--json] \
@@ -551,7 +551,7 @@ supernote admin tasks \
 | Option | Default | Description |
 | :--- | :--- | :--- |
 | `--status` | None (all) | Filter by `ProcessingStatus` (`pending`, `processing`, `completed`, `failed`). |
-| `--type` | None (all) | Filter by `TaskType` friendly name (`hashing`, `png`, `ocr`, `embedding`, `summary`) or raw enum value. |
+| `--type` | None (all) | Filter by task stage name (e.g., `hashing`, `png`, `ocr`, `embedding`, `summary`, or any registered module/raw enum value). |
 | `--file-id FILE_ID` | None (all) | Filter tasks belonging to a specific VFS file ID. |
 | `--limit LIMIT` | `100` | Maximum number of tasks to return (ordered by most recently updated). |
 | `--json` | `False` | Emit the raw `SystemTaskListVO` payload as JSON. |
@@ -565,14 +565,16 @@ Force the server's `ProcessorService` to re-run specific processing stages (or t
 
 ```bash
 supernote admin reprocess \
-  [--type {all,hashing,png,ocr,embedding,summary}] \
+  [--type TYPE] \
+  [--cascade] \
   [--file-id FILE_ID] \
   [--url URL]
 ```
 
 | Option | Default | Description |
 | :--- | :--- | :--- |
-| `--type` | `summary` | Stage to clear and reprocess: `all`, `hashing`, `png`, `ocr`, `embedding`, or `summary`. |
+| `--type` | `summary` | Stage to clear and reprocess (`all`, `hashing`, `png`, `ocr`, `embedding`, `summary`, or any registered stage name). |
+| `--cascade` | `False` | Also clear checkpoints for downstream stages that depend on `--type` (for example, re-running `ocr` with `--cascade` clears `embedding` and `summary`). |
 | `--file-id FILE_ID` | None (all files) | Target a single `.note` file ID; omit to reprocess all active `.note` files. |
 | `--url URL` | Cached / `SUPERNOTE_URL` | Server URL override. |
 

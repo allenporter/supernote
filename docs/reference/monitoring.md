@@ -36,7 +36,7 @@ scrape_configs:
 
 ### Grafana Import
 
-1. In Grafana, navigate to **Dashboards $\rightarrow$ New $\rightarrow$ Import**.
+1. In Grafana, navigate to **Dashboards → New → Import**.
 2. Upload [`docs/reference/monitoring/grafana_dashboard.json`](./monitoring/grafana_dashboard.json).
 3. Select your Prometheus data source for `DS_PROMETHEUS` and click **Import**.
 
@@ -48,7 +48,7 @@ scrape_configs:
 | :--- | :---: | :--- | :--- |
 | `supernote_http_requests_total` | Counter | `method`, `path`, `status` | HTTP requests processed (unmatched paths collapse to `HTTP <status>`; non-standard verbs map to `OTHER`; client disconnects record `status="499"`). |
 | `supernote_http_request_duration_seconds` | Histogram | `method`, `path` | Completed HTTP request latency (`REQUEST_DURATION_BUCKETS` up to `300s`). |
-| `supernote_mcp_tool_calls_total` | Counter | `tool`, `status` | MCP server tool invocations (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`). |
+| `supernote_mcp_tool_calls_total` | Counter | `tool`, `status` | MCP server tool invocations across all registered MCP tools (`events`, `processor`, `schedule`, `search`, `transcript`, `wiki`). |
 | `supernote_mcp_tool_duration_seconds` | Histogram | `tool` | Completed MCP tool latency (`REQUEST_DURATION_BUCKETS` up to `300s`). |
 | `supernote_db_session_errors_total` | Counter | — | Database and SQLAlchemy session errors. |
 | `supernote_processor_queue_size` | Gauge | — | Files currently waiting in the background processor queue. |
@@ -60,7 +60,7 @@ scrape_configs:
 | `supernote_note_processing_runs_total` | Counter | `mode`, `status` | End-to-end `.note` pipeline runs (`mode`: `full` or `on_demand`; `status`: `success`, `failure`, `cancelled`). |
 | `supernote_note_processing_duration_seconds` | Histogram | `mode` | Completed `.note` pipeline run latency (`PIPELINE_DURATION_BUCKETS` up to `600s`). |
 | `supernote_note_pages_parsed_total` | Counter | `change_type` | Pages reconciled during `PageHashingModule` (`added`, `modified`, `moved`, `unchanged`, `deleted`). |
-| `supernote_ai_requests_total` | Counter | `provider`, `model`, `stage`, `status` | Logical AI invocations across `ocr`, `summary`, `embedding_doc`, and `embedding_query`. |
+| `supernote_ai_requests_total` | Counter | `provider`, `model`, `stage`, `status` | Logical AI invocations across `ocr`, `summary`, `embedding_doc`, `embedding_query`, `text`, `wiki_compile`, and `wiki_lint`. |
 | `supernote_ai_request_duration_seconds` | Histogram | `provider`, `model`, `stage` | Completed AI call latency (`PIPELINE_DURATION_BUCKETS` up to `600s`). |
 | `supernote_ai_tokens_total` | Counter | `provider`, `model`, `stage`, `token_type` | Disjoint AI token counts (`input`, `output`, `thinking`). |
 | `supernote_note_uploads_total` | Counter | `source` | Completed `.note` uploads (`device_sync`, `web`). |

@@ -11,7 +11,7 @@ Open Private Cloud is an asynchronous Python server built to run as a lightweigh
 - **Database**: SQLAlchemy 2.0 (async) with `aiosqlite` and Alembic migrations (`supernote/alembic/`) backed by a single SQLite file (`storage/system/supernote.db`).
 - **Coordination & Session State**: `CoordinationService` (`supernote.server.services.coordination.SqliteCoordinationService`, backed by `KeyValueDO`) manages login challenges, stateful JWT sessions, sync session locks, event log pruning watermarks, and single-use URL signing nonces.
 - **Virtual Filesystem, Quotas & Storage**: `VirtualFileSystem` (`supernote.server.services.vfs`) and `FileService` (`supernote.server.services.file`) track the logical folder tree in `UserFileDO` (`f_user_file`), soft-deleted items in `RecycleFileDO` (`f_recycle_file`), and enforce two-tier storage quotas (`UserDO.total_capacity` -> `default_user_quota` -> volume free space), while `LocalBlobStorage` (`supernote.server.services.blob`) stores binary file content on disk by bucket (`supernote-user-data`, `supernote-cache`).
-- **Authentication**: Challenge-response login issuing `HS256` JWTs (`x-access-token` header) backed by session state in `CoordinationService`, plus revocable static Bearer API keys (`sn_...` in `ApiKeyDO` / `f_api_key`) for CLI automation and MCP agents.
+- **Authentication**: Challenge-response login issuing `HS256` JWTs (`x-access-token` header) backed by session state in `CoordinationService`, plus revocable static Bearer API keys (`sn_...` in `ApiKeyDO` / `api_keys`) for CLI automation and MCP agents.
 - **Notebook Rendering & AI Processing**: `ConversionService` (`supernote.server.components.conversion`) and `ProcessorService` (`supernote.server.components.processor`) use the local `supernote.notebook` library to parse `.note` metadata (`NoteMetadataDO`, `NotePageMetadataDO`), render pages to PNG/PDF, and optionally run OCR, summarization, and vector embeddings (automatically skipping blank pages where `has_drawables == False`).
 - **Domain Event Log & Real-Time Messaging**: `EventLogService` (`supernote.server.components.events`) persists per-user domain events (`UserEventDO` in `f_user_event`) for cursor-based incremental sync, while `SocketIOServerManager` (`supernote.server.components.socketio`, powered by `python-socketio` with Engine.IO v3 compatibility middleware) subscribes to `LocalEventBus` and pushes sync notifications to connected Supernote devices.
 
@@ -105,7 +105,7 @@ sequenceDiagram
 - **Session JWT Header**: `x-access-token: <token>` (also accepted via `Authorization: Bearer <token>`, cookie, or query parameter where applicable, plus CSRF validation via `GET /api/csrf` and `X-XSRF-TOKEN` on cookie-backed web routes).
 - **Signing Key**: Configured via `SUPERNOTE_JWT_SECRET` / `auth.secret_key`, or auto-generated as a random 256-bit secret and persisted in `CoordinationService` (`system:jwt_secret_key`).
 - **Stateful Session Validation**: Every authenticated JWT request verifies both the signature/expiration (`auth.expiration_hours` for web/CLI, `auth.device_expiration_hours` for hardware) and active session state in `CoordinationService`, allowing individual device unlinks, password resets, or global key rotation to revoke tokens immediately.
-- **Static Bearer API Keys (`sn_...`)**: Headless scripts, CLI automation, and MCP clients can authenticate with `Authorization: Bearer sn_...` keys created via `POST /api/extended/keys` (`supernote cloud keys create`). Raw keys are hashed with SHA-256 into `ApiKeyDO` (`f_api_key`). Sensitive account/key-mutation routes use `@interactive_session_only` (`supernote.server.routes.decorators.interactive_session_only`) to reject static API keys (`request["auth_method"] == "api_key"`).
+- **Static Bearer API Keys (`sn_...`)**: Headless scripts, CLI automation, and MCP clients can authenticate with `Authorization: Bearer sn_...` keys created via `POST /api/extended/keys` (`supernote cloud keys create`). Raw keys are hashed with SHA-256 into `ApiKeyDO` (`api_keys`). Sensitive account/key-mutation routes use `@interactive_session_only` (`supernote.server.routes.decorators.interactive_session_only`) to reject static API keys (`request["auth_method"] == "api_key"`).
 - **OAuth Client Grants**: Each OAuth authorization approved through `/login-bridge` is recorded as an `OAuthGrantDO` (`oauth_grants`) row when its code is exchanged. The row holds SHA-256 digests of the grant's current access token and its refresh token, so `UserService.load_oauth_access_token` verifies a Bearer token in one query for REST and `/mcp` alike. `GET /api/extended/oauth/grants` lists a user's authorized clients and `DELETE /api/extended/oauth/grants/{grantId}` (both `@interactive_session_only`) deletes the row. Revoking a refresh token through `/revoke`, or changing or resetting the password, ends the grant too.
 
 ---
@@ -273,10 +273,11 @@ flowchart TB
 
 All timestamps follow the Supernote protocol convention of 64-bit Unix epoch milliseconds (`int(time.time() * 1000)`), and user-owned tables enforce multi-tenant scoping by `user_id`.
 
-- **Users, Devices & Static API Keys (`supernote/server/db/models/user.py`, `api_key.py`)**:
+- **Users, Devices, API Keys & OAuth Grants (`supernote/server/db/models/user.py`, `api_key.py`, `oauth_grant.py`)**:
   - `UserDO` (`users`): Stores user accounts, `password_md5`, `is_admin`, and per-user storage quota override (`total_capacity`, where `0` defers to `default_user_quota` or volume free space).
   - `DeviceDO` (`f_device`) & `EquipmentUserDO` (`f_equipment_user`): Track bound Supernote hardware tablets.
-  - `ApiKeyDO` (`f_api_key`): Stores revocable static Bearer API keys (`sn_...`) keyed by `(user_id, id)` with unique SHA-256 `key_hash`, `key_prefix`, `name`, `created_time`, and `last_used_time`.
+  - `ApiKeyDO` (`api_keys`): Stores revocable static Bearer API keys (`sn_...`) keyed by `(user_id, id)` with unique SHA-256 `key_hash`, `key_prefix`, `name`, `created_time`, and `last_used_time`.
+  - `OAuthGrantDO` (`oauth_grants`): Stores approved OAuth 2.1 client grants with SHA-256 digests of access and refresh tokens.
 - **Virtual File System (`supernote/server/db/models/file.py`)**:
   - `UserFileDO` (`f_user_file`): Adjacency-list tree where `directory_id = 0` is the user's root directory. Folders (`is_folder = "Y"`) are logical rows; files (`is_folder = "N"`) reference physical blobs via `storage_key` and `md5`. Soft-deleted items set `is_active = "N"`.
   - `RecycleFileDO` (`f_recycle_file`) & `CapacityDO` (`f_capacity`): Track recycle bin entries and per-user storage usage.
@@ -289,12 +290,14 @@ All timestamps follow the Supernote protocol convention of 64-bit Unix epoch mil
   - `SummaryDO` (`f_summary`) & `SummaryTagDO` (`f_summary_tag`): Store user-created digests/categories/annotations and server-generated AI synthesis summaries.
   - `ScheduleTaskGroupDO` (`t_schedule_task_group`), `ScheduleTaskDO` (`t_schedule_task`), `ScheduleRecurTaskDO` (`t_schedule_recur_task`), and `ScheduleSortDO` (`t_schedule_sort`): Store synced device tasks and task lists.
   - `UserEventDO` (`f_user_event`): Append-only domain event log keyed by monotonic `seq` with `(user_id, seq)` index, storing `event_type`, `actor`, `entity_type`, `entity_id`, `related_file_id`, and JSON `payload` (pruned after `event_log_retention_days`).
+- **LLM Wiki (`supernote/server/db/models/wiki.py`)**:
+  - Stores opt-in wiki pages, revisions, citations, lint issues, and compilation runs scoped by `user_id` (see [ADR 0002](./adr/0002-llm-wiki-architecture.md)).
 
 ---
 
 ### Asynchronous Note Processing Pipeline (`ProcessorService`)
 
-When a `.note` file is uploaded or updated (`NoteUpdatedEvent`) or when a device sync session finishes (`SyncCompletedEvent`), `supernote.server.services.processor.ProcessorService` enqueues the `file_id` for background processing without blocking the HTTP response.
+When a `.note` file is uploaded or updated (`NoteUpdatedEvent`) or when a device sync session finishes (`SyncCompletedEvent`), `supernote.server.components.processor.service.ProcessorService` enqueues the `file_id` for background processing without blocking the HTTP response.
 
 1. **Global Pre-Processing (`PageHashingModule`, `version="v2"`)**:
    - Parses `.note` metadata via `supernote.notebook.parse_metadata`, computes an MD5 hash for each page's metadata (`PAGEID`), selectively loads uncached page streams (`load(..., page_number=i)`) to detect foreground ink/drawables, upserts `NoteMetadataDO`, `NotePageMetadataDO`, and `NotePageContentDO`, and invalidates downstream `SystemTaskDO` checkpoints only for modified or deleted pages.
@@ -315,4 +318,4 @@ For full pipeline semantics, state machine rules, and failure recovery details, 
 When `mcp_enabled` is configured, `create_app` in `supernote.server.app` exposes the user's notebook knowledge base to AI assistants using a dual-port OAuth 2.1 + FastMCP architecture:
 
 - **OAuth 2.1 Authorization Server (Main HTTP Port, e.g. `:8080`)**: Mounts `supernote.server.components.oauth.http.create_auth_app` via `aiohttp_asgi.ASGIResource` to serve `/.well-known/oauth-authorization-server`, `/authorize`, `/login-bridge`, and `/token`, authenticating against `UserService`, keeping short-lived authorization codes in `SqliteCoordinationService` and access/refresh tokens as digests on `oauth_grants` rows.
-- **MCP Resource Server (Dedicated MCP Port, e.g. `:8081/mcp`)**: Runs `supernote.server.components.mcp.server.create_mcp_server` in a background `asyncio.Task` (authenticating both OAuth 2.1 Bearer tokens and static `sn_...` API keys), hosting tools registered via `McpRegistrar` by vertical components (`events`, `search`, `transcript`, `schedule`).
+- **MCP Resource Server (Dedicated MCP Port, e.g. `:8081/mcp`)**: Runs `supernote.server.components.mcp.server.create_mcp_server` in a background `asyncio.Task` (authenticating both OAuth 2.1 Bearer tokens and static `sn_...` API keys), hosting tools registered via `McpRegistrar` by vertical components (`events`, `processor`, `schedule`, `search`, `transcript`, `wiki`).
