@@ -11,7 +11,7 @@ With no AI configured, search matches the native page keywords you tag on your S
 | Keyword search (default) | No | Native Supernote page keywords, exact words in transcripts, `#tags`, filenames, and date filters | ~4 ms |
 | Hybrid search (keyword + embeddings) | Optional (cloud or local) | Concept queries using different wording (*"backyard drainage sketch"*), paraphrases, and multilingual notes | ~24–69 ms |
 
-In hybrid mode, the server runs both keyword matching and vector search and merges the results. Exact `#tags` and names still rank at the top, while natural-language questions can still find pages that never used your exact search terms.
+In hybrid mode, the server runs both keyword matching and semantic (embedding) search and merges the results. Exact `#tags` and names still rank at the top, while natural-language questions can still find pages that never used your exact search terms.
 
 ## Picking an embedding model
 
@@ -19,7 +19,7 @@ We benchmarked cloud and local embedding models across 100 notebook pages and 60
 
 - Google Gemini (`gemini-embedding-2`) is the recommended cloud default. It scored highest across exact, paraphrase, and multilingual queries (~69 ms median latency) and turns on automatically when you set `SUPERNOTE_GEMINI_API_KEY`.
 - Ollama (`embeddinggemma`) is the recommended local option. Everything stays on your own machine, latency is ~24 ms, and hybrid accuracy stays close to cloud models.
-- Leaving embeddings unconfigured is also fine if you want zero AI dependencies. You still get fast lexical search over native Supernote page keywords and any existing transcripts.
+- Leaving embeddings unconfigured is also fine if you want zero AI dependencies. You still get fast keyword search over native Supernote page keywords and any existing transcripts.
 
 To use local embeddings with Ollama, add this to `config/config.yaml`:
 
@@ -34,7 +34,7 @@ ai:
     model: embeddinggemma
 ```
 
-See the [Configuration Reference](../reference/configuration.md) for all provider options.
+See [Choosing an AI Provider](./ai_providers.md) for provider tradeoffs and local setup, or the [Configuration Reference](../reference/configuration.md) for all provider options.
 
 ## Searching in practice
 

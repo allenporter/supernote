@@ -12,7 +12,7 @@ Nothing in this pipeline is required. Unchanged and blank pages are skipped auto
 
 When a `.note` file syncs, modified pages are transcribed into Markdown and shown side-by-side with your handwriting in the Web UI.
 
-The default OCR prompt preserves Bullet Journal Rapid Logging symbols (`•`, `X`, `>`, `<`, `o`, `-`, `*`), nested indentation, and `~~strikethroughs~~`. It also handles tables and hand-drawn diagrams: tabular notes become GitHub-Flavored Markdown tables, and flowcharts or architecture sketches are transcribed as fenced ` ```mermaid ` blocks.
+The default OCR prompt preserves Bullet Journal Rapid Logging symbols (`•`, `X`, `>`, `<`, `o`, `-`, `*`), nested indentation, and `~~strikethroughs~~`. It also handles tables and hand-drawn diagrams: tabular notes become GitHub-Flavored Markdown tables, and flowcharts or architecture sketches are transcribed as interactive diagrams using Mermaid syntax (` ```mermaid ` blocks).
 
 In the Web UI, those Mermaid blocks render directly as diagrams inside the transcript panel, with a toggle to view the raw source.
 
@@ -40,7 +40,7 @@ image_exclude_patterns: ["MyStyle/**", "EXPORT/**"]
 
 ## Reading digests and handwritten annotations
 
-Reading digests and handwritten margin notes synced from your tablet appear in the **Digests** tab. If you need a shareable or archival copy of a handwritten digest, the extended API can render and cache it as a PDF or PNG (`SummaryClient.summary_to_pdf` and `SummaryClient.summary_to_png`).
+Reading digests and handwritten margin notes synced from your tablet appear in the **Digests** tab. If you need a shareable or archival copy of a handwritten digest, the extended API and Python client (`supernote.client`) can also render and cache it as a PDF or PNG.
 
 <p align="center">
   <img src="../static-assets/guides/web-digests.png" alt="Digests and Annotations browser with categories, tags, and source links" width="840">
@@ -68,10 +68,10 @@ config/prompts/
     └── default/prompt.md          # Custom prompt for standalone images
 ```
 
-For each page, OCR prompts resolve in order: notebook filename stem (`Daily.note` -> `daily`), then normalized page stationery style (stripping `user_`/`style_` prefixes and device suffixes like `_a5x2`), and finally `default/`. Native Supernote page keywords (`PAGE_KEYWORDS`) are injected automatically so your custom prompts can use your device tags and headings.
+For each page, OCR prompts resolve in order: notebook filename stem (`Daily.note` → `daily/`), then page template name (for example, a Cornell template → `cornell/`), and finally `default/`. Native Supernote page keywords are included automatically so custom prompts can use your tablet's tags and headings. Prompts are loaded into memory once, so restart the server after adding or editing prompt files.
 
 > [!NOTE]
-> When customizing `summary/` prompts, keep your instructions compatible with the structured JSON output schema (`segments` containing `date_range`, `summary`, `extracted_dates`, and `page_refs`).
+> When customizing `summary/` prompts, keep the structured JSON output format intact so the server can parse date ranges and page references. See the [Async Note Processing Pipeline](../architecture/note_processing_design.md) for the expected schema.
 
 ## Picking a vision model
 

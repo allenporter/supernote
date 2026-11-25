@@ -14,11 +14,11 @@ Pages are organized into `projects/`, `entities/`, `topics/`, and `sources/`. Ev
 
 If you edit a wiki page yourself in the Web UI, the background compiler leaves your text alone. Future syncs only add new source citations or suggest updates in the Lint panel. You can also lock a page if you don't want the compiler touching it at all.
 
-After each compile, a lightweight health check scans for broken links, orphan pages, deleted sources, and possible OCR spelling variants (like `Al1ce` vs. `Alice`). Ambiguous names are never merged automatically; instead they show up in the Lint panel for you to approve or dismiss.
+After each compile, a lightweight health check scans for broken links, unlinked (orphan) pages, deleted sources, and possible OCR spelling variants (like `Al1ce` vs. `Alice`). Ambiguous names are never merged automatically; instead they show up in the Lint panel for you to approve or dismiss.
 
 ## Turning it on
 
-The wiki reuses your configured `ai.summary` model (or `SUPERNOTE_GEMINI_API_KEY`) automatically; you can optionally set `ai.text` in `config/config.yaml` if you want a separate model for wiki compilation (see the [Configuration Reference](../reference/configuration.md)). Because it is off by default, sync-only servers use zero extra memory or tokens.
+The wiki reuses your configured `ai.summary` model (or `SUPERNOTE_GEMINI_API_KEY`) automatically. You can also configure a separate `ai.text` model for wiki compilation; see [Choosing an AI Provider](./ai_providers.md) for model recommendations and the [Configuration Reference](../reference/configuration.md) for all settings. Because it is off by default, sync-only servers use zero extra memory or tokens.
 
 Enable it with an environment variable or in `config/config.yaml`:
 
@@ -32,7 +32,7 @@ wiki:
   enabled: true
 ```
 
-Setting `SUPERNOTE_WIKI_ENABLED=true` (or `wiki.enabled: true`) turns on the **Wiki** tab and automatically compiles new notes and tasks in the background as they sync. Set `wiki.auto_compile: false` in `config/config.yaml` if you prefer manual or MCP-only updates. You can tune compilation limits (`debounce_seconds`, `max_pages_per_batch`, `lint_event_threshold`, `lint_interval_days`) in the [Configuration Reference](../reference/configuration.md).
+Setting `SUPERNOTE_WIKI_ENABLED=true` (or `wiki.enabled: true`) turns on the **Wiki** tab and automatically compiles new notes and tasks in the background as they sync. Set `wiki.auto_compile: false` in `config/config.yaml` if you prefer manual or MCP-only updates. You can also tune the daily token budget and batching/lint schedules in the [Configuration Reference](../reference/configuration.md).
 
 ## Everyday use
 
@@ -64,6 +64,6 @@ The wiki reader adapts to phone screens so you can read compiled pages, follow `
 
 ## Using the wiki with AI assistants
 
-When both MCP and `wiki.enabled: true` are active, assistants like Claude Desktop or Cursor get eight wiki tools (`get_wiki_index`, `list_wiki_pages`, `read_wiki_page`, `search_wiki`, `upsert_wiki_page`, `list_wiki_lint_issues`, `resolve_wiki_lint_issue`, and `get_wiki_status`). Agent edits respect your manual edits and locked pages automatically.
+When both MCP and `wiki.enabled: true` are active, assistants like Claude Desktop or Cursor can browse, search, read, and update wiki pages, as well as review and resolve lint issues. Agent edits respect your manual edits and locked pages automatically.
 
-See the [MCP Guide](./mcp.md) for client setup, or [ADR 0002](../architecture/adr/0002-llm-wiki-architecture.md) if you want the internal compiler and schema design.
+See the [MCP Guide](./mcp.md) for the full list of wiki tools and client setup, or [ADR 0002](../architecture/adr/0002-llm-wiki-architecture.md) if you want the internal compiler and schema design.
