@@ -15,6 +15,7 @@ See `supernote.guides.summary_api`.
 
 from __future__ import annotations
 
+import json
 import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable
@@ -22,6 +23,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from aiohttp import web
+from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.extended import (
@@ -571,7 +573,10 @@ async def handle_summary_to_pdf(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/summary/to/pdf
     # Purpose: Render a summary's handwriting to PDF and return a signed download URL.
     # Response: PdfVO
-    req_data = DownloadSummaryDTO.from_dict(await request.json())
+    try:
+        req_data = DownloadSummaryDTO.from_dict(await request.json())
+    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
@@ -596,7 +601,10 @@ async def handle_summary_to_png(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/summary/to/png
     # Purpose: Render a summary's handwriting to per-page PNGs and return signed download URLs.
     # Response: PngVO
-    req_data = DownloadSummaryDTO.from_dict(await request.json())
+    try:
+        req_data = DownloadSummaryDTO.from_dict(await request.json())
+    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]

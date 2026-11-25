@@ -231,9 +231,12 @@ class ConversionService:
         if not summary.handwrite_md5:
             raise FileError(f"Summary {summary.id} is missing handwriting MD5 hash")
         user_id = await self.user_service.get_user_id(user)
-        return get_summary_handwriting_prefix(
-            user_id, summary.id, summary.handwrite_md5
-        )
+        try:
+            return get_summary_handwriting_prefix(
+                user_id, summary.id, summary.handwrite_md5
+            )
+        except ValueError as err:
+            raise FileError(str(err)) from err
 
     async def _read_summary_handwriting(self, summary: SummaryItem) -> bytes:
         """Read a summary's raw handwriting `.mark` blob from USER_DATA_BUCKET."""
@@ -253,9 +256,12 @@ class ConversionService:
     async def convert_summary_to_pdf(self, user: str, summary: SummaryItem) -> None:
         """Render a summary's handwriting to PDF and store it in CACHE_BUCKET."""
         prefix = await self._get_summary_handwriting_prefix(user, summary)
+        storage_key = f"{prefix}.pdf"
+        if await self.blob_storage.exists(CACHE_BUCKET, storage_key):
+            return
         blob_content = await self._read_summary_handwriting(summary)
         pdf_bytes = await asyncio.to_thread(_convert_note_to_pdf_sync, blob_content, [])
-        await self.blob_storage.put(CACHE_BUCKET, f"{prefix}.pdf", pdf_bytes)
+        await self.blob_storage.put(CACHE_BUCKET, storage_key, pdf_bytes)
 
     async def get_summary_pdf(
         self, user: str, summary: SummaryItem
@@ -274,6 +280,13 @@ class ConversionService:
     ) -> list[int]:
         """Render every page of a summary's handwriting to PNG in CACHE_BUCKET and return page numbers."""
         prefix = await self._get_summary_handwriting_prefix(user, summary)
+        page_prefix = f"{prefix}_page_"
+        cached_keys = await self.blob_storage.list_blobs(CACHE_BUCKET, page_prefix)
+        if cached_keys:
+            return sorted(
+                int(key.removeprefix(page_prefix).removesuffix(".png"))
+                for key in cached_keys
+            )
         blob_content = await self._read_summary_handwriting(summary)
         pages = await asyncio.to_thread(_convert_note_to_png_pages_sync, blob_content)
         for page_no, png_bytes in enumerate(pages):

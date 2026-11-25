@@ -983,3 +983,59 @@ async def test_summary_to_pdf_with_static_api_key(
     download = await client.get(url[url.index("/api/oss/") :])
     assert download.status == 200
     assert (await download.read()).startswith(b"%PDF")
+
+
+async def test_summary_png_out_of_range_page(
+    client: TestClient,
+    summary_client: SummaryClient,
+    authenticated_client: Client,
+    test_data_dir: Path,
+) -> None:
+    summary_id = await _add_handwritten_summary(client, summary_client, test_data_dir)
+    await summary_client.summary_to_png(summary_id)
+
+    signed_path = await client.app[URL_SIGNER_KEY].sign(
+        f"/api/oss/summary/png/{summary_id}/99", user=TEST_USERNAME, single_use=False
+    )
+    resp = await client.get(signed_path)
+    assert resp.status == 404
+
+
+@pytest.mark.parametrize("path", ["/api/oss/summary/pdf/1", "/api/oss/summary/png/1/0"])
+async def test_summary_render_download_unsigned(client: TestClient, path: str) -> None:
+    resp = await client.get(path)
+    assert resp.status == 403
+    resp = await client.get(f"{path}?signature=bogus")
+    assert resp.status == 403
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
+)
+@pytest.mark.parametrize("body", [b"not json", b"{}"])
+async def test_summary_render_invalid_request(
+    client: TestClient, auth_headers: dict[str, str], path: str, body: bytes
+) -> None:
+    resp = await client.post(
+        path,
+        data=body,
+        headers={**auth_headers, "Content-Type": "application/json"},
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
+)
+async def test_summary_render_unsafe_handwrite_md5(
+    client: TestClient,
+    summary_client: SummaryClient,
+    auth_headers: dict[str, str],
+    test_data_dir: Path,
+    path: str,
+) -> None:
+    summary_id = await _add_handwritten_summary(
+        client, summary_client, test_data_dir, handwrite_md5="../escape"
+    )
+    resp = await client.post(path, json={"id": summary_id}, headers=auth_headers)
+    assert resp.status == 400

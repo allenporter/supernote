@@ -13,6 +13,8 @@ from supernote.server.utils.paths import (
     get_file_chunk_path,
     get_full_conversion_pdf_path,
     get_page_png_path,
+    get_summary_handwriting_prefix,
+    get_summary_handwriting_prefix_of,
     get_summary_id,
     is_valid_page_id,
     parse_file_chunk_name,
@@ -114,3 +116,20 @@ def test_generate_inner_name() -> None:
             generate_inner_name("note.note", None)
             == "12345678-1234-5678-1234-567812345678-000.note"
         )
+
+
+def test_get_summary_handwriting_prefix() -> None:
+    prefix = get_summary_handwriting_prefix(1, 2, "md5hash")
+    assert prefix == "conversions/1/summary_2/handwrite_md5hash"
+
+    for bad_md5 in ("", "../etc", "a/b", "a.b"):
+        with pytest.raises(ValueError, match="handwrite_md5"):
+            get_summary_handwriting_prefix(1, 2, bad_md5)
+
+
+def test_get_summary_handwriting_prefix_of() -> None:
+    prefix = get_summary_handwriting_prefix(1, 2, "md5hash")
+    assert get_summary_handwriting_prefix_of(f"{prefix}.pdf") == prefix
+    assert get_summary_handwriting_prefix_of(f"{prefix}_page_10.png") == prefix
+    assert get_summary_handwriting_prefix_of(f"{prefix}_page_x.png") is None
+    assert get_summary_handwriting_prefix_of("conversions/1/2/note_md5.pdf") is None
