@@ -2,13 +2,13 @@
 
 You can search across all of your synced `.note` notebooks and standalone images from the Web UI (`Cmd/Ctrl+K`), the CLI (`supernote cloud search`), or an AI assistant connected over MCP.
 
-Search works out of the box with no AI configured. When you add an embedding model, it automatically upgrades to hybrid search that combines exact keyword matching with semantic similarity.
+With no AI configured, search matches the native page keywords you tag on your Supernote tablet (plus any existing OCR transcripts). When you add an OCR provider and an embedding model, it automatically upgrades to hybrid search across your full handwritten text, combining exact keyword matching with semantic similarity.
 
 ## Keyword search vs. hybrid search
 
 | Mode | Requires AI? | Best for | Typical speed |
 | :--- | :---: | :--- | :--- |
-| Keyword search (default) | No | Exact words, `#tags`, Supernote page keywords, filenames, IDs, and date filters | ~4 ms |
+| Keyword search (default) | No | Native Supernote page keywords, exact words in transcripts, `#tags`, filenames, and date filters | ~4 ms |
 | Hybrid search (keyword + embeddings) | Optional (cloud or local) | Concept queries using different wording (*"backyard drainage sketch"*), paraphrases, and multilingual notes | ~24–69 ms |
 
 In hybrid mode, the server runs both keyword matching and vector search and merges the results. Exact `#tags` and names still rank at the top, while natural-language questions can still find pages that never used your exact search terms.
