@@ -6,7 +6,7 @@ Every AI feature in Open Private Cloud is optional. You can run the server with 
 
 | Setup | Best for | What you need |
 | :--- | :--- | :--- |
-| **Google Gemini (recommended default)** | Highest handwriting accuracy, Bullet Journal symbols, diagrams, and fastest hybrid search | `SUPERNOTE_GEMINI_API_KEY` (Paid tier does not train on API data; Free tier does—see below) |
+| **Google Gemini (recommended default)** | Highest handwriting accuracy, Bullet Journal symbols, diagrams, and best hybrid search embedding quality | `SUPERNOTE_GEMINI_API_KEY` (Paid tier does not train on API data; Free tier does—see below) |
 | **100% Local (Ollama, vLLM, llama.cpp, LM Studio)** | Keeping every note and image strictly inside your home network | A local OpenAI-compatible vision model for OCR/summaries and `embeddinggemma` for search |
 | **No AI (sync only)** | Minimal ~135–160 MB Private Cloud sync on a Raspberry Pi or NAS | Nothing—just run `supernote serve` |
 
@@ -33,7 +33,9 @@ Across 30 `.note` pages (Bullet Journal Rapid Logging, two-column diagrams and g
 | `Apple Vision Accurate` | 30 | 73.7% | 21.7% | 20.7% | 4.5% | 49.7% | 0.41 s |
 | `Apple Vision Fast` | 30 | 17.8% | 72.8% | 70.7% | 0.0% | 8.7% | 0.13 s |
 
-`gemini-3.5-flash-lite` reads nearly every word accurately (99.0% Word F1, 0.0% median CER) in ~1.2 s per page for under `$0.001` per page while preserving Bullet Journal symbols, nested indentation, and strikethroughs. Smaller local vision models can handle clean prose, though handwriting and complex diagram accuracy is typically lower than Gemini.
+`gemini-3.5-flash-lite` is the easiest option that works well out of the box: it reads nearly every word accurately (99.0% Word F1, 0.0% median CER) in ~1.2 s per page for under `$0.001` per page while preserving Bullet Journal symbols, nested indentation, and strikethroughs.
+
+If you want to stay fully local, you have two main paths with clear tradeoffs. On macOS, Apple Vision (`vision-accurate`) handles basic English prose fine (93.0% Word F1 on plain prose) with no model server, though it cannot take prompts so it drops Bullet Journal symbols and struggles with multi-column layouts. Local vision or dedicated OCR models (such as DeepSeek-OCR or GLM-OCR) keep everything on your own hardware, though they often need extra tuning—like setting `prompt_override` to their expected native instruction (see the [Dedicated local OCR example](#dedicated-local-ocr-models-deepseek-ocr-glm-ocr) below).
 
 ### Hybrid search & embeddings
 
@@ -135,6 +137,23 @@ ai:
   embedding:
     provider: llamacpp
     model: embeddinggemma
+```
+
+### Dedicated local OCR models (DeepSeek-OCR, GLM-OCR)
+
+Dedicated OCR models are often trained on a single short instruction rather than a multi-part Bullet Journal prompt. Use `prompt_override` to send their native prompt instead:
+
+```yaml
+ai:
+  providers:
+    local:
+      type: openai
+      base_url: "http://localhost:8000/v1"
+  ocr:
+    provider: local
+    model: DeepSeek-OCR-8bit
+    max_concurrency: 1
+    prompt_override: "Convert the document to markdown."
 ```
 
 ### macOS Apple Vision (offline fallback)
