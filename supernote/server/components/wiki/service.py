@@ -667,10 +667,7 @@ class WikiService:
                     select(WikiCheckpointDO).where(WikiCheckpointDO.user_id == user_id)
                 )
             ).scalar_one_or_none()
-        (
-            remaining_files,
-            total_files,
-        ) = await self._source_service.count_backfill_progress(
+        overview = await self._source_service.get_backfill_overview(
             user_id,
             before_file_id=cp.backfill_file_cursor if cp else None,
         )
@@ -683,8 +680,10 @@ class WikiService:
             budget_day_utc=cp.budget_day_utc if cp else None,
             status=cp.status if cp else "idle",
             last_error=cp.last_error if cp else None,
-            backfill_remaining_files=remaining_files,
-            backfill_total_files=total_files,
+            backfill_remaining_files=overview.remaining_files,
+            backfill_total_files=overview.total_files,
+            backfill_untranscribed_files=overview.untranscribed_files,
+            backfill_next_files=overview.next_files,
         )
 
     async def delete_user_wiki(self, user_id: int) -> None:

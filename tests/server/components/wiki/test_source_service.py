@@ -217,3 +217,62 @@ async def test_count_backfill_progress_tracks_remaining_and_total_per_user(
     assert await svc.count_backfill_progress(1, before_file_id=20) == (1, 3)
     assert await svc.count_backfill_progress(1, before_file_id=10) == (0, 3)
     assert await svc.count_backfill_progress(2, before_file_id=None) == (1, 1)
+
+
+async def test_get_backfill_overview_lists_next_files_and_untranscribed_notes(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    async with session_manager.session() as session:
+        for fid in (10, 20, 30):
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=1,
+                    file_name=f"Note{fid}.note",
+                    is_folder="N",
+                    is_active="Y",
+                )
+            )
+            session.add(
+                NotePageContentDO(
+                    file_id=fid,
+                    page_index=0,
+                    page_id=f"P{fid}",
+                    text_content=f"Content {fid}",
+                )
+            )
+        # Un-OCR'd .note file (counted in untranscribed_files) vs PDF (ignored).
+        session.add_all(
+            [
+                UserFileDO(
+                    id=35,
+                    user_id=1,
+                    file_name="Pending.note",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=36,
+                    user_id=1,
+                    file_name="Manual.pdf",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+            ]
+        )
+        await session.commit()
+
+    svc = WikiSourceService(session_manager)
+    initial = await svc.get_backfill_overview(1, before_file_id=None, preview_limit=2)
+    assert initial.total_files == 3
+    assert initial.remaining_files == 3
+    assert initial.untranscribed_files == 1
+    assert initial.next_files == ["Note30.note", "Note20.note"]
+
+    after_first = await svc.get_backfill_overview(1, before_file_id=20, preview_limit=5)
+    assert after_first.remaining_files == 1
+    assert after_first.next_files == ["Note10.note"]
+
+    done = await svc.get_backfill_overview(1, before_file_id=10, preview_limit=5)
+    assert done.remaining_files == 0
+    assert done.next_files == []
