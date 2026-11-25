@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from .ai.models.ocr import OcrModel
     from .ai.models.summary import SummaryModel
     from .components.http import HttpRegistrar
-    from .components.processor.service import ProcessorService
     from .config import ServerConfig
     from .core import ComponentLoader, ServerCore
     from .db.session import DatabaseSessionManager
@@ -47,7 +46,6 @@ OCR_MODEL_KEY: web.AppKey[OcrModel | None] = web.AppKey("ocr_model")
 SUMMARY_MODEL_KEY: web.AppKey[SummaryModel | None] = web.AppKey("summary_model")
 EMBEDDING_MODEL_KEY: web.AppKey[EmbeddingModel | None] = web.AppKey("embedding_model")
 RATE_LIMITER_KEY: web.AppKey[RateLimiter] = web.AppKey("rate_limiter")
-PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
 URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
 
 REQUEST_USER_KEY: web.RequestKey[str] = web.RequestKey("user")

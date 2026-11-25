@@ -22,10 +22,10 @@ from supernote.models.summary import (
     AddSummaryGroupDTO,
     QuerySummaryGroupDTO,
 )
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.keys import (
-    PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )

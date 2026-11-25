@@ -1,9 +1,18 @@
-"""Note processing pipeline component and platform host (`ProcessorComponent`, `ProcessorRegistrar`).
+"""Background notebook processing pipeline and platform host (`ProcessorComponent`).
 
-Hosts the `"processor"` platform so built-in components and external plugins can
-contribute `ProcessorModule` stages via `<component>.processor:async_setup_processor(core, registrar)`.
-During `async_finalize_platforms`, all registered stages are validated and compiled
-into a topological `TaskGraph` on `ProcessorService`.
+Runs the asynchronous, event-driven pipeline that processes uploaded `.note`
+notebooks in the background—hashing pages, rendering cached PNGs, and running
+downstream AI stages such as OCR, embeddings, and summaries. Rather than
+hardcoding every stage in one place, this component hosts the `"processor"`
+platform so other components can contribute `ProcessorModule` stages via
+``<component>.processor:async_setup_processor(core, registrar)``, which are
+compiled into a dependency-ordered `TaskGraph` during startup.
+
+It also exposes user-facing processing status/metadata endpoints, admin queue
+controls and reprocessing endpoints, and the `get_page_image` MCP tool.
+
+Provides `ProcessorComponent`, `ProcessorService`, `ProcessorRegistrar`,
+`ProcessorModule`, `TaskGraph`, `TaskScope`, and `PROCESSOR_SERVICE_KEY`.
 """
 
 from __future__ import annotations
@@ -11,8 +20,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from aiohttp import web
+
 from supernote.server.core import ServerCore
-from supernote.server.keys import PROCESSOR_SERVICE_KEY
 
 from .base import (
     DuplicateTaskError,
@@ -26,6 +36,7 @@ from .base import (
 from .service import ProcessorService
 
 __all__ = [
+    "PROCESSOR_SERVICE_KEY",
     "DuplicateTaskError",
     "MissingTaskDependencyError",
     "ProcessorComponent",
@@ -37,6 +48,8 @@ __all__ = [
     "TaskGraphError",
     "TaskScope",
 ]
+
+PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
 
 
 class ProcessorRegistrar:

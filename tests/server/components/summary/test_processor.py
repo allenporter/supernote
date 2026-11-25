@@ -15,6 +15,7 @@ from supernote.models.summary import (
 from supernote.server.ai.base import AIError
 from supernote.server.ai.prompts import SummarySegment
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.summary import SummaryService
 from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.core import ServerCore
@@ -26,7 +27,6 @@ from supernote.server.db.models.note_processing import (
 )
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import PROCESSOR_SERVICE_KEY
 from supernote.server.services.file import FileService
 from supernote.server.utils.paths import (
     AI_SUMMARIES_GROUP_NAME,

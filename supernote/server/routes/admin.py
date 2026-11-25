@@ -1,69 +1,32 @@
 """Administrative HTTP API routes (`/api/admin/*`) guarded by `require_admin`.
 
-Serves administrator endpoints consumed by the `supernote admin` CLI (`supernote.cli.admin`)
+Serves core administrator endpoints consumed by the `supernote admin` CLI (`supernote.cli.admin`)
 and Web UI admin dashboard:
 - `GET /api/admin/users` and `POST /api/admin/users`: List and provision user accounts via `supernote.server.services.user.UserService`.
-- `POST /api/admin/users/reset-password`: Reset user passwords.
-- `GET /api/admin/queue/status`, `POST /api/admin/queue/stop`, `POST /api/admin/queue/start`: Inspect, pause, and resume `supernote.server.services.processor.ProcessorService`.
-- `POST /api/admin/notes/reprocess`: Clear `SystemTaskDO` checkpoints and re-enqueue `.note` files.
-- `GET /api/admin/tasks`: Query recent or failed background processing tasks.
-- `POST /api/admin/integrity`: Run VFS and blob consistency checks via `supernote.server.services.integrity.IntegrityService`.
+- `POST /api/admin/users/password`: Reset user passwords.
+- `POST /api/admin/users/quota`: Update per-user storage quotas.
+- `GET /api/admin/integrity`: Run VFS and blob consistency checks via `supernote.server.services.integrity.IntegrityService`.
 """
-
-from collections.abc import Awaitable, Callable
-from functools import wraps
 
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.base import (
     BaseResponse,
-    ProcessingStatus,
     create_error_response,
 )
-from supernote.models.extended import SystemTaskListVO, SystemTaskVO
-from supernote.models.system import QueueStatusVO
 from supernote.models.user import UpdateUserQuotaDTO, UserRegisterDTO
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     INTEGRITY_SERVICE_KEY,
-    PROCESSOR_SERVICE_KEY,
-    REQUEST_USER_KEY,
     USER_SERVICE_KEY,
 )
 from supernote.server.services.integrity import IntegrityService
 from supernote.server.services.user import UserService
 
-from .decorators import interactive_session_only
+from .decorators import require_admin
 
 routes = web.RouteTableDef()
-
-
-def require_admin(
-    handler: Callable[[web.Request], Awaitable[web.Response]],
-) -> Callable[[web.Request], Awaitable[web.Response]]:
-    """Decorator to require admin privileges over an interactive session."""
-
-    @wraps(handler)
-    async def wrapper(request: web.Request) -> web.Response:
-        user_service: UserService = request.app[USER_SERVICE_KEY]
-        username = request.get(REQUEST_USER_KEY)
-        if not username:
-            return web.json_response(
-                create_error_response("Unauthorized").to_dict(), status=401
-            )
-
-        user = await user_service.get_user_by_email(str(username))
-        if not user or not user.is_admin:
-            return web.json_response(
-                create_error_response("Forbidden: Admin access required").to_dict(),
-                status=403,
-            )
-
-        return await handler(request)
-
-    interactive_session_only(wrapper)
-    return wrapper
 
 
 @routes.post("/api/admin/users")
@@ -150,74 +113,6 @@ async def handle_list_users(request: web.Request) -> web.Response:
     return web.json_response([vo.to_dict() for vo in user_vos])
 
 
-@routes.post("/api/admin/queue/stop")
-@require_admin
-async def handle_stop_queue(request: web.Request) -> web.Response:
-    """Stop/pause the queue processing."""
-    processor_service = request.app[PROCESSOR_SERVICE_KEY]
-    await processor_service.pause()
-    return web.json_response(BaseResponse().to_dict())
-
-
-@routes.post("/api/admin/queue/start")
-@require_admin
-async def handle_start_queue(request: web.Request) -> web.Response:
-    """Start/resume the queue processing."""
-    processor_service = request.app[PROCESSOR_SERVICE_KEY]
-    await processor_service.resume()
-    return web.json_response(BaseResponse().to_dict())
-
-
-@routes.get("/api/admin/queue/status")
-@require_admin
-async def handle_queue_status(request: web.Request) -> web.Response:
-    """Get the queue status."""
-    processor_service = request.app[PROCESSOR_SERVICE_KEY]
-
-    status = QueueStatusVO(
-        paused=not processor_service.is_processing_enabled(),
-        queue_size=processor_service.queue.qsize(),
-        processing_files=list({fid for _, fid in processor_service.processing_files}),
-    )
-    return web.json_response(status.to_dict())
-
-
-@routes.post("/api/admin/reprocess")
-@require_admin
-async def handle_reprocess(request: web.Request) -> web.Response:
-    """Clear and trigger reprocessing of note tasks (Admin only)."""
-    req_data = await request.json()
-    task_type = req_data.get("task_type", "summary")
-    file_id = req_data.get("file_id")
-    cascade = req_data.get("cascade", False)
-
-    if not isinstance(task_type, str):
-        return web.json_response(
-            create_error_response("Invalid task_type").to_dict(),
-            status=400,
-        )
-    if not isinstance(cascade, bool):
-        return web.json_response(
-            create_error_response("Invalid cascade: must be boolean").to_dict(),
-            status=400,
-        )
-
-    processor_service = request.app[PROCESSOR_SERVICE_KEY]
-    try:
-        await processor_service.reprocess_tasks(
-            task_type,
-            file_id=file_id,
-            cascade=cascade,
-        )
-    except ValueError as e:
-        return web.json_response(
-            create_error_response(str(e)).to_dict(),
-            status=400,
-        )
-
-    return web.json_response(BaseResponse().to_dict())
-
-
 @routes.get("/api/admin/integrity")
 @require_admin
 async def handle_verify_integrity(request: web.Request) -> web.Response:
@@ -272,66 +167,3 @@ async def handle_verify_integrity(request: web.Request) -> web.Response:
         user_id=user.id, file_id=file_id
     )
     return web.json_response(report.to_dict())
-
-
-@routes.get("/api/admin/tasks")
-@require_admin
-async def handle_admin_list_tasks(request: web.Request) -> web.Response:
-    """List system processing tasks with optional filters (Admin only)."""
-    status_param = request.query.get("status")
-    file_id_str = request.query.get("file_id")
-    task_type_param = request.query.get("task_type")
-    limit_str = request.query.get("limit")
-
-    try:
-        file_id = int(file_id_str) if file_id_str is not None else None
-        limit = int(limit_str) if limit_str is not None else 100
-    except ValueError:
-        return web.json_response(
-            create_error_response("Invalid file_id or limit").to_dict(),
-            status=400,
-        )
-
-    status_filter: str | None = None
-    if status_param:
-        try:
-            status_filter = ProcessingStatus(status_param.upper()).value
-        except ValueError:
-            return web.json_response(
-                create_error_response(f"Invalid status: {status_param}").to_dict(),
-                status=400,
-            )
-
-    processor_service = request.app[PROCESSOR_SERVICE_KEY]
-    task_type_filter: str | None = None
-    if task_type_param:
-        try:
-            task_type_filter = processor_service.resolve_task_type(task_type_param)
-        except ValueError:
-            return web.json_response(
-                create_error_response(
-                    f"Invalid task_type: {task_type_param}"
-                ).to_dict(),
-                status=400,
-            )
-
-    tasks = await processor_service.list_system_tasks(
-        limit=limit,
-        status=status_filter,
-        file_id=file_id,
-        task_type=task_type_filter,
-    )
-    task_vos = [
-        SystemTaskVO(
-            id=t.id,
-            file_id=t.file_id,
-            task_type=t.task_type,
-            key=t.key,
-            status=ProcessingStatus(t.status),
-            retry_count=t.retry_count,
-            last_error=t.last_error,
-            update_time=t.update_time,
-        )
-        for t in tasks
-    ]
-    return web.json_response(SystemTaskListVO(tasks=task_vos).to_dict())
