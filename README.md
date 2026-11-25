@@ -3,7 +3,7 @@
 A lightweight, self-hosted Python private cloud server, offline `.note` toolkit, and optional AI knowledge hub for your Ratta Supernote (Nomad, A5 X2 Manta, A5 X, A6 X).
 
 <p align="center">
-  <img src="docs/static-assets/hero-overview.jpg" alt="Open Private Cloud for Supernote overview" width="800">
+  <img src="docs/static-assets/web-files-explorer.png" alt="Open Private Cloud for Supernote Web UI showing synced folders and handwritten .note thumbnails" width="840">
 </p>
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-allenporter%2Fsupernote-181717.svg?logo=github)](https://github.com/allenporter/supernote)
@@ -45,10 +45,6 @@ Unlike the official multi-container Java, MariaDB, and Redis Private Cloud stack
 ## Quick Tour of the Web UI
 
 Browse synced folders with rendered `.note` cover thumbnails, open handwritten pages side-by-side with AI Markdown transcripts (including rendered Mermaid diagrams), review reading digests, manage synced tasks, or curate your opt-in LLM Wiki—all in a mobile-friendly editorial Web UI.
-
-<p align="center">
-  <img src="docs/static-assets/web-files-explorer.png" alt="Files and Notebook Explorer with handwritten .note cover thumbnails" width="840">
-</p>
 
 <p align="center">
   <img src="docs/static-assets/web-notebook-viewer.png" alt="Handwritten Notebook Viewer side-by-side with AI Markdown OCR Transcript" width="840">

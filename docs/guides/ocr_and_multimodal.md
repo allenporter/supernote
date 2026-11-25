@@ -16,11 +16,19 @@ The default OCR prompt preserves Bullet Journal Rapid Logging symbols (`•`, `X
 
 In the Web UI, those Mermaid blocks render directly as diagrams inside the transcript panel, with a toggle to view the raw source.
 
+<p align="center">
+  <img src="../static-assets/guides/web-mermaid-diagram.png" alt="Hand-drawn sketch side-by-side with rendered Mermaid diagram and page keyword tags in the OCR transcript viewer" width="840">
+</p>
+
 ## Standalone images (screenshots, whiteboards, and photos)
 
 You can also sync `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, and `.bmp` files into your cloud folders. The pipeline transcribes visible text, tables, and whiteboard diagrams (including Mermaid blocks), and writes a short scene description for photos and illustrations so they show up in natural-language search.
 
 Opening a standalone image in the Web UI shows its OCR text and scene description in a side panel.
+
+<p align="center">
+  <img src="../static-assets/guides/web-standalone-image-ocr.png" alt="Standalone architecture diagram PNG open in the Web UI alongside its extracted text and visual scene description" width="840">
+</p>
 
 Image indexing is on by default whenever an OCR provider is configured, and it automatically skips Supernote system folders (`MyStyle/**` and `EXPORT/**`). You can change the folder filters or turn it off in `config/config.yaml`:
 
@@ -35,7 +43,7 @@ image_exclude_patterns: ["MyStyle/**", "EXPORT/**"]
 Reading digests and handwritten margin notes synced from your tablet appear in the **Digests** tab. If you need a shareable or archival copy of a handwritten digest, the extended API can render and cache it as a PDF or PNG (`SummaryClient.summary_to_pdf` and `SummaryClient.summary_to_png`).
 
 <p align="center">
-  <img src="../static-assets/web-digests.png" alt="Digests and Annotations browser with categories, tags, and source links" width="840">
+  <img src="../static-assets/guides/web-digests.png" alt="Digests and Annotations browser with categories, tags, and source links" width="840">
 </p>
 
 ## Letting AI assistants see your pages (`get_page_image`)
