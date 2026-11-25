@@ -26,8 +26,7 @@ from supernote.server.keys import (
 )
 from supernote.server.trace import trace_middleware
 from supernote.server.utils.auth_utils import get_token_from_request
-
-from .request import (
+from supernote.server.utils.request import (
     parse_dict_dto,
     parse_json_dto,
     parse_json_object,

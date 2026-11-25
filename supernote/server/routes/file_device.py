@@ -62,6 +62,7 @@ from supernote.server.services.file import (
 )
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import generate_inner_name
+from supernote.server.utils.request import parse_json_dto, parse_json_object
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 logger = logging.getLogger(__name__)
@@ -106,14 +107,14 @@ async def handle_sync_start(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/start
     # Purpose: Start a file synchronization session.
     # Response: SynchronousStartLocalVO
-    req_data = SynchronousStartLocalDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
     user_service: UserService = request.app[USER_SERVICE_KEY]
     coordination_service: CoordinationService = request.app[COORDINATION_SERVICE_KEY]
-    equipment_no = req_data.equipment_no or ""
 
     try:
+        req_data = await parse_json_dto(request, SynchronousStartLocalDTO)
+        equipment_no = req_data.equipment_no or ""
         user_id = await user_service.get_user_id(user_email)
         is_empty = await file_service.is_empty(user_email)
         sync_init_key = _sync_initialized_key(user_id)
@@ -160,7 +161,7 @@ async def handle_sync_end(request: web.Request) -> web.Response:
     # Purpose: End a file synchronization session.
     # Response: SynchronousEndLocalVO
     try:
-        req_data = SynchronousEndLocalDTO.from_dict(await request.json())
+        req_data = await parse_json_dto(request, SynchronousEndLocalDTO)
         user_email = request[REQUEST_USER_KEY]
         user_service: UserService = request.app[USER_SERVICE_KEY]
         file_service: FileService = request.app[FILE_SERVICE_KEY]
@@ -210,12 +211,12 @@ async def handle_list_folder(request: web.Request) -> web.Response:
     # Purpose: List folders for sync selection.
     # Response: ListFolderLocalVO
 
-    req_data = ListFolderV2DTO.from_dict(await request.json())
-    path_str = req_data.path
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, ListFolderV2DTO)
+        path_str = req_data.path
         entities = await file_service.list_folder(
             user_email,
             path_str,
@@ -240,12 +241,12 @@ async def handle_list_folder_v3(request: web.Request) -> web.Response:
     # Purpose: List folders by ID (Device V3).
     # Response: ListFolderLocalVO
 
-    req_data = ListFolderLocalDTO.from_dict(await request.json())
-    folder_id = req_data.id
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, ListFolderLocalDTO)
+        folder_id = req_data.id
         entities = await file_service.list_folder_by_id(
             user_email,
             folder_id,
@@ -270,12 +271,11 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
     # Purpose: Get storage capacity usage.
     # Response: CapacityLocalVO
 
-    req_data = await request.json()
-    equipment_no = req_data.get("equipmentNo", "")
     user_email = request[REQUEST_USER_KEY]
-
     file_service: FileService = request.app[FILE_SERVICE_KEY]
     try:
+        req_data = await parse_json_object(request, allow_empty=True)
+        equipment_no = req_data.get("equipmentNo", "")
         used = await file_service.get_storage_usage(user_email)
         allocated = await file_service.get_storage_quota(user_email)
 
@@ -301,12 +301,12 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     # Purpose: Check if a file exists by path (Device).
     # Response: FileQueryByPathLocalVO
 
-    req_data = FileQueryByPathLocalDTO.from_dict(await request.json())
-    path_str = req_data.path
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, FileQueryByPathLocalDTO)
+        path_str = req_data.path
         entity = await file_service.get_file_info(user_email, path_str)
         return web.json_response(
             FileQueryByPathLocalVO(
@@ -326,12 +326,12 @@ async def handle_query_v3(request: web.Request) -> web.Response:
     # Purpose: Get file details by ID (Device).
     # Response: FileQueryLocalVO
 
-    req_data = FileQueryLocalDTO.from_dict(await request.json())
-    file_id = req_data.id
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, FileQueryLocalDTO)
+        file_id = req_data.id
         entity = await file_service.get_file_info_by_id(user_email, int(file_id))
         return web.json_response(
             FileQueryLocalVO(
@@ -351,12 +351,12 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
     # Purpose: Request to upload a file.
     # Response: FileUploadApplyLocalVO
 
-    req_data = FileUploadApplyLocalDTO.from_dict(await request.json())
-    file_name = req_data.file_name
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, FileUploadApplyLocalDTO)
+        file_name = req_data.file_name
         try:
             prospective_size = int(req_data.size) if req_data.size else 0
         except (ValueError, TypeError):
@@ -417,17 +417,16 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
     # Purpose: Confirm upload completion and move file to final location.
     # Response: FileUploadFinishLocalVO
 
-    req_data = FileUploadFinishLocalDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
-    if not req_data.inner_name:
-        return web.json_response(
-            create_error_response("Invalid upload missing inner name").to_dict(),
-            status=400,
-        )
-
     try:
+        req_data = await parse_json_dto(request, FileUploadFinishLocalDTO)
+        if not req_data.inner_name:
+            return web.json_response(
+                create_error_response("Invalid upload missing inner name").to_dict(),
+                status=400,
+            )
         entity = await file_service.finish_upload(
             user_email,
             req_data.file_name,
@@ -463,12 +462,12 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     # Purpose: Request a download URL for a file.
     # Response: FileDownloadLocalVO
 
-    req_data = FileDownloadLocalDTO.from_dict(await request.json())
-    file_id = int(req_data.id)
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, FileDownloadLocalDTO)
+        file_id = int(req_data.id)
         # Verify file exists using VFS
         info = await file_service.get_file_info_by_id(user_email, file_id)
         if not info:
@@ -524,11 +523,11 @@ async def handle_create_folder(request: web.Request) -> web.Response:
     # Purpose: Create a new folder.
     # Response: CreateFolderLocalVO
 
-    req_data = CreateFolderLocalDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, CreateFolderLocalDTO)
         entry = await file_service.create_directory(user_email, req_data.path)
     except SupernoteError as err:
         return err.to_response()
@@ -548,11 +547,11 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
     # Purpose: Delete a file or folder.
     # Response: DeleteFolderLocalVO
 
-    req_data = DeleteFolderLocalDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, DeleteFolderLocalDTO)
         deleted_item = await file_service.delete_item(
             user_email,
             req_data.id,
@@ -576,11 +575,11 @@ async def handle_move_file(request: web.Request) -> web.Response:
     # Purpose: Move a file or folder.
     # Response: FileMoveLocalVO
 
-    req_data = FileMoveLocalDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, FileMoveLocalDTO)
         result = await file_service.move_item(
             user_email,
             req_data.id,
@@ -605,11 +604,11 @@ async def handle_copy_file(request: web.Request) -> web.Response:
     # Purpose: Copy a file or folder.
     # Response: FileCopyLocalVO
 
-    req_data = FileCopyLocalDTO.from_dict(await request.json())
     user_email = request[REQUEST_USER_KEY]
     file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
+        req_data = await parse_json_dto(request, FileCopyLocalDTO)
         result = await file_service.copy_item(
             user_email,
             req_data.id,
