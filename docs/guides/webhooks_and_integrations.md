@@ -1,144 +1,98 @@
 # Webhooks, Calendar (`.ics`) & Home Assistant Integrations
 
-Open Private Cloud for Supernote provides two primary integration mechanisms for external automation platforms, task managers, and smart-home systems:
-1. **RFC 5545 iCalendar (`.ics`) Task Feeds** (`supernote.server.components.schedule.ical_export.ICalExportService`)
-2. **Signed Outbound Webhooks** (`supernote.server.components.webhooks.service.WebhookService`)
+You can connect Open Private Cloud to external task apps and automation tools in two ways:
+
+- Subscribe to your Supernote tasks as an RFC 5545 iCalendar (`.ics`) feed. This works out of the box with zero AI configured.
+- Send signed HTTP webhooks to Home Assistant, n8n, or your own scripts whenever files sync, tasks change, or notes finish processing. Webhooks are opt-in and disabled by default.
 
 ---
 
-## iCalendar (`.ics`) Task Feeds
+## iCalendar (`.ics`) task feeds
 
-Tasks created on your physical Supernote tablet (including handwritten tasks converted via the To-Do app with notebook page deep-links) or via the Web UI / Python SDK can be exported as an RFC 5545 `VCALENDAR` stream of `VTODO` items.
+Tasks created on your Supernote tablet (including handwritten To-Do items linked to specific notebook pages) and tasks created in the Web UI are available as a standard `.ics` stream of `VTODO` items.
 
 <p align="center">
   <img src="../static-assets/web-tasks-dashboard.png" alt="Tasks and Schedule Dashboard with task lists, priorities, due dates, and iCal feed export" width="840">
 </p>
 
-### Endpoint Specification
+### Export or subscribe
 
-```http
-GET /api/schedule/feed.ics?taskListId=<optional_group_id>
-x-access-token: <your-jwt-access-token>
+From the Web UI, open **Tasks** and click **Export `.ics`** to download all tasks or the currently selected list.
+
+For scripts or scheduled syncs, fetch `/api/schedule/feed.ics` using a revocable static API key (`supernote cloud keys create "calendar-sync"`):
+
+```bash
+curl -fsSL \
+  -H "Authorization: Bearer ${SUPERNOTE_API_KEY}" \
+  "http://localhost:8080/api/schedule/feed.ics" \
+  -o tasks.ics
 ```
 
-- **Route Handler**: `supernote.server.components.schedule.http.get_schedule_feed_ics`
-- **Service**: `supernote.server.components.schedule.ical_export.ICalExportService.export_calendar`
-- **Response Content-Type**: `text/calendar; charset=utf-8` (`Content-Disposition: inline; filename="feed.ics"`)
-- **Query Parameters**:
-  - `taskListId` *(optional)*: Restricts the exported `VTODO` items to a single Task Group (`ScheduleTaskGroupDO.task_list_id`). When omitted, exports all active tasks across all lists (including Inbox tasks where `task_list_id` is `None`).
+Pass `?taskListId=<list_id>` to export a single task list instead of all lists. You can also fetch the feed from Python with `ScheduleClient.get_ical_feed(group_id=None)`.
 
-### Supernote Task to RFC 5545 `VTODO` Field Mapping
+### Subscribing from URL-only calendar clients
 
-`supernote.server.components.schedule.ical_export.task_to_vtodo` maps each task (`ScheduleTaskDO` / `supernote.models.schedule.ScheduleTaskInfo`) into an RFC 5545 `VTODO` component:
+Calendar apps such as Apple Reminders, Thunderbird, Nextcloud, and Home Assistant often cannot send custom `Authorization` headers on `.ics` subscriptions. Open Private Cloud does not accept tokens in query strings by default so credentials stay out of server logs. If your calendar client only supports a plain URL, map a query parameter (or private path) to an `Authorization` header in your reverse proxy using a dedicated API key:
 
-| Supernote Task Field | RFC 5545 `VTODO` Property | Mapping Behavior |
+```nginx
+location = /api/schedule/feed.ics {
+    set $auth_header $http_authorization;
+    if ($arg_token != "") {
+        set $auth_header "Bearer $arg_token";
+    }
+    proxy_set_header Authorization $auth_header;
+    proxy_pass http://127.0.0.1:8080/api/schedule/feed.ics;
+}
+```
+
+### How Supernote tasks map to `VTODO`
+
+| Supernote field | `VTODO` property | Behavior |
 | :--- | :--- | :--- |
-| `task_id` | `UID` | `supernote-task-{task_id}@supernote` |
-| `title` | `SUMMARY` | Verbatim task title string. |
-| `status` & `completed_time` | `STATUS` & `COMPLETED` | `COMPLETED` if `status == "completed"` or `completed_time` is set; otherwise `NEEDS-ACTION`. |
-| `due_time` | `DUE` | Converted from epoch milliseconds to UTC `datetime`. |
-| `create_time` / `update_time` | `CREATED` / `LAST-MODIFIED` | Converted from epoch milliseconds to UTC `datetime`. |
-| `importance` | `PRIORITY` | `"high"` / `"1"` $\rightarrow$ `1`; `"normal"` / `"medium"` / `"5"` $\rightarrow$ `5`; `"low"` / `"9"` $\rightarrow$ `9`. |
-| `recurrence` | `RRULE` | Parsed via `ical.types.Recur.from_rrule` (e.g. `FREQ=WEEKLY;BYDAY=MO`). |
-| `task_list_id` *(Group Title)* | `CATEGORIES` | Task Group name (e.g. `["Work & Projects"]`). |
-| `detail` + `links` | `DESCRIPTION` | Task notes plus decoded `supernote.models.schedule.ScheduleTaskLinkDTO` metadata (`App`, `Path`, `Page`) if the task was linked to a `.note` page on the tablet. |
-
-#### Example `.ics` Output
-
-```ics
-BEGIN:VCALENDAR
-PRODID:-//hacksw/handcal//NONSGML v1.0//EN
-VERSION:2.0
-BEGIN:VTODO
-UID:supernote-task-a1b2c3d4e5f6@supernote
-SUMMARY:Finalize Q3 Architecture Proposal
-DESCRIPTION:Review VFS layer and MCP server integration.\n--- Supernote Document Link ---\nApp: Note\nPath: /NOTE/Note/Architecture.note\nPage: 4
-STATUS:NEEDS-ACTION
-PRIORITY:1
-CATEGORIES:Work & Projects
-DUE:20260815T170000Z
-CREATED:20260804T093000Z
-LAST-MODIFIED:20260804T142000Z
-END:VTODO
-END:VCALENDAR
-```
-
-### Exporting & Subscribing to Task Feeds
-
-1. **Web UI Direct Export**:
-   Open the **Tasks** view in the Web UI and click **Export `.ics`** to download `tasks.ics` for all tasks or the currently selected task list.
-2. **CLI / `curl` / Scripts**:
-   Authenticate with `x-access-token`:
-   ```bash
-   # Retrieve your cached token from ~/.cache/supernote.pkl or login API
-   curl -fsSL \
-     -H "x-access-token: ${SUPERNOTE_TOKEN}" \
-     "http://localhost:8080/api/schedule/feed.ics?taskListId=dcf35927c2c7279e3d204f592af6e9ed" \
-     -o work_tasks.ics
-   ```
-3. **Python SDK (`ScheduleClient`)**:
-   ```python
-   from supernote.client import Supernote
-   from supernote.client.schedule import ScheduleClient
-
-   async with await Supernote.login("you@example.com", "password", host="http://localhost:8080") as sn:
-       schedule = ScheduleClient(sn.client)
-       ics_text = await schedule.get_ical_feed(group_id=None)
-   ```
-4. **Calendar Clients Requiring URL-Only Subscriptions (Apple Reminders, Thunderbird, Nextcloud, Home Assistant)**:
-   The server's `jwt_auth_middleware` reads tokens from the `x-access-token` request header (`supernote.server.utils.auth_utils.get_token_from_request`) so bearer tokens are not leaked in server access logs. If a calendar client cannot send custom HTTP headers, map a `?token=` query parameter (or dedicated secret path) to `x-access-token` in your reverse proxy:
-   ```nginx
-   # Nginx: Allow ?token=<jwt> on /api/schedule/feed.ics for calendar apps
-   location = /api/schedule/feed.ics {
-       set $auth_token $http_x_access_token;
-       if ($arg_token != "") {
-           set $auth_token $arg_token;
-       }
-       proxy_set_header x-access-token $auth_token;
-       proxy_pass http://127.0.0.1:8080/api/schedule/feed.ics;
-   }
-   ```
+| Task ID | `UID` | `supernote-task-<id>@supernote` |
+| Title | `SUMMARY` | Task title |
+| Status / completion time | `STATUS`, `COMPLETED` | `COMPLETED` when done, otherwise `NEEDS-ACTION` |
+| Due date | `DUE` | UTC timestamp |
+| Created / updated | `CREATED`, `LAST-MODIFIED` | UTC timestamps |
+| Priority | `PRIORITY` | High → `1`, Normal/Medium → `5`, Low → `9` |
+| Recurrence | `RRULE` | Standard RFC 5545 recurrence rule (for example, `FREQ=WEEKLY;BYDAY=MO`) |
+| Task list | `CATEGORIES` | Task list name |
+| Details and notebook link | `DESCRIPTION` | Task notes plus the linked `.note` file path and page number when created from a notebook |
 
 ---
 
-## Outbound Webhooks
+## Outbound webhooks
 
-`supernote.server.components.webhooks.service.WebhookService` listens on the internal `LocalEventBus` and dispatches signed, non-blocking HTTP `POST` notifications whenever notes finish syncing or finish background AI processing.
+Webhooks are opt-in (`webhooks.enabled: false` by default). When enabled, the server sends non-blocking HTTP `POST` requests to your configured endpoints whenever matching events occur, without slowing down device sync.
 
-```mermaid
-sequenceDiagram
-    participant Device as Supernote Tablet
-    participant Server as Supernote Server
-    participant Bus as LocalEventBus
-    participant EL as EventLogService
-    participant WH as WebhookService
-    participant Endpoint as Subscriber (Home Assistant / n8n)
+### Enable webhooks in `config/config.yaml`
 
-    Device->>Server: Upload & commit .note file
-    Server->>Bus: Publish VfsItemCreatedEvent
-    Bus->>EL: Persist UserEventDO & publish DomainEventRecorded
-    Server-->>Device: 200 OK (Sync never blocked by webhooks)
-    Bus->>WH: _handle_domain_event_recorded
-    WH->>Endpoint: POST (X-Supernote-Event: file.created)
-    Note over Server,Bus: Background Pipeline runs (Hashing -> PNG -> OCR -> Embedding -> Summary)
-    Server->>Bus: Publish NoteProcessingCompletedEvent
-    Bus->>EL: Persist UserEventDO & publish DomainEventRecorded
-    Bus->>WH: _handle_domain_event_recorded
-    WH->>Endpoint: POST (X-Supernote-Event: note.processing_completed)
+```yaml
+webhooks:
+  enabled: true  # Or set SUPERNOTE_WEBHOOKS_ENABLED=true
+  endpoints:
+    - url: "https://n8n.example.com/webhook/supernote-sync"
+      user: "you@example.com"
+      secret: "0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a39281706f5e4d3c2b1a"
+      events:
+        - "file.created"
+        - "note.*"
 ```
 
-### Supported Events & Payload Schema (`supernote.models.events`)
+Each endpoint filters events for one `user` email. You can subscribe to exact event names (`file.created`, `file.content_updated`, `note.processing_completed`, `schedule.task_created`, `summary.created`), namespace wildcards (`file.*`, `note.*`, `schedule.*`, `summary.*`), or `*` (or omit `events`) for all events.
 
-Every webhook `POST` request sends these headers:
+> [!NOTE]
+> The server resolves each endpoint's `user` email at startup. If you configure an endpoint before creating that user account, restart the server after creating the user so the subscription activates.
+
+### Payload format and delivery
+
+Every webhook `POST` includes these headers:
+
 - `Content-Type: application/json`
-- `X-Supernote-Event: <event_type>` *(matching `supernote.models.events.DomainEventType`)*
-- `X-Supernote-Signature: sha256=<hex_digest>` *(included whenever `secret` is configured on the endpoint)*
+- `X-Supernote-Event`: the event name (for example, `note.processing_completed`)
+- `X-Supernote-Signature: sha256=<hex_digest>` when `secret` is set on the endpoint
 
-Endpoints can subscribe to any exact `DomainEventType` value (e.g. `file.created`, `file.content_updated`, `note.processing_completed`, `schedule.task_created`, `summary.created`), namespace prefix wildcards (`file.*`, `note.*`, `schedule.*`, `summary.*`), or `*` for all domain events — matching the filter semantics of `GET /api/extended/events`.
-
-#### JSON Payload Structure
-
-Every webhook serializes a `supernote.models.events.DomainEventVO` (the same wire envelope returned by `GET /api/extended/events` and the MCP `list_events` tool). Internal database `user_id` values are intentionally excluded from outbound payloads:
+The JSON body uses the same event envelope returned by `/api/extended/events` and the MCP `list_events` tool:
 
 ```json
 {
@@ -156,47 +110,17 @@ Every webhook serializes a `supernote.models.events.DomainEventVO` (the same wir
 }
 ```
 
-### Delivery & Retry Semantics
+Each attempt times out after 10 seconds, redirects are not followed, and up to 5 requests run concurrently. Server (`5xx`) and network errors retry up to 3 attempts with linear backoff (1 s, then 2 s). Client (`4xx`) responses are logged and not retried. Credentials, query strings, and secrets are stripped from server logs.
 
-Defined in `supernote.server.components.webhooks.service`:
-
-| Parameter | Constant | Value | Behavior |
-| :--- | :--- | :---: | :--- |
-| **Request Timeout** | `REQUEST_TIMEOUT_SECONDS` | `10.0s` | Total timeout per HTTP `POST` attempt. |
-| **Max Attempts** | `MAX_ATTEMPTS` | `3` | Maximum delivery attempts for transient failures. |
-| **Retry Backoff** | `RETRY_BACKOFF_SECONDS` | `1.0s` *(linear)* | Waits `1.0s` after attempt 1, `2.0s` after attempt 2 (`RETRY_BACKOFF_SECONDS * attempt`). |
-| **Max Concurrency** | `MAX_CONCURRENT_REQUESTS` | `5` | Bounded via `asyncio.Semaphore(5)` across all in-flight webhook requests. |
-| **Redirects (`3xx`)** | `allow_redirects=False` | Not followed | `3xx` responses are treated as non-2xx and not followed. |
-| **Client Errors (`4xx`)** | — | No retry | Logged as a warning and dropped immediately without retrying. |
-| **Server/Network Errors (`5xx`, Timeout)** | — | Retried | Retried up to `3` attempts before logging an error and giving up. |
-| **Log Redaction** | `_redact_url` | Enabled | URL credentials, query parameters, fragments, and `secret` values are stripped before logging. |
-
-### Configuring Webhooks in `config/config.yaml`
-
-```yaml
-webhooks:
-  enabled: true  # Or set SUPERNOTE_WEBHOOKS_ENABLED=true
-  endpoints:
-    - url: "https://n8n.example.com/webhook/supernote-sync"
-      user: "you@example.com"
-      secret: "0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a39281706f5e4d3c2b1a"
-      events:
-        - "file.created"
-        - "note.*"
-```
-
-> [!NOTE]
-> If `events` is omitted, empty (`[]`), or `["*"]`, the endpoint receives **all** domain events for `user`. At startup, `WebhookService.start` resolves each endpoint's `user` email to their account; if a configured user email does not exist yet in the database, that endpoint is logged and skipped until the user is created and the server restarts.
+See the [Configuration Reference](../reference/configuration.md) for all webhook settings.
 
 ---
 
-## Verifying `X-Supernote-Signature` (HMAC-SHA256)
+## Verify `X-Supernote-Signature`
 
-When `secret` is set on an endpoint, `supernote.server.components.webhooks.service.sign_payload` signs the raw UTF-8 JSON request body using HMAC-SHA256 and sends `X-Supernote-Signature: sha256=<hex>`. Always verify this header using a constant-time digest comparison before trusting the payload.
+When `secret` is configured, the server signs the raw UTF-8 request body with HMAC-SHA256. Always compare the header in constant time before acting on the payload.
 
-### Python Verification Snippet
-
-You can use `supernote.server.components.webhooks.service.verify_signature` directly, or verify with Python's standard library `hmac`:
+### Python
 
 ```python
 import hashlib
@@ -211,11 +135,10 @@ def verify_supernote_webhook(secret: str, raw_body: bytes, signature_header: str
         raw_body,
         hashlib.sha256,
     ).hexdigest()
-    expected_header = f"sha256={expected_digest}"
-    return hmac.compare_digest(expected_header, signature_header)
+    return hmac.compare_digest(f"sha256={expected_digest}", signature_header)
 ```
 
-### Node.js / TypeScript Verification Snippet
+### Node.js / TypeScript
 
 ```typescript
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -240,13 +163,9 @@ export function verifySupernoteWebhook(
 
 ---
 
-## Home Assistant Integration
+## Home Assistant example
 
-### Triggering Automations on Note Processing Completion
-
-Configure a Home Assistant webhook automation to react whenever a handwritten note finishes OCR and summarization:
-
-#### Add the Home Assistant webhook URL to `config/config.yaml`
+To trigger a Home Assistant notification whenever a notebook finishes background OCR and summarization, add your Home Assistant webhook URL to `config/config.yaml`:
 
 ```yaml
 webhooks:
@@ -258,11 +177,11 @@ webhooks:
         - "note.processing_completed"
 ```
 
-#### Create the Home Assistant Automation (`automations.yaml`)
+Then add a matching automation in Home Assistant (`automations.yaml`):
 
 ```yaml
-alias: "Supernote: Notify when Daily Note is summarized"
-description: "Fires when background OCR and AI summarization complete for a .note file"
+alias: "Supernote: Notify when a notebook finishes processing"
+description: "Fires when background OCR and summarization complete for a .note file"
 triggers:
   - trigger: webhook
     webhook_id: "supernote_note_ready_secret_id"
@@ -271,13 +190,13 @@ triggers:
     local_only: true
 conditions:
   - condition: template
-    value_template: "{{ trigger.json.event == 'note.processing_completed' }}"
+    value_template: "{{ trigger.json.eventType == 'note.processing_completed' }}"
 actions:
   - action: notify.persistent_notification
     data:
       title: "Supernote Note Processed"
       message: >-
-        Finished processing {{ trigger.json.file.name }}
-        (Path: {{ trigger.json.file.path }}, ID: {{ trigger.json.file.id }}).
+        Finished processing {{ trigger.json.payload.file_path }}
+        (ID: {{ trigger.json.payload.file_id }}).
 mode: queued
 ```
