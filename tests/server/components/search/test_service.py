@@ -53,11 +53,6 @@ class _FailingEmbeddingModel(EmbeddingModel):
 
 
 @pytest.fixture
-def fake_embedding_model() -> FakeEmbeddingModel:
-    return FakeEmbeddingModel()
-
-
-@pytest.fixture
 def search_service(
     session_manager: DatabaseSessionManager,
     fake_embedding_model: FakeEmbeddingModel,
