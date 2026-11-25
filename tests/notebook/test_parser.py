@@ -11,7 +11,11 @@ from supernote.notebook import (
     load_notebook,
     parse_metadata,
 )
-from supernote.notebook.parser import SupernoteParser, SupernoteXParser
+from supernote.notebook.parser import (
+    SupernoteParser,
+    SupernoteXParser,
+    load_title_bitmaps,
+)
 from supernote.notebook.schema import (
     EquipmentType,
     FileType,
@@ -323,3 +327,27 @@ def test_original_supernote_a5_parser_and_nonlayered_load() -> None:
     assert notebook.page(1).content is None
     assert notebook.metadata.header.apply_equipment == EquipmentType.A5
     assert notebook.metadata.footer.extra["EXTRA"] == ["v1", "v2", "v3"]
+
+
+def test_load_title_bitmaps_populates_without_loading_page_layers() -> None:
+    note_path = (
+        Path(__file__).parent.parent
+        / "testdata"
+        / "philips"
+        / "heading-n5-20260016-backgrounds-marker.note"
+    )
+    full_notebook = load_notebook(note_path, policy="loose")
+
+    with open(note_path, "rb") as stream:
+        metadata = parse_metadata(stream, policy="loose")
+        lightweight = fileformat.Notebook(metadata)
+        assert all(t.content is None for t in lightweight.titles)
+        load_title_bitmaps(stream, lightweight.titles)
+
+    assert len(lightweight.titles) == len(full_notebook.titles) == 4
+    for loaded, full in zip(lightweight.titles, full_notebook.titles, strict=True):
+        assert loaded.content is not None
+        assert loaded.content == full.content
+    assert all(
+        layer.content is None for page in lightweight.pages for layer in page.layers
+    )

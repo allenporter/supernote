@@ -649,3 +649,86 @@ def test_single_page_load_and_convert() -> None:
 
     with pytest.raises(ValueError, match="loaded with only page_number=3"):
         single_converter.convert(0)
+
+
+def test_convert_title_cropped_bitmap() -> None:
+    """Decode modern cropped TITLEBITMAP entries (2026 N5 firmware) into grayscale crops."""
+    note_path = (
+        TEST_DATA_DIR / "philips" / "heading-n5-20260016-backgrounds-marker.note"
+    )
+    notebook = get_cached_notebook(str(note_path))
+    converter = ImageConverter(notebook)
+
+    assert len(notebook.titles) == 4
+    for idx, title in enumerate(notebook.titles):
+        assert title.metadata.rect is not None
+        img_by_index = converter.convert_title(idx)
+        img_by_obj = converter.convert_title(title)
+
+        assert img_by_index.size == (
+            title.metadata.rect.width,
+            title.metadata.rect.height,
+        )
+        assert img_by_index.mode == "L"
+        assert img_by_index.tobytes() == img_by_obj.tobytes()
+        pixels = img_by_index.tobytes()
+        assert min(pixels) < color.TRANSPARENT
+        assert max(pixels) == color.TRANSPARENT
+
+
+def test_convert_title_legacy_full_page_bitmap() -> None:
+    """Decode legacy full-page TITLEBITMAP entries (SN_FILE_VER_20220011) cropped to TITLERECT."""
+    note_path = TEST_DATA_DIR / "philips" / "test.note"
+    notebook = get_cached_notebook(str(note_path))
+    converter = ImageConverter(notebook)
+
+    assert len(notebook.titles) == 2
+    for title in notebook.titles:
+        assert title.metadata.rect is not None
+        img = converter.convert_title(title)
+
+        assert img.size == (title.metadata.rect.width, title.metadata.rect.height)
+        assert img.mode == "L"
+        pixels = img.tobytes()
+        assert min(pixels) < color.TRANSPARENT
+        assert max(pixels) == color.TRANSPARENT
+
+
+def test_convert_title_raises_when_bitmap_missing() -> None:
+    note_path = (
+        TEST_DATA_DIR / "philips" / "heading-n5-20260016-backgrounds-marker.note"
+    )
+    notebook = get_cached_notebook(str(note_path))
+    converter = ImageConverter(notebook)
+    empty_title = fileformat.Title({"TITLERECT": "0,0,100,40"}, content=None)
+
+    with pytest.raises(DecoderException, match="no bitmap content"):
+        converter.convert_title(empty_title)
+
+
+def test_convert_title_index_out_of_range() -> None:
+    note_path = (
+        TEST_DATA_DIR / "philips" / "heading-n5-20260016-backgrounds-marker.note"
+    )
+    notebook = get_cached_notebook(str(note_path))
+    converter = ImageConverter(notebook)
+
+    with pytest.raises(IndexError):
+        converter.convert_title(len(notebook.titles))
+
+
+def test_convert_title_without_rect_decodes_full_page() -> None:
+    """When TITLERECT and TITLERECTORI are absent, decode full-page TITLEBITMAP at page size."""
+    note_path = TEST_DATA_DIR / "philips" / "test.note"
+    notebook = get_cached_notebook(str(note_path))
+    converter = ImageConverter(notebook)
+    rectless_title = fileformat.Title(
+        {"TITLEPROTOCOL": "RATTA_RLE"},
+        content=notebook.titles[0].content,
+        page_number=0,
+    )
+
+    img = converter.convert_title(rectless_title)
+    assert img.size == (notebook.width, notebook.height)
+    assert img.mode == "L"
+    assert min(img.tobytes()) < color.TRANSPARENT
