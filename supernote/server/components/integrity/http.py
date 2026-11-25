@@ -1,7 +1,12 @@
 """HTTP platform route for administrator storage integrity audits.
 
-Mounts `GET /api/admin/integrity` (`@require_admin`) onto the main `aiohttp`
-application via `async_setup_http`.
+Exposes `GET /api/admin/integrity` (`@require_admin`), consumed by the
+`supernote admin integrity` CLI (`supernote.client.admin.AdminClient`) to run
+on-demand two-way consistency audits between SQLite VFS/processing metadata and
+physical blobs in `USER_DATA_BUCKET` and `CACHE_BUCKET`. Supports scoping to a
+single user (`?email=...`), a single file (`?email=...&file_id=...`), or an
+all-user disk sweep (`?full_disk=true`), returning an `IntegrityReportVO` with
+detected anomalies and remediation hints.
 """
 
 from __future__ import annotations
