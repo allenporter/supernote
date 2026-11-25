@@ -69,7 +69,7 @@ For Docker Compose, Caddy/Nginx reverse proxies, and backups, see the [Self-Host
 **Zero-AI sync server (Python or Docker):**
 
 ```bash
-pip install "supernote[server]"
+pip install "supernote[all]"       # Server + cloud/admin CLI (or supernote[server] for server only)
 supernote serve
 ```
 

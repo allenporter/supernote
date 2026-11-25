@@ -27,10 +27,10 @@ Hardware sync and authentication stay concrete on `ServerCore` (`supernote/serve
 | `openai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | OpenAI-compatible provider supporting OpenAI API, Ollama, vLLM, llama.cpp, and LM Studio. |
 | `processor` | Yes | `ai` | `http`, `mcp`, `processor` | Incremental background note/image processing queue, page hashing, PNG caching, and `get_page_image` MCP tool. |
 | `schedule` | Yes | — | `http`, `mcp` | Supernote Tasks & Schedule CRUD, RFC 5545 `.ics` feed export, and 4 MCP task tools. |
-| `search` | Yes | — | `http`, `mcp`, `processor` | Lexical keyword search, vector embeddings, hybrid ranking, and `list_notebooks` / `search_notebook_chunks` MCP tools. |
+| `search` | Yes | `ai` | `http`, `mcp`, `processor` | Lexical keyword search, vector embeddings, hybrid ranking, and `list_notebooks` / `search_notebook_chunks` MCP tools. |
 | `socketio` | Yes | — | `http` | Real-time Socket.IO sync notifications (`FILE-SYN`, `TASK-SYN`, `SUMMARY-SYN`). |
-| `summary` | Yes | `conversion` | `http`, `processor` | Reading digests, AI notebook summaries, and cached digest handwriting PDF/PNG rendering. |
-| `transcript` | Yes | — | `http`, `mcp`, `processor` | OCR page transcription stage, transcript storage, and `get_notebook_transcript` MCP tool. |
+| `summary` | Yes | `ai`, `conversion` | `http`, `processor` | Reading digests, AI notebook summaries, and cached digest handwriting PDF/PNG rendering. |
+| `transcript` | Yes | `ai` | `http`, `mcp`, `processor` | OCR page transcription stage, transcript storage, and `get_notebook_transcript` MCP tool. |
 | `web_ui` | Yes | — | `http` | Zero-build Vue 3 editorial Web UI served from `supernote/server/static/`. |
 | `webhooks` | No | `events` | — | HMAC-SHA256 signed outbound HTTP webhooks (`note.sync_completed`, etc.). |
 | `wiki` | No | `ai`, `events` | `http`, `mcp` | Opt-in LLM Wiki compiler, lint engine, Obsidian `.zip` export, and 8 MCP wiki tools. |

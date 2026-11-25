@@ -32,9 +32,9 @@ This project uses `pytest` and `pytest-asyncio` with Home Assistant–style comp
 
 ### Server Architecture
 
-- **Routes**: `supernote/server/routes/` - keep handlers thin.
-- **Services**: `supernote/server/services/` - contain business logic.
-- **Dependency Injection**: Services are injected into route handlers.
+The server is built around a concrete core host (`ServerCore` in `supernote/server/core.py`) for device sync, VFS, auth, and SQLite coordination, plus 22 lazy-loaded vertical components under `supernote/server/components/<domain>/` registered in `BUILTIN_COMPONENTS`. Each component declares its dependencies and platform modules (`http.py`, `mcp.py`, `processor.py`, `ocr.py`, `summary.py`, `embedding.py`, `text.py`) so disabled domains are never imported.
+
+See the [Server Component Catalog](./architecture/components.md), [ADR 0001](./architecture/adr/0001-server-core-component-architecture.md), and [Server & Sync Protocol Architecture](./architecture/server_architecture.md) before adding routes, services, or new components.
 
 ---
 
