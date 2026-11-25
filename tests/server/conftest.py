@@ -51,11 +51,18 @@ def patch_run_migrations() -> Generator[None]:
 
 
 @pytest.fixture
+def event_bus() -> LocalEventBus:
+    """Provide a shared LocalEventBus for server service and component tests."""
+    return LocalEventBus()
+
+
+@pytest.fixture
 def file_service(
     storage_root: Path,
     blob_storage: BlobStorage,
     user_service: UserService,
     session_manager: DatabaseSessionManager,
+    event_bus: LocalEventBus,
 ) -> FileService:
     """Provide a FileService wired to the test storage and session manager."""
     return FileService(
@@ -63,7 +70,7 @@ def file_service(
         blob_storage=blob_storage,
         user_service=user_service,
         session_manager=session_manager,
-        event_bus=LocalEventBus(),
+        event_bus=event_bus,
     )
 
 

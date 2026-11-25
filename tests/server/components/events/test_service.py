@@ -50,11 +50,6 @@ from supernote.server.utils.paths import get_page_png_path
 
 
 @pytest.fixture
-def event_bus() -> LocalEventBus:
-    return LocalEventBus()
-
-
-@pytest.fixture
 def event_log_service(
     session_manager: DatabaseSessionManager,
     coordination_service: CoordinationService,

@@ -7,7 +7,6 @@ import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.client.api import Supernote
-from supernote.client.client import Client
 from supernote.client.exceptions import ApiException
 from supernote.client.extended import ExtendedClient
 from supernote.client.schedule import ScheduleClient
@@ -33,12 +32,6 @@ from supernote.server.keys import (
     FILE_SERVICE_KEY,
 )
 from supernote.server.services.user import UserService
-
-
-@pytest.fixture
-def extended_client(authenticated_client: Client) -> ExtendedClient:
-    """Fixture for ExtendedClient."""
-    return ExtendedClient(authenticated_client)
 
 
 @pytest.fixture

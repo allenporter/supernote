@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from aiohttp.test_utils import TestClient
-from sqlalchemy import update
 
 from supernote.client.admin import AdminClient
 from supernote.client.client import Client
@@ -13,30 +12,7 @@ from supernote.client.exceptions import (
     ForbiddenException,
     NotFoundException,
 )
-from supernote.server.db.models.user import UserDO
-from supernote.server.db.session import DatabaseSessionManager
 from tests.fixtures.server import TEST_USERNAME
-
-
-@pytest.fixture
-async def admin_user_id(
-    session_manager: DatabaseSessionManager,
-    test_user_id: int,
-) -> int:
-    """Promote the default test user to admin."""
-    async with session_manager.session() as session:
-        await session.execute(
-            update(UserDO).where(UserDO.id == test_user_id).values(is_admin=True)
-        )
-        await session.commit()
-    return test_user_id
-
-
-@pytest.fixture
-def admin_client(authenticated_client: Client, admin_user_id: int) -> AdminClient:
-    """AdminClient authenticated as an admin user."""
-    _ = admin_user_id
-    return AdminClient(authenticated_client)
 
 
 async def test_verify_integrity_requires_admin(

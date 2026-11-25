@@ -109,7 +109,6 @@ def socket_client(
     return create_socket_client()
 
 
-@pytest.mark.asyncio
 async def test_socketio_ping_pong(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -128,7 +127,6 @@ async def test_socketio_ping_pong(
     assert not socket_client.is_connected
 
 
-@pytest.mark.asyncio
 async def test_socketio_status_heartbeat(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -151,7 +149,6 @@ def additional_users() -> list[str]:
     return ["a@example.com"]
 
 
-@pytest.mark.asyncio
 async def test_socketio_multi_user_message_isolation(
     socketio_server: TestServer,
     create_socket_client: Callable[[], SupernoteSocketClient],
@@ -214,7 +211,6 @@ async def test_socketio_multi_user_message_isolation(
     await client_b.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_connect_unauthorized(
     socket_client: SupernoteSocketClient,
 ) -> None:
@@ -231,7 +227,6 @@ async def test_socketio_connect_unauthorized(
     assert not socket_client.is_connected
 
 
-@pytest.mark.asyncio
 async def test_socketio_connect_invalid_token(
     socket_client: SupernoteSocketClient,
     server_config: ServerConfig,
@@ -257,7 +252,6 @@ async def test_socketio_connect_invalid_token(
     assert not socket_client.is_connected
 
 
-@pytest.mark.asyncio
 async def test_socketio_client_received_ack(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -277,7 +271,6 @@ async def test_socketio_client_received_ack(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_client_messages_async_iterator(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -365,7 +358,6 @@ async def test_socketio_client_messages_async_iterator(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_revoked_session_disconnected_on_heartbeat_and_send(
     socketio_server: TestServer,
     create_socket_client: Callable[[], SupernoteSocketClient],
@@ -418,7 +410,6 @@ async def test_socketio_revoked_session_disconnected_on_heartbeat_and_send(
     await client_send.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_schedule_service_events_publish_task_syn(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -614,7 +605,6 @@ async def test_socketio_schedule_service_events_publish_task_syn(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_summary_service_events_publish_digest_syn(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -929,7 +919,6 @@ async def test_socketio_summary_service_events_publish_digest_syn(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_file_service_events_publish_file_syn(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -1329,7 +1318,6 @@ async def test_socketio_file_service_events_publish_file_syn(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_eio3_device_handshake_and_ping_compat(
     socketio_server: TestServer,
 ) -> None:
@@ -1408,7 +1396,6 @@ async def test_socketio_eio3_device_handshake_and_ping_compat(
             assert "token verification failed" in err_frame2
 
 
-@pytest.mark.asyncio
 async def test_socketio_client_channels_and_error_handling_via_server(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -1484,7 +1471,6 @@ async def test_socketio_client_channels_and_error_handling_via_server(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_ratta_ping_without_payload(
     socketio_server: TestServer,
 ) -> None:
@@ -1518,7 +1504,6 @@ async def test_socketio_ratta_ping_without_payload(
             assert await ws.receive_str() == '42["ServerMessage","true"]'
 
 
-@pytest.mark.asyncio
 async def test_socketio_domain_event_recorded_emits_cursor_hint(
     socketio_server: TestServer,
 ) -> None:
@@ -1570,7 +1555,6 @@ async def test_socketio_domain_event_recorded_emits_cursor_hint(
         ),
     ],
 )
-@pytest.mark.asyncio
 async def test_socketio_invalid_websocket_upgrade_returns_400(
     socketio_server: TestServer,
     caplog: pytest.LogCaptureFixture,
