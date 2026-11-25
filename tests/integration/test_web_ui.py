@@ -39,8 +39,10 @@ async def test_web_ui_desktop_and_mobile_smoke(
     authenticated_client: Client,
     web_client: WebClient,
     auth_headers: dict[str, str],
+    admin_user_id: int,
 ) -> None:
     """Verify core desktop and mobile Web UI flows with zero runtime errors."""
+    _ = admin_user_id
     playwright_async = pytest.importorskip("playwright.async_api")
     errors: list[str] = []
 
@@ -303,6 +305,9 @@ async def test_web_ui_desktop_and_mobile_smoke(
             assert page.url.endswith("#/settings")
             await page.get_by_role("button", name="System & Queue").click()
             assert page.url.endswith("#/system")
+            await page.get_by_role("heading", name="Server Components").wait_for(
+                state="visible"
+            )
             await page.get_by_role("heading", name="Recent Notebook Activity").wait_for(
                 state="visible"
             )

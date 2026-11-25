@@ -398,6 +398,27 @@ interface AiStatus {
     model: string | null;
 }
 
+type ComponentConfigSource = 'env' | 'yaml' | 'database' | 'default';
+type ComponentFieldType = 'boolean' | 'integer' | 'number' | 'string' | 'array' | 'object';
+
+interface ComponentFieldSpec {
+    name: string;
+    type: ComponentFieldType;
+    default?: unknown;
+}
+
+interface SystemComponentStatus {
+    domain: string;
+    enabled: boolean;
+    running: boolean;
+    source: ComponentConfigSource;
+    readOnly: boolean;
+    runtimeConfigurable: boolean;
+    restartRequired: boolean;
+    config: Record<string, unknown>;
+    fields: ComponentFieldSpec[];
+}
+
 interface OAuthGrant {
     id: string;
     clientId: string;

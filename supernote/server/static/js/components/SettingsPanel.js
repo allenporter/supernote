@@ -174,7 +174,7 @@ export default {
             <div ref="dialogRef" tabindex="-1" role="dialog" aria-modal="true" aria-label="Settings & System"
                 class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden outline-none">
                 <!-- Header -->
-                <div class="flex items-center justify-between px-6 py-4 border-b border-stone-200/80 bg-[#F7F6F2]/60">
+                <div class="shrink-0 flex items-center justify-between px-6 py-4 border-b border-stone-200/80 bg-[#F7F6F2]/60">
                     <div>
                         <h2 class="text-base font-bold text-slate-900">Settings &amp; System</h2>
                         <p class="text-xs text-stone-500">Manage connected MCP clients, personal API keys, AI pipeline configuration, and background tasks</p>
@@ -189,7 +189,7 @@ export default {
                 </div>
 
                 <!-- Section Navigation Tabs -->
-                <div class="flex items-center gap-1 px-4 sm:px-6 pt-2.5 border-b border-stone-200/80 bg-white overflow-x-auto">
+                <div class="shrink-0 flex items-center gap-1 px-4 sm:px-6 pt-2.5 border-b border-stone-200/80 bg-white overflow-x-auto">
                     <button @click="$emit('switch-section', 'access')" type="button"
                         :class="activeSection !== 'system' ? 'border-slate-900 text-slate-900 font-semibold' : 'border-transparent text-stone-500 hover:text-slate-900 font-medium'"
                         class="px-3 py-2.5 text-xs sm:text-sm border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0">
@@ -289,7 +289,7 @@ export default {
                 </div>
 
                 <!-- Footer -->
-                <div class="px-6 py-3.5 border-t border-stone-200/80 bg-[#F7F6F2]/60 flex justify-end">
+                <div class="shrink-0 px-6 py-3.5 border-t border-stone-200/80 bg-[#F7F6F2]/60 flex justify-end">
                     <button @click="$emit('close')" type="button"
                         class="px-5 py-1.5 bg-slate-900 hover:bg-slate-800 rounded-lg text-xs font-semibold text-white shadow-sm transition-colors">
                         Close

@@ -2,11 +2,20 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
     fetchAiStatus,
     fetchCapacity,
+    fetchSystemComponents,
     fetchSystemQueueOverview,
     retryFailedSystemTasks,
 } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 import { formatSize, formatSystemTimestamp, getErrorMessage } from '../utils/format.js';
+
+/** @type {Record<string, string>} */
+const COMPONENT_SOURCE_LABELS = {
+    env: 'ENV',
+    yaml: 'YAML',
+    database: 'DATABASE',
+    default: 'DEFAULT',
+};
 
 /** @type {Record<string, string>} */
 const TASK_TYPE_LABELS = {
@@ -206,6 +215,52 @@ export default {
                 </div>
             </div>
 
+            <!-- 3b. Server Components (Admin Only, Read-Only Status & Provenance) -->
+            <section v-if="systemComponents.length > 0" aria-labelledby="server-components-heading"
+                class="bg-stone-50/80 border border-stone-200/80 p-4 rounded-xl space-y-3">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                        <h3 id="server-components-heading" class="text-xs font-bold uppercase tracking-wider text-stone-500">
+                            Server Components ({{ activeComponentCount }}/{{ systemComponents.length }} active)
+                        </h3>
+                        <p class="text-xs text-stone-600 mt-0.5">
+                            Effective configuration priority: <span class="font-mono text-slate-700">env &gt; yaml &gt; database &gt; default</span>.
+                        </p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    <div v-for="comp in systemComponents" :key="comp.domain"
+                        class="bg-white border border-stone-200/80 rounded-lg px-3 py-2.5 flex flex-col justify-between gap-1.5">
+                        <div class="flex items-center justify-between gap-2 min-w-0">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span :class="comp.running ? 'bg-emerald-500' : 'bg-stone-300'"
+                                    class="w-2 h-2 rounded-full shrink-0"
+                                    :title="comp.running ? 'Active in runtime' : 'Inactive'"></span>
+                                <span class="text-xs font-mono font-bold text-slate-900 truncate">{{ comp.domain }}</span>
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <span :class="componentSourceClass(comp.source)"
+                                    class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded border">
+                                    {{ formatComponentSource(comp.source) }}
+                                </span>
+                                <span v-if="comp.restartRequired"
+                                    class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-amber-50 text-amber-800 border border-amber-200"
+                                    title="Persisted enabled state differs from running state">
+                                    RESTART
+                                </span>
+                            </div>
+                        </div>
+                        <div v-if="componentConfigSummary(comp).length > 0" class="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            <span v-for="item in componentConfigSummary(comp)" :key="item"
+                                class="px-1.5 py-0.5 rounded bg-stone-100/90 text-[10px] font-mono text-stone-600 truncate max-w-full"
+                                :title="item">
+                                {{ item }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- 4. Recent Notebook Processing Activity (Notebook Rollup vs Stage Log) -->
             <div>
                 <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
@@ -351,6 +406,8 @@ export default {
         const capacity = ref(null);
         /** @type {import('vue').Ref<AiStatus | null>} */
         const aiStatus = ref(null);
+        /** @type {import('vue').Ref<SystemComponentStatus[]>} */
+        const systemComponents = ref([]);
         /** @type {import('vue').Ref<'notebooks' | 'stages'>} */
         const viewMode = ref('notebooks');
         /** @type {import('vue').Ref<string | null>} */
@@ -598,11 +655,13 @@ export default {
             loading.value = true;
             error.value = null;
             try {
-                const [overviewResult, capacityResult, aiStatusResult] = await Promise.all([
-                    fetchSystemQueueOverview(),
-                    fetchCapacity(),
-                    fetchAiStatus(),
-                ]);
+                const [overviewResult, capacityResult, aiStatusResult, componentsResult] =
+                    await Promise.all([
+                        fetchSystemQueueOverview(),
+                        fetchCapacity(),
+                        fetchAiStatus(),
+                        fetchSystemComponents(),
+                    ]);
                 if (seq !== loadSeq) return;
 
                 tasks.value = overviewResult.tasks;
@@ -611,6 +670,7 @@ export default {
                 processingFileIds.value = overviewResult.processingFileIds;
                 capacity.value = capacityResult;
                 aiStatus.value = aiStatusResult;
+                systemComponents.value = componentsResult;
             } catch (e) {
                 if (seq === loadSeq) {
                     error.value = getErrorMessage(e);
@@ -620,6 +680,45 @@ export default {
                     loading.value = false;
                 }
             }
+        };
+
+        const activeComponentCount = computed(
+            () => systemComponents.value.filter((c) => c.running).length,
+        );
+
+        /**
+         * @param {ComponentConfigSource | string} source
+         */
+        const formatComponentSource = (source) => COMPONENT_SOURCE_LABELS[source] || String(source);
+
+        /**
+         * @param {ComponentConfigSource | string} source
+         */
+        const componentSourceClass = (source) => {
+            /** @type {Record<string, string>} */
+            const classes = {
+                env: 'bg-amber-50 text-amber-800 border-amber-200',
+                yaml: 'bg-amber-50 text-amber-800 border-amber-200',
+                database: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                default: 'bg-stone-100 text-stone-600 border-stone-200',
+            };
+            return classes[source] || 'bg-stone-100 text-stone-600 border-stone-200';
+        };
+
+        /**
+         * Build compact read-only key/value summaries for non-`enabled` component config entries.
+         * @param {SystemComponentStatus} comp
+         * @returns {string[]}
+         */
+        const componentConfigSummary = (comp) => {
+            const cfg = comp?.config || {};
+            return Object.entries(cfg)
+                .filter(([key, val]) => key !== 'enabled' && val !== undefined && val !== null)
+                .map(([key, val]) => {
+                    if (Array.isArray(val)) return `${key}: ${val.length}`;
+                    if (typeof val === 'object') return `${key}: {…}`;
+                    return `${key}: ${String(val)}`;
+                });
         };
 
         /**
@@ -712,11 +811,16 @@ export default {
             queueBadgeClass,
             capacity,
             aiStatus,
+            systemComponents,
+            activeComponentCount,
             usagePercent,
             formatSize,
             formatSystemTimestamp,
             loadData,
             handleRetryFailed,
+            formatComponentSource,
+            componentSourceClass,
+            componentConfigSummary,
             formatTaskType,
             formatTaskTarget,
             buildTaskHref,

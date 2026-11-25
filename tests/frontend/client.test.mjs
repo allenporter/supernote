@@ -16,6 +16,7 @@ import {
     fetchProcessingStatus,
     fetchRecycleBin,
     fetchSummaries,
+    fetchSystemComponents,
     fetchSystemQueueOverview,
     fetchSystemTasks,
     login,
@@ -862,6 +863,46 @@ test('client.js: revokeOAuthGrant surfaces the server error for an unknown grant
                 err.status === 404 &&
                 err.message === 'OAuth grant not found or already revoked',
         );
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: fetchSystemComponents normalizes component payloads and returns [] on 403', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {Array<[string, string]>} */
+    const calls = [];
+    const rawWebhookComp = {
+        domain: 'webhooks',
+        enabled: false,
+        running: false,
+        source: 'default',
+        readOnly: false,
+        runtimeConfigurable: true,
+        restartRequired: false,
+        config: { enabled: false },
+        fields: [
+            { name: 'enabled', type: 'boolean', default: false },
+            { name: 'endpoints', type: 'array', default: [] },
+        ],
+    };
+    try {
+        setToken('admin-tok');
+        globalThis.fetch = async (url, init) => {
+            const method = init?.method || 'GET';
+            calls.push([String(url), method]);
+            return new Response(JSON.stringify({ success: true, components: [rawWebhookComp] }));
+        };
+
+        assert.deepEqual(await fetchSystemComponents(), [rawWebhookComp]);
+        assert.deepEqual(calls, [['/api/extended/system/components', 'GET']]);
+
+        globalThis.fetch = async () =>
+            new Response(JSON.stringify({ error: 'Forbidden: Admin access required' }), {
+                status: 403,
+            });
+        assert.deepEqual(await fetchSystemComponents(), []);
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
