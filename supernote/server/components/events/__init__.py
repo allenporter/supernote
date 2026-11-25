@@ -50,6 +50,7 @@ from typing import Any
 
 from supernote.server.core import ServerCore
 
+from .config import EventsConfig
 from .models import EventFeedPage
 from .service import EVENT_LOG_SERVICE_KEY, EventLogService
 
@@ -58,6 +59,7 @@ __all__ = [
     "EventFeedPage",
     "EventLogService",
     "EventsComponent",
+    "EventsConfig",
 ]
 
 
@@ -72,12 +74,13 @@ class EventsComponent:
         self._service: EventLogService | None = None
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Instantiate `EventLogService` and expose it via `EVENT_LOG_SERVICE_KEY`."""
+        """Parse `EventsConfig`, instantiate `EventLogService`, and expose it via `EVENT_LOG_SERVICE_KEY`."""
+        events_cfg = EventsConfig.from_dict(dict(config))
         service = EventLogService(
             session_manager=core.session_manager,
             coordination_service=core.coordination,
             event_bus=core.event_bus,
-            retention_days=core.config.event_log_retention_days,
+            retention_days=events_cfg.retention_days,
         )
         core.app[EVENT_LOG_SERVICE_KEY] = service
         self._service = service

@@ -20,6 +20,8 @@ from supernote.server.metrics import (
 )
 from supernote.server.routes.decorators import public_route
 
+from . import METRICS_CONFIG_KEY
+
 __all__ = [
     "async_setup_http",
     "create_metrics_middleware",
@@ -110,15 +112,16 @@ metrics_middleware: Middleware = create_metrics_middleware()
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
     """Expose the Prometheus scrape endpoint and register HTTP metrics middleware."""
+    metrics_path = core.app[METRICS_CONFIG_KEY].path
 
     @public_route
     async def handle_metrics(request: web.Request) -> web.Response:
         data = generate_latest()
         return web.Response(body=data, headers={"Content-Type": CONTENT_TYPE_LATEST})
 
-    registrar.router.add_get(core.config.metrics_path, handle_metrics)
-    logger.info("Exposing Prometheus metrics at %s", core.config.metrics_path)
+    registrar.router.add_get(metrics_path, handle_metrics)
+    logger.info("Exposing Prometheus metrics at %s", metrics_path)
     registrar.add_middleware(
-        create_metrics_middleware(metrics_path=core.config.metrics_path),
+        create_metrics_middleware(metrics_path=metrics_path),
         pre_auth=True,
     )
