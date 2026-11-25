@@ -53,7 +53,11 @@ Open the **Lint** drawer to review broken links, stale sources, contradictions, 
 
 ### Export to Obsidian
 
-Click **Export `.zip`** in the Wiki header to download all active pages as a standard Obsidian vault with YAML frontmatter and `[[wikilinks]]`. The wiki reader also adapts to phone screens so you can browse pages and check lint items on mobile.
+Click **Export `.zip`** in the Wiki header to download all active pages as a standard Obsidian vault with YAML frontmatter and `[[wikilinks]]`.
+
+### Browse on mobile
+
+The wiki reader adapts to phone screens so you can read compiled pages, follow `[[wikilinks]]`, and check lint items on the go.
 
 <p align="center">
   <img src="../static-assets/guides/web-mobile.png" alt="Responsive mobile view of the LLM Wiki reader on a phone screen" width="320">
