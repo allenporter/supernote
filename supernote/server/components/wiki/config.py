@@ -16,7 +16,7 @@ class WikiConfig(DataClassJSONMixin):
     enabled: bool = False
     """Whether the wiki component is enabled."""
 
-    auto_compile: bool = False
+    auto_compile: bool = True
     """Whether background incremental compilation runs automatically on domain events."""
 
     debounce_seconds: float = 15.0

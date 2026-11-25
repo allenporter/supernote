@@ -223,7 +223,7 @@ Configured under the `auth:` block in `config.yaml`.
 
 ## AI Pipeline Settings (`supernote.server.config.AiConfig`)
 
-Configured under the `ai:` block in `config.yaml`. Each capability (`ocr`, `summary`, `embedding`, `text`) is optional; omitting a capability disables that stage of the pipeline (`ai.text` configures structured JSON text generation for the opt-in LLM Wiki).
+Configured under the `ai:` block in `config.yaml`. Each capability (`ocr`, `summary`, `embedding`, `text`) is optional; omitting a capability disables that stage of the pipeline (`ai.text` is an optional override for structured JSON text generation used by the opt-in LLM Wiki and falls back to `ai.summary` when unset).
 
 ### Provider Configuration (`supernote.server.config.ProviderConfig`)
 
@@ -291,7 +291,7 @@ Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.
 
 ## LLM Wiki Settings (`supernote.server.components.wiki.config.WikiConfig`)
 
-Configured under the `wiki:` block in `config.yaml`. Requires an AI text generation model (`ai.text`, or falls back to `ai.summary` / `ai.ocr` when configured).
+Configured under the `wiki:` block in `config.yaml`. Requires an AI text generation model (uses `ai.text` when configured, or falls back to `ai.summary`).
 
 ```yaml
 wiki:
@@ -305,7 +305,7 @@ wiki:
 | YAML Key | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `wiki.enabled` | `SUPERNOTE_WIKI_ENABLED` | `bool` | `false` | Enables the LLM Wiki HTTP API, MCP tools, Obsidian `.zip` export, and Web UI tab. |
-| `wiki.auto_compile` | — | `bool` | `false` | Automatically runs incremental wiki compilation in the background when notebook or task domain events arrive. |
+| `wiki.auto_compile` | — | `bool` | `true` | Automatically runs incremental wiki compilation in the background when notebook or task domain events arrive. Set to `false` for manual or MCP-only updates. |
 | `wiki.debounce_seconds` | — | `float` | `15.0` | Per-user debounce window (seconds) coalescing multi-page sync bursts (`>= 0`). |
 | `wiki.max_pages_per_batch` | — | `int` | `5` | Maximum wiki pages modified per single compilation turn (`>= 1`). |
 | `wiki.daily_token_budget` | — | `int` | `200000` | Per-user UTC daily LLM token cap across compile and lint passes (`>= 0`). |

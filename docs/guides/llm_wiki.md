@@ -18,7 +18,7 @@ After each compile, a lightweight health check scans for broken links, orphan pa
 
 ## Turning it on
 
-The wiki needs a configured AI text model (Gemini or a local OpenAI-compatible server like Ollama or vLLM; see the [Configuration Reference](../reference/configuration.md)). Because it is off by default, sync-only servers use zero extra memory or tokens.
+The wiki reuses your configured `ai.summary` model (or `SUPERNOTE_GEMINI_API_KEY`) automatically; you can optionally set `ai.text` in `config/config.yaml` if you want a separate model for wiki compilation (see the [Configuration Reference](../reference/configuration.md)). Because it is off by default, sync-only servers use zero extra memory or tokens.
 
 Enable it with an environment variable or in `config/config.yaml`:
 
@@ -30,10 +30,9 @@ export SUPERNOTE_WIKI_ENABLED=true
 # config/config.yaml
 wiki:
   enabled: true
-  auto_compile: true  # Compile automatically as notes and tasks sync
 ```
 
-Setting `SUPERNOTE_WIKI_ENABLED=true` turns on the **Wiki** tab and lets you trigger manual or backfill compiles. Add `auto_compile: true` in `config/config.yaml` when you want background compilation to run automatically as notes and tasks sync. By default, each user has a `daily_token_budget` of `200,000` tokens per day. That is plenty for everyday note-taking while keeping a large first-time backfill from burning through tokens in one go. You can raise or lower `daily_token_budget` and other limits (`debounce_seconds`, `max_pages_per_batch`, `lint_event_threshold`, `lint_interval_days`) in the [Configuration Reference](../reference/configuration.md).
+Setting `SUPERNOTE_WIKI_ENABLED=true` (or `wiki.enabled: true`) turns on the **Wiki** tab and automatically compiles new notes and tasks in the background as they sync. Set `wiki.auto_compile: false` in `config/config.yaml` if you prefer manual or MCP-only updates. You can tune compilation limits (`debounce_seconds`, `max_pages_per_batch`, `lint_event_threshold`, `lint_interval_days`) in the [Configuration Reference](../reference/configuration.md).
 
 ## Everyday use
 

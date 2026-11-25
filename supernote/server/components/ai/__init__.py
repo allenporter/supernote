@@ -217,10 +217,24 @@ class AiRegistrar:
         )
 
     def create_text_model(self, config: ServerConfig) -> TextGenerationModel | None:
-        """Instantiate the configured text generation model wrapped with telemetry and concurrency limiting."""
-        resolved = _instantiate_raw_model(
-            self._text_factories, "text", config, config.ai.text
-        )
+        """Instantiate the configured text generation model wrapped with telemetry and concurrency limiting.
+
+        When ``config.ai.text`` is unset, falls back to ``config.ai.summary`` if its
+        provider supports structured text generation.
+        """
+        if config.ai.text is not None:
+            resolved = _instantiate_raw_model(
+                self._text_factories, "text", config, config.ai.text
+            )
+        elif config.ai.summary is not None:
+            key = config.ai.provider_type(config.ai.summary.provider).strip().lower()
+            if key not in self._text_factories:
+                return None
+            resolved = _instantiate_raw_model(
+                self._text_factories, "text", config, config.ai.summary
+            )
+        else:
+            return None
         if resolved is None:
             return None
         model, model_cfg = resolved

@@ -98,6 +98,12 @@ auth:
 #     provider: gemini
 #     model: gemini-3.5-flash-lite
 #     max_concurrency: 5
+#   # Optional: override the model used for structured text tasks like LLM Wiki
+#   # compilation (falls back to `summary` when omitted).
+#   # text:
+#   #   provider: gemini
+#   #   model: gemini-3.6-flash
+#   #   max_concurrency: 5
 #   embedding:
 #     provider: gemini
 #     model: gemini-embedding-2 # or provider: openai, model: embeddinggemma for local Ollama

@@ -80,3 +80,26 @@ async def test_openai_text_model_invalid_json_raises(
     fake_openai.chat_content = ""
     with pytest.raises(AIError):
         await model.generate_json("Compile diff", response_schema=SCHEMA)
+
+
+async def test_openai_text_model_falls_back_to_summary(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    openai_base_url: str,
+    fake_openai: FakeOpenAIServer,
+) -> None:
+    component_core.config.ai = AiConfig(
+        providers={"openai": ProviderConfig(base_url=openai_base_url)},
+        summary=ModelConfig(provider="openai", model="gpt-4o-mini"),
+    )
+    await load_components("ai", "openai")
+
+    model = component_core.app[TEXT_MODEL_KEY]
+    assert model is not None
+    assert model.provider == "openai"
+    assert model.model_id == "gpt-4o-mini"
+
+    fake_openai.chat_content = json.dumps({"page_ops": []})
+    assert await model.generate_json("Compile diff", response_schema=SCHEMA) == {
+        "page_ops": []
+    }

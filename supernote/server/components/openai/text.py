@@ -62,7 +62,7 @@ class OpenAITextGenerationModel(TextGenerationModel):
 
 def create_text_model(config: ServerConfig) -> TextGenerationModel | None:
     """Create an `OpenAITextGenerationModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.text
+    model_cfg = config.ai.effective_text
     if model_cfg is None:
         return None
     backend = create_openai_backend(config.ai.providers, model_cfg.provider)
