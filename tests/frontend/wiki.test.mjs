@@ -120,66 +120,63 @@ test('wiki API client saves, searches, compiles, resolves lint, and deletes', as
     }
 });
 
-test('formatWikiActionResult formats paused, empty, and updated responses for each mode', () => {
-    assert.deepEqual(formatWikiActionResult('backfill', { mode: 'backfill', status: 'paused' }), {
-        message: 'Wiki compiler is paused — check the status banner for details.',
-        type: 'error',
-    });
-
-    assert.deepEqual(
-        formatWikiActionResult('backfill', {
-            mode: 'backfill',
-            events_processed: 0,
-            pages_updated: 0,
-            status: 'idle',
-        }),
-        {
+for (const { name, mode, result, expected } of [
+    {
+        name: 'paused compiler status',
+        mode: 'backfill',
+        result: { mode: 'backfill', status: 'paused' },
+        expected: {
+            message: 'Wiki compiler is paused — check the status banner for details.',
+            type: 'error',
+        },
+    },
+    {
+        name: 'empty backfill batch',
+        mode: 'backfill',
+        result: { mode: 'backfill', events_processed: 0, pages_updated: 0, status: 'idle' },
+        expected: {
             message: 'No remaining OCR’d notebooks to backfill.',
             type: 'info',
         },
-    );
-
-    assert.deepEqual(
-        formatWikiActionResult('backfill', {
-            mode: 'backfill',
-            events_processed: 5,
-            pages_updated: 3,
-            status: 'idle',
-        }),
-        {
+    },
+    {
+        name: 'updated backfill batch',
+        mode: 'backfill',
+        result: { mode: 'backfill', events_processed: 5, pages_updated: 3, status: 'idle' },
+        expected: {
             message: 'Backfilled batch (3 pages updated). Run Backfill again for older notebooks.',
             type: 'success',
         },
-    );
-
-    assert.deepEqual(
-        formatWikiActionResult('incremental', {
-            mode: 'incremental',
-            events_processed: 0,
-            pages_updated: 0,
-            status: 'idle',
-        }),
-        {
+    },
+    {
+        name: 'up-to-date incremental compile',
+        mode: 'incremental',
+        result: { mode: 'incremental', events_processed: 0, pages_updated: 0, status: 'idle' },
+        expected: {
             message: 'Wiki is up to date — no new notebook or task changes.',
             type: 'info',
         },
-    );
-
-    assert.deepEqual(
-        formatWikiActionResult('incremental', {
-            mode: 'incremental',
-            events_processed: 1,
-            pages_updated: 1,
-            status: 'idle',
-        }),
-        {
+    },
+    {
+        name: 'updated incremental compile',
+        mode: 'incremental',
+        result: { mode: 'incremental', events_processed: 1, pages_updated: 1, status: 'idle' },
+        expected: {
             message: 'Updated 1 page from 1 recent change.',
             type: 'success',
         },
-    );
-
-    assert.deepEqual(formatWikiActionResult('lint', { mode: 'lint', issues: [{ issue_id: 1 }] }), {
-        message: 'Wiki lint finished (1 open issue).',
-        type: 'success',
+    },
+    {
+        name: 'lint pass result',
+        mode: 'lint',
+        result: { mode: 'lint', issues: [{ issue_id: 1 }] },
+        expected: {
+            message: 'Wiki lint finished (1 open issue).',
+            type: 'success',
+        },
+    },
+]) {
+    test(`formatWikiActionResult formats ${name}`, () => {
+        assert.deepEqual(formatWikiActionResult(mode, result), expected);
     });
-});
+}

@@ -293,6 +293,12 @@ export default {
                 await loadAll(activePage.value?.slug || '');
             } catch (err) {
                 showToast(getErrorMessage(err), 'error');
+                try {
+                    const refreshed = await fetchWikiStatus();
+                    if (refreshed) status.value = refreshed;
+                } catch {
+                    // Best-effort status refresh so persisted compiler errors surface immediately.
+                }
             } finally {
                 runningAction.value = '';
                 isBusy.value = false;
@@ -431,11 +437,9 @@ export default {
 
             <!-- Compiler Status / Error Banner -->
             <div v-if="!isDisabled && !error && status?.last_error"
-                class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                    <span class="font-semibold">Wiki compiler {{ status.status }}:</span>
-                    {{ status.last_error }}
-                </div>
+                class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900 break-words">
+                <span class="font-semibold">Wiki compiler {{ status.status }}:</span>
+                {{ status.last_error }}
             </div>
 
             <!-- Disabled Banner -->
@@ -503,8 +507,8 @@ export default {
                         <div class="flex items-center justify-between">
                             <h3 class="text-xs font-semibold text-slate-900">Open Lint Issues ({{ lintIssues.length }})</h3>
                             <button type="button" @click="handleRunAction('lint')" :disabled="isBusy"
-                                class="text-[11px] font-medium text-slate-600 hover:text-slate-900">
-                                Run Lint Now
+                                class="text-[11px] font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50">
+                                {{ runningAction === 'lint' ? 'Linting...' : 'Run Lint Now' }}
                             </button>
                         </div>
                         <div v-if="lintIssues.length === 0" class="text-xs text-stone-500">All clear — zero open lint issues.</div>
@@ -640,7 +644,12 @@ export default {
                         </div>
                     </article>
 
-                    <div v-else-if="pages.length === 0 && !isLoading"
+                    <div v-else-if="isLoading"
+                        class="bg-white border border-stone-200/80 rounded-xl p-10 text-center text-xs text-stone-400">
+                        Loading wiki...
+                    </div>
+
+                    <div v-else-if="pages.length === 0"
                         class="bg-white border border-stone-200/80 rounded-xl p-8 text-center space-y-3 shadow-sm">
                         <h3 class="text-sm font-semibold text-slate-900">Build your personal wiki</h3>
                         <p class="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">

@@ -195,12 +195,12 @@ export async function fetchWikiStatus() {
 /**
  * @typedef {Object} WikiCompileResult
  * @property {string} mode
- * @property {number} [events_processed]
- * @property {number} [pages_updated]
- * @property {number} [skipped_policy_pages]
- * @property {number} [lint_issues_open]
- * @property {string} [status]
- * @property {WikiLintIssue[]} [issues]
+ * @property {number | null} [events_processed]
+ * @property {number | null} [pages_updated]
+ * @property {number | null} [skipped_policy_pages]
+ * @property {number | null} [lint_issues_open]
+ * @property {string | null} [status]
+ * @property {WikiLintIssue[] | null} [issues]
  */
 
 /**
