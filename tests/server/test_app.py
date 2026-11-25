@@ -25,6 +25,7 @@ from supernote.server.app import (
     run,
 )
 from supernote.server.components.fake_ai import FakeAiComponent
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.processor.png_conversion import (
     PngConversionModule,
 )
@@ -39,7 +40,6 @@ from supernote.server.keys import (
     EMBEDDING_MODEL_KEY,
     INTEGRITY_SERVICE_KEY,
     OCR_MODEL_KEY,
-    PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )

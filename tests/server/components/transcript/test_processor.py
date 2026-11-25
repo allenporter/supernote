@@ -5,6 +5,7 @@ from sqlalchemy.orm import undefer
 from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
@@ -16,7 +17,6 @@ from supernote.server.db.models.note_processing import (
 )
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
-from supernote.server.keys import PROCESSOR_SERVICE_KEY
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.utils.paths import get_page_png_path

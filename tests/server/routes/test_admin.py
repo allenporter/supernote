@@ -16,14 +16,18 @@ from supernote.client.exceptions import (
 )
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.user import UserRegisterDTO
-from supernote.server.components.processor import ProcessorModule, TaskScope
+from supernote.server.components.processor import (
+    PROCESSOR_SERVICE_KEY,
+    ProcessorModule,
+    TaskScope,
+)
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import Event, NoteUpdatedEvent
-from supernote.server.keys import EVENT_BUS_KEY, PROCESSOR_SERVICE_KEY
+from supernote.server.keys import EVENT_BUS_KEY
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 

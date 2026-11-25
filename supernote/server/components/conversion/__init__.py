@@ -18,8 +18,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.core import ServerCore
-from supernote.server.keys import PROCESSOR_SERVICE_KEY
 
 from .service import CONVERSION_SERVICE_KEY, ConversionService, ConvertedBlob
 

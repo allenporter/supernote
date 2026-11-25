@@ -17,8 +17,9 @@ from supernote.models.base import ErrorCode, create_error_response
 from supernote.server.components.mcp import McpRegistrar, get_authenticated_user_id
 from supernote.server.core import ServerCore
 from supernote.server.exceptions import FileError
-from supernote.server.keys import PROCESSOR_SERVICE_KEY
 from supernote.server.utils.image import DEFAULT_MAX_IMAGE_DIMENSION
+
+from . import PROCESSOR_SERVICE_KEY
 
 __all__ = ["async_setup_mcp"]
 

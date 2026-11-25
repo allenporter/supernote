@@ -13,6 +13,7 @@ from supernote.models.base import TaskType
 from supernote.server.components import KNOWN_PLATFORMS
 from supernote.server.components.ai import AiComponent
 from supernote.server.components.processor import (
+    PROCESSOR_SERVICE_KEY,
     ProcessorComponent,
     ProcessorModule,
     ProcessorRegistrar,
@@ -21,7 +22,6 @@ from supernote.server.components.processor import (
 )
 from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import PROCESSOR_SERVICE_KEY
 
 
 class _CustomStage(ProcessorModule):

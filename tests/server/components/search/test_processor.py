@@ -6,12 +6,12 @@ from sqlalchemy import select
 from supernote.models.base import TaskType
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.search.processor import EmbeddingModule
 from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import PROCESSOR_SERVICE_KEY
 from supernote.server.services.file import FileService
 from tests.server.components.conftest import LoadComponents
 
