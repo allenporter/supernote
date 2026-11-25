@@ -41,22 +41,14 @@ from supernote.models.file_device import (
     ListFolderLocalVO,
     ListFolderV2DTO,
     MetadataVO,
-    PdfDTO,
-    PdfVO,
-    PngDTO,
-    PngPageVO,
-    PngVO,
     SynchronousEndLocalDTO,
     SynchronousEndLocalVO,
     SynchronousStartLocalDTO,
     SynchronousStartLocalVO,
 )
-from supernote.server.config import ServerConfig
 from supernote.server.events import LocalEventBus, SyncCompletedEvent
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
-    CONFIG_KEY,
-    CONVERSION_SERVICE_KEY,
     COORDINATION_SERVICE_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
@@ -64,7 +56,6 @@ from supernote.server.keys import (
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.conversion import ConversionService
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.file import (
     FileEntity,
@@ -636,74 +627,3 @@ async def handle_copy_file(request: web.Request) -> web.Response:
             entries_vo=_to_entries_vo(result),
         ).to_dict()
     )
-
-
-@routes.post("/api/file/note/to/png")
-async def handle_note_to_png(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/file/note/to/png
-    # Purpose: Convert a note to PNG.
-    # Response: PngVO
-    req_data = PngDTO.from_dict(await request.json())
-    user_email = request[REQUEST_USER_KEY]
-    config: ServerConfig = request.app[CONFIG_KEY]
-
-    if not (config.web_enabled and config.web_notebook_preview):
-        return web.json_response(PngVO(png_page_vo_list=[]).to_dict())
-
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-
-    try:
-        page_numbers = await conversion_service.convert_note_to_png(
-            user_email, req_data.id
-        )
-        base_url = get_request_base_url(request)
-        png_pages = []
-        for page_no in page_numbers:
-            # Generate signed URL for each PNG page
-            path_to_sign = f"/api/oss/png/{req_data.id}/{page_no}"
-            signed_path = await url_signer.sign(
-                path_to_sign, user=user_email, single_use=False
-            )
-            download_url = f"{base_url}{signed_path}"
-
-            png_pages.append(PngPageVO(page_no=page_no, url=download_url))
-
-        return web.json_response(PngVO(png_page_vo_list=png_pages).to_dict())
-    except SupernoteError as err:
-        return err.to_response()
-    except Exception as err:
-        return SupernoteError.uncaught(err).to_response()
-
-
-@routes.post("/api/file/note/to/pdf")
-async def handle_note_to_pdf(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/file/note/to/pdf
-    # Purpose: Convert a note to PDF.
-    # Response: PdfVO
-    req_data = PdfDTO.from_dict(await request.json())
-    user_email = request[REQUEST_USER_KEY]
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-
-    try:
-        await conversion_service.convert_note_to_pdf(
-            user_email, req_data.id, req_data.page_no_list
-        )
-
-        # Generate signed URL for converted PDF
-        path_to_sign = f"/api/oss/pdf/{req_data.id}"
-        if req_data.page_no_list:
-            pages = ",".join(str(page_no) for page_no in req_data.page_no_list)
-            path_to_sign += f"?pages={pages}"
-        signed_path = await url_signer.sign(
-            path_to_sign, user=user_email, single_use=False
-        )
-        base_url = get_request_base_url(request)
-        download_url = f"{base_url}{signed_path}"
-
-        return web.json_response(PdfVO(url=download_url).to_dict())
-    except SupernoteError as err:
-        return err.to_response()
-    except Exception as err:
-        return SupernoteError.uncaught(err).to_response()

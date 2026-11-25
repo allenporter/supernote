@@ -10,7 +10,7 @@ or asynchronously via `supernote.server.events.LocalEventBus`.
 | `supernote.server.services.vfs.VirtualFileSystem` | `supernote.server.services.vfs` | Transactional SQLite-backed directory tree and path resolution (`UserFileDO`). |
 | `supernote.server.services.blob.LocalBlobStorage` | `supernote.server.services.blob` | Content-addressable blob storage (`USER_DATA_BUCKET` and `CACHE_BUCKET`). |
 | `supernote.server.components.processor.service.ProcessorService` | `supernote.server.components.processor.service` | Asynchronous 5-stage `.note` processing pipeline and task recovery loop. |
-| `supernote.server.services.conversion.ConversionService` | `supernote.server.services.conversion` | On-demand `.note` to PNG and vector PDF conversion with cache lookup. |
+| `supernote.server.components.conversion.service.ConversionService` | `supernote.server.components.conversion.service` | On-demand `.note` to PNG and vector PDF conversion with cache lookup. |
 | `supernote.server.components.search.service.SearchService` | `supernote.server.components.search.service` | Semantic vector similarity search and notebook transcript retrieval. |
 | `supernote.server.components.summary.service.SummaryService` | `supernote.server.components.summary.service` | CRUD and tag management for AI and handwritten summaries (`SummaryDO`). |
 | `supernote.server.components.schedule.service.ScheduleService` | `supernote.server.components.schedule.service` | Task groups, tasks, recurrence rules, and delta synchronization. |
@@ -27,11 +27,9 @@ See `supernote.guides.architecture` for the end-to-end service interaction model
 
 __all__ = [
     "blob",
-    "conversion",
     "coordination",
     "file",
     "integrity",
     "user",
     "vfs",
-    "webhook",
 ]

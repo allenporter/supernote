@@ -52,6 +52,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=False,
     ),
     BuiltinComponentSpec(
+        domain="conversion",
+        import_path="supernote.server.components.conversion:ConversionComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="events",
         import_path="supernote.server.components.events:EventsComponent",
         default_enabled=True,

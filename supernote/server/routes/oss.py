@@ -21,11 +21,10 @@ from aiohttp import BodyPartReader, web
 
 from supernote.models.base import create_error_response
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
-from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
-    CONVERSION_SERVICE_KEY,
     FILE_SERVICE_KEY,
     URL_SIGNER_KEY,
 )
@@ -35,7 +34,6 @@ from supernote.server.metrics import (
     record_oss_transfer_bytes,
 )
 from supernote.server.services.blob import STREAM_CHUNK_SIZE, BlobStorage
-from supernote.server.services.conversion import ConversionService
 from supernote.server.services.file import FileService
 from supernote.server.utils.paths import get_file_chunk_path
 from supernote.server.utils.url_signer import UrlSigner
@@ -429,129 +427,4 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
         file_name=file_name,
         file_size=file_size,
         kind=OSSTransferKind.USER_BLOB,
-    )
-
-
-@routes.get("/api/oss/png/{file_id}/{page_no}")
-@public_route
-async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
-    """Handle converted note page PNG download from CACHE_BUCKET.
-
-    Endpoint: GET /api/oss/png/{file_id}/{page_no}
-    """
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
-    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
-    try:
-        payload = await url_signer.verify(request.path_qs, consume=False)
-    except SupernoteError as err:
-        return err.to_response()
-
-    user_email = payload.get("user")
-    if not user_email:
-        return web.json_response(
-            create_error_response("Missing user identity in signature").to_dict(),
-            status=HTTPStatus.FORBIDDEN,
-        )
-
-    try:
-        file_id = int(request.match_info["file_id"])
-        page_no = int(request.match_info["page_no"])
-    except (KeyError, ValueError):
-        return web.json_response(
-            create_error_response("Invalid file_id or page_no").to_dict(),
-            status=HTTPStatus.BAD_REQUEST,
-        )
-
-    try:
-        blob = await conversion_service.get_note_png_page(user_email, file_id, page_no)
-    except SupernoteError as err:
-        return err.to_response()
-    if not blob:
-        return web.json_response(
-            create_error_response("Page PNG not found").to_dict(),
-            status=HTTPStatus.NOT_FOUND,
-        )
-
-    try:
-        metadata = await blob_storage.get_metadata(CACHE_BUCKET, blob.storage_key)
-    except FileNotFoundError:
-        return web.json_response(
-            create_error_response("Page PNG not found").to_dict(),
-            status=HTTPStatus.NOT_FOUND,
-        )
-
-    return await stream_blob_response(
-        request=request,
-        blob_storage=blob_storage,
-        bucket=CACHE_BUCKET,
-        storage_key=blob.storage_key,
-        file_name=blob.file_name,
-        file_size=metadata.size,
-        kind=OSSTransferKind.PNG_PREVIEW,
-    )
-
-
-@routes.get("/api/oss/pdf/{file_id}")
-@public_route
-async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
-    """Handle converted note PDF download from CACHE_BUCKET.
-
-    Endpoint: GET /api/oss/pdf/{file_id}
-    """
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
-    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
-    try:
-        payload = await url_signer.verify(
-            request.path_qs, consume=False, signed_query_keys=("pages",)
-        )
-    except SupernoteError as err:
-        return err.to_response()
-
-    user_email = payload.get("user")
-    if not user_email:
-        return web.json_response(
-            create_error_response("Missing user identity in signature").to_dict(),
-            status=HTTPStatus.FORBIDDEN,
-        )
-
-    try:
-        file_id = int(request.match_info["file_id"])
-        pages = request.query.get("pages")
-        page_no_list = (
-            [int(page_no) for page_no in pages.split(",")] if pages is not None else []
-        )
-    except (KeyError, ValueError):
-        return web.json_response(
-            create_error_response("Invalid file_id or pages").to_dict(),
-            status=HTTPStatus.BAD_REQUEST,
-        )
-
-    try:
-        blob = await conversion_service.get_note_pdf(user_email, file_id, page_no_list)
-    except SupernoteError as err:
-        return err.to_response()
-    if not blob:
-        return web.json_response(
-            create_error_response("Note PDF not found").to_dict(),
-            status=HTTPStatus.NOT_FOUND,
-        )
-
-    try:
-        metadata = await blob_storage.get_metadata(CACHE_BUCKET, blob.storage_key)
-    except FileNotFoundError:
-        return web.json_response(
-            create_error_response("Note PDF not found").to_dict(),
-            status=HTTPStatus.NOT_FOUND,
-        )
-
-    return await stream_blob_response(
-        request=request,
-        blob_storage=blob_storage,
-        bucket=CACHE_BUCKET,
-        storage_key=blob.storage_key,
-        file_name=blob.file_name,
-        file_size=metadata.size,
-        kind=OSSTransferKind.PDF_EXPORT,
     )

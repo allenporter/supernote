@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from .db.session import DatabaseSessionManager
     from .events import LocalEventBus
     from .services.blob import BlobStorage
-    from .services.conversion import ConversionService
     from .services.coordination import CoordinationService
     from .services.file import FileService
     from .services.integrity import IntegrityService
@@ -49,7 +48,6 @@ SUMMARY_MODEL_KEY: web.AppKey[SummaryModel | None] = web.AppKey("summary_model")
 EMBEDDING_MODEL_KEY: web.AppKey[EmbeddingModel | None] = web.AppKey("embedding_model")
 RATE_LIMITER_KEY: web.AppKey[RateLimiter] = web.AppKey("rate_limiter")
 PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
-CONVERSION_SERVICE_KEY: web.AppKey[ConversionService] = web.AppKey("conversion_service")
 URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
 
 REQUEST_USER_KEY: web.RequestKey[str] = web.RequestKey("user")

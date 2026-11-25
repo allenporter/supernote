@@ -15,6 +15,7 @@ from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import PageTranscriptVO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
+from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
@@ -29,7 +30,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     CONFIG_KEY,
-    CONVERSION_SERVICE_KEY,
     EMBEDDING_MODEL_KEY,
     FILE_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
