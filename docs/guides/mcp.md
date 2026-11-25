@@ -53,9 +53,9 @@ claude mcp add --transport http supernote http://localhost:8081/mcp \
 
 ### Claude Desktop & Cursor (`mcp-remote` or native Streamable HTTP)
 
-For clients that connect over Streamable HTTP with OAuth 2.1, point the client at `http://<your-server>:8081/mcp` (or your HTTPS reverse-proxy URL—make sure `base_url` and `mcp_base_url` are set in `config/config.yaml` when running behind Caddy or Nginx).
+For clients that support Streamable HTTP (native remote MCP over HTTP) with OAuth 2.1, point the client at `http://<your-server>:8081/mcp`, or your HTTPS reverse-proxy URL. When running behind Caddy or Nginx, set `base_url` and `mcp_base_url` in `config/config.yaml`.
 
-To use a static API key in `claude_desktop_config.json` via `mcp-remote`:
+If you prefer a static API key in `claude_desktop_config.json`, use `mcp-remote`, which bridges Claude Desktop's local config to your HTTP MCP server using Node.js/`npx`:
 
 ```json
 {
@@ -87,26 +87,39 @@ All tools scope queries strictly to the authenticated user's account.
 | `list_notebooks` | List active `.note` notebooks ordered by most recently updated. | `limit=20`, `name_filter` |
 | `search_notebook_chunks` | Hybrid search combining native `#keyword` tags, OCR transcripts, and vector embeddings (when configured). | `query`, `top_n=5`, `name_filter`, `date_after`, `date_before` |
 | `get_notebook_transcript` | Return the full OCR Markdown transcript for a notebook or a 0-based page slice. | `file_id`, `start_index`, `end_index` |
-| `get_page_image` | Return a normalized PNG image (`ImageContent`) for a `.note` page or standalone image so vision models can inspect sketches and diagrams. | `file_id`, `page_index=0`, `max_dimension=1568` (`64`–`2048`) |
+| `get_page_image` | Return a normalized PNG image for a `.note` page or standalone image so vision models can inspect sketches and diagrams. | `file_id`, `page_index=0`, `max_dimension=1568` (`64`–`2048`) |
 
 ### Tasks & schedule
 
-- `list_tasks(group_id=None, include_completed=False, file_id=None)`: List task groups and tasks, optionally filtered by group, completion state, or linked notebook.
-- `create_task(title, detail=None, status=None, importance=None, due_time=None, group_id=None, linked_file_id=None, linked_file_path=None, linked_page_id=None, linked_page_number=None, cause_seq=None, reason=None)`: Create a Supernote task, optionally deep-linked to a notebook page.
-- `update_task(task_id, ..., clear_link=False, cause_seq=None, reason=None)`: Update task fields, completion state, or page deep-links.
-- `delete_task(task_id, cause_seq=None, reason=None)`: Delete a task.
+| Tool | Purpose | Key arguments |
+| :--- | :--- | :--- |
+| `list_tasks` | List task groups and tasks, optionally filtered by group, completion state, or linked notebook. | `group_id`, `include_completed=False`, `file_id` |
+| `create_task` | Create a Supernote task, optionally linked to a specific notebook page. | `title`, `detail`, `due_time`, `importance`, `group_id`, `linked_file_id`, `linked_page_number` |
+| `update_task` | Update a task's fields, completion state, or linked notebook page. | `task_id`, `title`, `status`, `due_time`, `clear_link=False` |
+| `delete_task` | Delete a task. | `task_id` |
 
 ### Domain event feed
 
-- `list_events(sync_token=None, event_types=None, file_id=None, exclude_actors=None, limit=200)`: Poll your account's incremental domain event log (for example `event_types=["note.*", "schedule.*"]`), with cursor pagination via `sync_token` and `"self"` echo suppression via `exclude_actors`.
+| Tool | Purpose | Key arguments |
+| :--- | :--- | :--- |
+| `list_events` | Poll your account's incremental event feed for file, note, and task changes. | `event_types`, `file_id`, `limit=200` |
 
 ### LLM Wiki tools (when `wiki.enabled: true`)
 
 When the opt-in [LLM Wiki](./llm_wiki.md) is enabled, eight additional tools are registered:
 
-- `get_wiki_index(limit=100)` and `list_wiki_pages(page_kind=None, limit=50, offset=0)`: Browse active wiki pages with low token overhead.
-- `read_wiki_page(slug)`: Read a page's full Markdown body, aliases, backlinks, version, edit policy, and source citations.
-- `search_wiki(query, top_k=10)`: Search wiki titles, aliases, summaries, and bodies with 1-hop links and source snippets.
-- `upsert_wiki_page(slug, title, body_md, ...)`: Create or update a wiki page using optimistic concurrency (`expected_version`). Respects human-edited and locked pages.
-- `list_wiki_lint_issues(status="open")` and `resolve_wiki_lint_issue(issue_id, status="resolved")`: Inspect and resolve or dismiss wiki health findings.
-- `get_wiki_status()`: Check wiki page counts, event cursor position, and open lint issue counts.
+| Tool | Purpose | Key arguments |
+| :--- | :--- | :--- |
+| `get_wiki_index` | Fetch a compact index of active wiki pages. | `limit=100` |
+| `list_wiki_pages` | Browse active wiki pages with optional kind filtering and pagination. | `page_kind`, `limit=50`, `offset=0` |
+| `read_wiki_page` | Read a page's full Markdown body, aliases, backlinks, edit policy, and source citations. | `slug` |
+| `search_wiki` | Search wiki titles, aliases, summaries, and bodies with linked pages and source snippets. | `query`, `top_k=10` |
+| `upsert_wiki_page` | Create or update a wiki page while respecting human-edited and locked pages. | `slug`, `title`, `body_md` |
+| `list_wiki_lint_issues` | List open or resolved wiki health findings. | `status="open"` |
+| `resolve_wiki_lint_issue` | Mark a wiki health finding as resolved or dismissed. | `issue_id`, `status="resolved"` |
+| `get_wiki_status` | Check wiki page counts, sync progress, and open lint issue counts. | *(none)* |
+
+## Next steps
+
+- Exposing your MCP server over HTTPS? See [Reverse proxy and TLS](./bootstrap_guide.md#reverse-proxy-and-tls) for Caddy and Nginx examples.
+- For all MCP port, OAuth, and base URL settings, see the [Configuration Reference](../reference/configuration.md).
