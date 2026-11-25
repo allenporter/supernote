@@ -1,12 +1,14 @@
-import asyncio
 import hashlib
 import shutil
+import sqlite3
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import MetaData, create_engine, text
+from sqlalchemy import MetaData, create_engine, event, text
+from sqlalchemy.engine import Engine
 
 from supernote.server.config import ServerConfig
 from supernote.server.db.base import Base
@@ -20,59 +22,68 @@ from tests.server.db.models.test_init import (
 pytestmark = pytest.mark.filterwarnings("error::sqlalchemy.exc.SAWarning")
 
 
-@pytest.fixture
-def alembic_config() -> Config:
-    """Return the alembic config object."""
-    # Locate alembic.ini in the supernote package
-    # We assume the test is running in a dev environment where files exist on disk
+def _build_alembic_config() -> Config:
+    """Create a fresh Alembic Config pointing at ``supernote/alembic.ini``."""
     base_dir = Path(__file__).parent.parent.parent.parent
     ini_path = base_dir / "supernote" / "alembic.ini"
     if not ini_path.exists():
-        # Fallback if structure is different (e.g. installed package)
-        # But for dev tests, verify path
         pytest.fail(f"Could not find alembic.ini at {ini_path}")
 
-    return Config(str(ini_path))
+    cfg = Config(str(ini_path))
+    # Skip logging.config.fileConfig() in alembic/env.py on every test migration run.
+    cfg.set_main_option("skip_logging_config", "true")
+    return cfg
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _fast_sqlite_pragmas() -> Generator[None]:
+    """Disable fsyncs and keep temp tables in RAM for ephemeral migration test DBs."""
+
+    def _on_connect(dbapi_conn: object, _connection_record: object) -> None:
+        if isinstance(dbapi_conn, sqlite3.Connection):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA synchronous=OFF")
+            cursor.execute("PRAGMA temp_store=MEMORY")
+            cursor.close()
+
+    event.listen(Engine, "connect", _on_connect)
+    try:
+        yield
+    finally:
+        event.remove(Engine, "connect", _on_connect)
 
 
 @pytest.fixture
-async def migrated_db(tmp_path: Path, alembic_config: Config) -> str:
-    """Copy the golden fixture to a temp file, run migrations, and return the DB URL."""
-    # 1. Locate fixture
+def alembic_config() -> Config:
+    """Return the alembic config object."""
+    return _build_alembic_config()
+
+
+@pytest.fixture(scope="module")
+def _migrated_db_template(
+    tmp_path_factory: pytest.TempPathFactory,
+    _fast_sqlite_pragmas: None,
+) -> Path:
+    """Migrate the v1 golden fixture to head once per module for fast per-test copies."""
     fixture_path = Path("tests/fixtures/db_v1.sqlite").absolute()
     if not fixture_path.exists():
         pytest.fail(f"Fixture not found: {fixture_path}")
 
-    # 2. Copy to tmp_path
-    # specific fix for macOS /private/var symlinks
-    tmp_path = tmp_path.resolve()
-    db_path = tmp_path / "supernote.db"
+    db_dir = tmp_path_factory.mktemp("migrated_db_template").resolve()
+    db_path = db_dir / "supernote.db"
     shutil.copy(fixture_path, db_path)
 
-    # 3. Configure Alembic to use this DB
-    # We use a sync driver for the migration step to avoid async complexities in the thread
-    # and to bypass any potential aiosqlite path issues on macOS.
-    migration_db_url = f"sqlite:///{db_path}"
-    print(f"DEBUG: Migration URL: {migration_db_url}")
+    cfg = _build_alembic_config()
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    command.upgrade(cfg, "head")
+    return db_path
 
-    # We need to set the main option in the config object
-    # NOT in the file.
-    alembic_config.set_main_option("sqlalchemy.url", migration_db_url)
 
-    # 4. Run upgrade head
-    # upgrading involves async operations if we were using async engine directly
-    # but alembic commands are synchronous wrappers usually.
-    # However, our env.py uses async_engine_from_config which needs an event loop.
-    # Since we are in an async test, we need to be careful.
-    # The standard Alembic command is blocking.
-    # Let's run it in a thread to be safe and avoid event loop conflicts if any.
-
-    await asyncio.to_thread(command.upgrade, alembic_config, "head")
-
-    if not db_path.exists():
-        pytest.fail("DB file disappeared after migration!")
-
-    # Return the sync URL for the test to use
+@pytest.fixture
+def migrated_db(tmp_path: Path, _migrated_db_template: Path) -> str:
+    """Copy the module-migrated golden DB to ``tmp_path`` and return its sync URL."""
+    db_path = tmp_path.resolve() / "supernote.db"
+    shutil.copy(_migrated_db_template, db_path)
     return f"sqlite:///{db_path}"
 
 

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import ast
+import functools
 import importlib
 import inspect
 import pkgutil
 import subprocess
 import sys
+from collections import deque
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +33,115 @@ from supernote.server.core import (
     ServerCore,
 )
 from supernote.server.trace import trace_middleware
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _resolve_supernote_module_path(module_name: str) -> tuple[Path, bool] | None:
+    """Resolve a ``supernote.*`` dotted module name to ``(file_path, is_package)``."""
+    if module_name != "supernote" and not module_name.startswith("supernote."):
+        return None
+    rel = Path(*module_name.split("."))
+    pkg_init = REPO_ROOT / rel / "__init__.py"
+    if pkg_init.is_file():
+        return pkg_init, True
+    mod_file = (REPO_ROOT / rel).with_suffix(".py")
+    if mod_file.is_file():
+        return mod_file, False
+    return None
+
+
+def _is_type_checking_guard(test: ast.expr) -> bool:
+    """Return True if an ``if`` condition is ``TYPE_CHECKING`` or ``typing.TYPE_CHECKING``."""
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
+
+
+class _EagerImportVisitor(ast.NodeVisitor):
+    """Collect module-level imports executed at import time (skipping defs and ``if TYPE_CHECKING``)."""
+
+    def __init__(self, pkg_name: str) -> None:
+        self._pkg_name = pkg_name
+        self.imports: set[str] = set()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_If(self, node: ast.If) -> None:
+        if _is_type_checking_guard(node.test):
+            for stmt in node.orelse:
+                self.visit(stmt)
+        else:
+            self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self.imports.add(alias.name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.level > 0:
+            pkg_parts = self._pkg_name.split(".") if self._pkg_name else []
+            up = node.level - 1
+            if up > len(pkg_parts):
+                raise ValueError(
+                    f"Relative import level {node.level} exceeds package depth for {self._pkg_name!r}"
+                )
+            base_parts = pkg_parts[: len(pkg_parts) - up] if up else pkg_parts
+            base = ".".join(base_parts)
+            target = f"{base}.{node.module}" if node.module else base
+        else:
+            target = node.module or ""
+        if not target:
+            return
+        self.imports.add(target)
+        for alias in node.names:
+            if alias.name != "*":
+                candidate = f"{target}.{alias.name}"
+                if _resolve_supernote_module_path(candidate) is not None:
+                    self.imports.add(candidate)
+
+
+@functools.lru_cache(maxsize=None)
+def _direct_eager_imports(module_name: str) -> frozenset[str]:
+    """Parse ``module_name`` with AST and return its direct import-time dependencies."""
+    resolved = _resolve_supernote_module_path(module_name)
+    if resolved is None:
+        return frozenset()
+    file_path, is_pkg = resolved
+    tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    pkg_name = module_name if is_pkg else module_name.rpartition(".")[0]
+    visitor = _EagerImportVisitor(pkg_name)
+    visitor.visit(tree)
+    return frozenset(visitor.imports)
+
+
+def _collect_eager_imports(seed_modules: list[str]) -> set[str]:
+    """Return the transitive closure of static eager imports reachable from ``seed_modules``.
+
+    Uses cached AST traversal instead of spawning a fresh Python subprocess per
+    component so all component import-boundary checks run in milliseconds rather
+    than ~2 cold interpreter startups per component. Dynamic runtime imports in
+    ``supernote.server.app`` are covered separately by a single subprocess check.
+    """
+    visited: set[str] = set()
+    queue: deque[str] = deque(seed_modules)
+    while queue:
+        mod = queue.popleft()
+        if not mod or mod in visited:
+            continue
+        visited.add(mod)
+        if mod == "supernote" or mod.startswith("supernote."):
+            parent = mod.rpartition(".")[0]
+            if parent and parent not in visited:
+                queue.append(parent)
+            for dep in _direct_eager_imports(mod):
+                if dep not in visited:
+                    queue.append(dep)
+    return visited
 
 
 def _discover_component_package_names() -> set[str]:
@@ -54,21 +167,30 @@ def test_builtin_components_registry_matches_subpackages_1to1() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "module_name",
-    [
-        "supernote.server.app",
-        "supernote.server.core",
-        "supernote.server.config",
-        "supernote.server.metrics",
-    ],
-)
-def test_core_modules_do_not_eagerly_import_component_subpackages(
-    module_name: str,
-) -> None:
-    """Importing core server modules must not eagerly load any component subpackage."""
+def _discover_component_submodules(domain: str) -> list[str]:
+    """Return all module names under ``supernote.server.components.<domain>`` without importing them."""
+    pkg_name = f"supernote.server.components.{domain}"
+    pkg_dir = REPO_ROOT / "supernote" / "server" / "components" / domain
+    if not pkg_dir.is_dir():
+        return [pkg_name]
+    modules: list[str] = [pkg_name]
+    for py_file in sorted(pkg_dir.rglob("*.py")):
+        rel_parts = py_file.relative_to(pkg_dir).parts
+        if any(part.startswith(".") or part == "__pycache__" for part in rel_parts):
+            continue
+        if py_file.name == "__init__.py":
+            if len(rel_parts) > 1:
+                modules.append(f"{pkg_name}.{'.'.join(rel_parts[:-1])}")
+        else:
+            mod_parts = (*rel_parts[:-1], py_file.stem)
+            modules.append(f"{pkg_name}.{'.'.join(mod_parts)}")
+    return modules
+
+
+def test_importing_server_app_runtime_does_not_load_component_subpackages() -> None:
+    """Verify in a clean subprocess that importing ``supernote.server.app`` triggers no dynamic component loads."""
     check = (
-        f"import sys, importlib; importlib.import_module({module_name!r}); "
+        "import sys, supernote.server.app; "
         "loaded = sorted("
         "m for m in sys.modules "
         "if m.startswith('supernote.server.components.')"
@@ -82,8 +204,29 @@ def test_core_modules_do_not_eagerly_import_component_subpackages(
         check=True,
     )
     assert result.stdout.strip() == "", (
+        "Component subpackages unexpectedly loaded at runtime when importing "
+        f"supernote.server.app: {result.stdout.strip()}"
+    )
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "supernote.server.app",
+        "supernote.server.core",
+        "supernote.server.config",
+        "supernote.server.metrics",
+    ],
+)
+def test_core_modules_do_not_eagerly_import_component_subpackages(
+    module_name: str,
+) -> None:
+    """Importing core server modules must not eagerly load any component subpackage."""
+    imported = _collect_eager_imports([module_name])
+    loaded = sorted(m for m in imported if m.startswith("supernote.server.components."))
+    assert loaded == [], (
         f"Component subpackages unexpectedly loaded when importing {module_name}: "
-        f"{result.stdout.strip()}"
+        f"{','.join(loaded)}"
     )
 
 
@@ -98,24 +241,11 @@ def test_component_imports_respect_declared_dependencies_and_platforms(
     """Importing a component package and all its submodules must not pull in undeclared sibling components."""
     component = load_component_from_spec(spec)
     allowed = {spec.domain, *component.dependencies, *component.platforms}
-    check = (
-        f"import sys, importlib, pkgutil; "
-        f"pkg = importlib.import_module('supernote.server.components.{spec.domain}'); "
-        "[importlib.import_module(m.name) for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + '.')]; "
-        "prefix = 'supernote.server.components.'; "
-        "domains = sorted({"
-        "m[len(prefix):].split('.', 1)[0] "
-        "for m in sys.modules if m.startswith(prefix)"
-        "}); "
-        "print(','.join(domains))"
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", check],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    loaded_domains = {d for d in result.stdout.strip().split(",") if d}
+    imported = _collect_eager_imports(_discover_component_submodules(spec.domain))
+    prefix = "supernote.server.components."
+    loaded_domains = {
+        m[len(prefix) :].split(".", 1)[0] for m in imported if m.startswith(prefix)
+    }
     unexpected = loaded_domains - allowed
     assert not unexpected, (
         f"Component {spec.domain!r} imported undeclared sibling component(s): "
@@ -137,22 +267,20 @@ def test_non_http_component_modules_do_not_import_http_transport(
         "supernote.server.components.http",
         "supernote.server.routes.decorators",
     )
-    check = (
-        f"import importlib, pkgutil, sys; "
-        f"pkg = importlib.import_module('supernote.server.components.{spec.domain}'); "
-        "[importlib.import_module(m.name) for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + '.') if not m.name.endswith('.http')]; "
-        f"hits = [f for f in {forbidden!r} if f in sys.modules or any(k.startswith(f + '.') for k in sys.modules)]; "
-        "print(','.join(hits))"
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", check],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert result.stdout.strip() == "", (
+    non_http_modules = [
+        m
+        for m in _discover_component_submodules(spec.domain)
+        if not m.endswith(".http") and ".http." not in m
+    ]
+    imported = _collect_eager_imports(non_http_modules)
+    hits = [
+        f
+        for f in forbidden
+        if f in imported or any(k.startswith(f + ".") for k in imported)
+    ]
+    assert hits == [], (
         f"Non-http modules in component {spec.domain!r} imported HTTP transport "
-        f"module(s): {result.stdout.strip()}. Move HTTP routes/middlewares/ASGI mounts "
+        f"module(s): {','.join(hits)}. Move HTTP routes/middlewares/ASGI mounts "
         f"into supernote/server/components/{spec.domain}/http.py."
     )
 
