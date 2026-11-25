@@ -9,7 +9,7 @@
 
 import { computed, createApp, onMounted, onUnmounted, ref } from 'vue';
 import { connectSocket, login, submitOAuthBridgeDecision } from './api/client.js';
-import { ApiError, apiRequest, getToken, logout, onLogout } from './api/http.js';
+import { ApiError, getToken, logout, onLogout } from './api/http.js';
 import DigestPanel from './components/DigestPanel.js';
 import FileBrowserPanel from './components/FileBrowserPanel.js';
 import FileViewer from './components/FileViewer.js';
@@ -47,7 +47,6 @@ createApp({
         // Auth & OAuth Consent State
         const isLoggedIn = ref(false);
         const isLoggingIn = ref(false);
-        const wikiEnabled = ref(false);
         const isSubmittingOAuth = ref(false);
         /** @type {import('vue').Ref<'approved' | 'denied' | null>} */
         const oauthCompletedOutcome = ref(null);
@@ -204,11 +203,6 @@ createApp({
             if (!token) return false;
             isLoggedIn.value = true;
             connectSocket();
-            apiRequest('/api/extended/web/features', { method: 'GET' })
-                .then((data) => {
-                    wikiEnabled.value = Boolean(data?.wiki_enabled);
-                })
-                .catch(() => {});
             return true;
         }
 
@@ -293,7 +287,6 @@ createApp({
 
         const unsubscribeLogout = onLogout(() => {
             isLoggedIn.value = false;
-            wikiEnabled.value = false;
             showSearchModal.value = false;
             searchInitialQuery.value = '';
             focusedTaskRequest.value = null;
@@ -373,7 +366,6 @@ createApp({
             handleLogout,
             activeTab,
             selectedWikiSlug,
-            wikiEnabled,
             navigateToWikiSlug,
             showSearchModal,
             searchInitialQuery,
