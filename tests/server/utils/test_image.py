@@ -11,6 +11,8 @@ from supernote.server.utils.image import (
     MAX_ALLOWED_IMAGE_DIMENSION,
     MIN_ALLOWED_IMAGE_DIMENSION,
     is_image_filename,
+    is_indexable_image_path,
+    is_processable_filename,
     normalize_image_to_png,
 )
 
@@ -121,3 +123,61 @@ def test_normalize_image_to_png_rejects_invalid_or_truncated_bytes(
 ) -> None:
     with pytest.raises(ValueError):
         normalize_image_to_png(bad_bytes)
+
+
+@pytest.mark.parametrize(
+    ("file_name", "expected"),
+    [
+        ("journal.note", True),
+        ("JOURNAL.NOTE", True),
+        ("shot.png", True),
+        ("photo.jpeg", True),
+        ("readme.txt", False),
+        ("doc.pdf", False),
+    ],
+)
+def test_is_processable_filename(file_name: str, expected: bool) -> None:
+    assert is_processable_filename(file_name) is expected
+
+
+@pytest.mark.parametrize(
+    ("vfs_path", "expected"),
+    [
+        ("SCREENSHOT/capture.png", True),
+        ("/INBOX/whiteboard.jpg", True),
+        ("NOTE/Note/diagram.webp", True),
+        ("NOTE/MyStyle/grid_5mm.png", False),
+        ("MyStyle/custom.png", False),
+        ("EXPORT/Daily_1.png", False),
+        ("/EXPORT/nested/page.jpg", False),
+        ("Note/journal.note", False),
+        ("Document/manual.pdf", False),
+    ],
+)
+def test_is_indexable_image_path_defaults(vfs_path: str, expected: bool) -> None:
+    assert is_indexable_image_path(vfs_path) is expected
+
+
+def test_is_indexable_image_path_respects_enabled_and_custom_globs() -> None:
+    assert is_indexable_image_path("SCREENSHOT/a.png", enabled=False) is False
+    assert (
+        is_indexable_image_path(
+            "SCREENSHOT/a.png",
+            include_patterns=("SCREENSHOT/**", "INBOX/**"),
+        )
+        is True
+    )
+    assert (
+        is_indexable_image_path(
+            "DOCUMENT/a.png",
+            include_patterns=("SCREENSHOT/**", "INBOX/**"),
+        )
+        is False
+    )
+    assert (
+        is_indexable_image_path(
+            "EXPORT/a.png",
+            exclude_patterns=("**/MyStyle/**",),
+        )
+        is True
+    )

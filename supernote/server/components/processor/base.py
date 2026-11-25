@@ -291,6 +291,11 @@ class ProcessorModule(abc.ABC):
         return True
 
     @property
+    def supports_standalone_images(self) -> bool:
+        """Whether this module applies to standalone raster image files."""
+        return True
+
+    @property
     def version(self) -> str | None:
         """Optional version or model identifier for the module's output."""
         return None

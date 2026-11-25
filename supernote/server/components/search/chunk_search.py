@@ -156,7 +156,6 @@ def _apply_active_file_filters[*Ts](
         stmt.where(UserFileDO.user_id == query.user_id)
         .where(UserFileDO.is_active == "Y")
         .where(UserFileDO.is_folder == "N")
-        .where(UserFileDO.file_name.ilike("%.note"))
     )
     if query.name_filter:
         stmt = stmt.where(

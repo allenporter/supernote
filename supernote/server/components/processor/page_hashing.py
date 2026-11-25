@@ -35,6 +35,7 @@ from supernote.server.events import NotePagesDeltaEvent
 from supernote.server.metrics import record_note_page_diff
 from supernote.server.services.file import FileService
 from supernote.server.utils.hashing import get_md5_hash
+from supernote.server.utils.image import STANDALONE_IMAGE_PAGE_ID, is_image_filename
 from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 
 from .base import ProcessorModule, TaskScope
@@ -213,9 +214,32 @@ class PageHashingModule(ProcessorModule):
                 return
 
             user_id = user_file.user_id
+            file_name = user_file.file_name
+            file_md5 = user_file.md5
             storage_key = user_file.storage_key
             if not storage_key:
                 logger.error(f"File {file_id} has no storage_key")
+                return
+
+            if is_image_filename(file_name):
+                content_hash = file_md5 or storage_key
+                content_diff = await self._sync_page_content_hashes(
+                    session,
+                    user_id=user_id,
+                    file_id=file_id,
+                    page_identities=[(STANDALONE_IMAGE_PAGE_ID, content_hash)],
+                )
+                await session.commit()
+                record_note_page_diff(
+                    added=content_diff.added,
+                    modified=content_diff.modified,
+                    moved=content_diff.moved,
+                    unchanged=content_diff.unchanged,
+                    deleted=content_diff.deleted,
+                )
+                logger.info(
+                    f"Completed PageHashingModule for standalone image file_id={file_id}"
+                )
                 return
 
             cached_rows = (

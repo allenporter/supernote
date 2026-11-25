@@ -75,11 +75,15 @@ from supernote.server.metrics import (
 )
 from supernote.server.services.file import FileService
 from supernote.server.utils.image import (
+    DEFAULT_IMAGE_EXCLUDE_PATTERNS,
     DEFAULT_MAX_IMAGE_DIMENSION,
     MAX_ALLOWED_IMAGE_DIMENSION,
     MAX_SOURCE_IMAGE_BYTES,
     MIN_ALLOWED_IMAGE_DIMENSION,
+    STANDALONE_IMAGE_PAGE_ID,
     is_image_filename,
+    is_indexable_image_path,
+    is_processable_filename,
     normalize_image_to_png,
 )
 from supernote.server.utils.note_content import (
@@ -92,7 +96,14 @@ from .base import ProcessorModule, TaskGraph, TaskScope
 
 logger = logging.getLogger(__name__)
 
-_STANDALONE_IMAGE_PAGE_ID = "img"
+_IMAGE_NAME_SUFFIX_PATTERNS: tuple[str, ...] = (
+    "%.png",
+    "%.jpg",
+    "%.jpeg",
+    "%.gif",
+    "%.webp",
+    "%.bmp",
+)
 
 
 @dataclass(frozen=True)
@@ -131,6 +142,10 @@ class ProcessorService:
         coordination_service: Any = None,
         concurrency: int = 2,
         page_concurrency: int = DEFAULT_PAGE_CONCURRENCY,
+        *,
+        enable_image_processing: bool = True,
+        image_include_patterns: Sequence[str] = (),
+        image_exclude_patterns: Sequence[str] = DEFAULT_IMAGE_EXCLUDE_PATTERNS,
     ) -> None:
         self.event_bus = event_bus
         self.session_manager = session_manager
@@ -138,6 +153,9 @@ class ProcessorService:
         self.coordination_service = coordination_service
         self.concurrency = concurrency
         self.page_concurrency = page_concurrency
+        self.enable_image_processing = enable_image_processing
+        self.image_include_patterns = tuple(image_include_patterns)
+        self.image_exclude_patterns = tuple(image_exclude_patterns)
 
         self.queue: asyncio.Queue[tuple[int, int]] = (
             asyncio.Queue()
@@ -310,13 +328,34 @@ class ProcessorService:
 
         await asyncio.gather(*self.workers, return_exceptions=True)
 
+    def _should_process_file_path(self, file_path: str) -> bool:
+        """Return True when `file_path` is a `.note` file or an allowed standalone image."""
+        if file_path.lower().endswith(".note"):
+            return True
+        return is_indexable_image_path(
+            file_path,
+            enabled=self.enable_image_processing,
+            include_patterns=self.image_include_patterns,
+            exclude_patterns=self.image_exclude_patterns,
+        )
+
     async def handle_note_updated(self, event: Event) -> None:
         """Enqueue file for processing."""
         if not isinstance(event, NoteUpdatedEvent):
             return
+        file_path = event.file_path
+        if not file_path:
+            file_path = await self.file_service.get_full_path_by_node(
+                event.user_id, event.file_id
+            )
+        if file_path and not self._should_process_file_path(file_path):
+            logger.debug(
+                f"Skipping excluded or disabled file {event.file_id} ({file_path})"
+            )
+            return
         if event.defer_processing:
             logger.debug(
-                f"Deferring processing for note {event.file_id} ({event.file_path}) until sync completes"
+                f"Deferring processing for note {event.file_id} ({file_path}) until sync completes"
             )
             async with self.session_manager.session() as session:
                 await session.execute(
@@ -328,7 +367,7 @@ class ProcessorService:
                 )
                 await session.commit()
             return
-        logger.info(f"Received update for note: {event.file_id} ({event.file_path})")
+        logger.info(f"Received update for file: {event.file_id} ({file_path})")
         item = (event.user_id, event.file_id)
         if item not in self.processing_files:
             self.processing_files.add(item)
@@ -342,10 +381,10 @@ class ProcessorService:
         await self.recover_missing_tasks(user_id=event.user_id)
 
     async def handle_vfs_item_purged(self, event: Event) -> None:
-        """Clean up artifacts when a `.note` file is permanently purged."""
+        """Clean up artifacts when a processed file is permanently purged."""
         if not isinstance(event, VfsItemPurgedEvent):
             return
-        if event.is_folder or not event.name.endswith(".note"):
+        if event.is_folder or not is_processable_filename(event.name):
             return
         file_id = event.item_id
         logger.info(f"Received delete for note: {file_id}")
@@ -462,7 +501,13 @@ class ProcessorService:
                 )
                 if module.version is not None:
                     task_exists = task_exists.where(SystemTaskDO.data == module.version)
-                conditions.append(~task_exists.correlate(UserFileDO).exists())
+                missing_cond = ~task_exists.correlate(UserFileDO).exists()
+                if not module.supports_standalone_images:
+                    missing_cond = and_(
+                        UserFileDO.file_name.ilike("%.note"),
+                        missing_cond,
+                    )
+                conditions.append(missing_cond)
             else:
                 page_task_exists = select(SystemTaskDO.id).where(
                     SystemTaskDO.user_id == UserFileDO.user_id,
@@ -486,21 +531,42 @@ class ProcessorService:
                     .correlate(UserFileDO)
                     .exists()
                 )
+                if not module.supports_standalone_images:
+                    page_missing_exists = and_(
+                        UserFileDO.file_name.ilike("%.note"),
+                        page_missing_exists,
+                    )
                 conditions.append(page_missing_exists)
+
+        name_filters = [UserFileDO.file_name.ilike("%.note")]
+        if self.enable_image_processing:
+            name_filters.extend(
+                UserFileDO.file_name.ilike(pattern)
+                for pattern in _IMAGE_NAME_SUFFIX_PATTERNS
+            )
 
         async with self.session_manager.session() as session:
             stmt = (
-                select(UserFileDO.id, UserFileDO.user_id)
+                select(UserFileDO.id, UserFileDO.user_id, UserFileDO.file_name)
                 .where(
-                    UserFileDO.file_name.like("%.note"),
+                    or_(*name_filters),
                     UserFileDO.is_active == "Y",
+                    UserFileDO.is_folder == "N",
                 )
                 .where(or_(*conditions))
             )
             if user_id is not None:
                 stmt = stmt.where(UserFileDO.user_id == user_id)
             result = await session.execute(stmt)
-            missing = result.all()
+            candidates = result.all()
+
+        missing: list[tuple[int, int]] = []
+        for file_id, uid, file_name in candidates:
+            if not file_name.lower().endswith(".note"):
+                full_path = await self.file_service.get_full_path_by_node(uid, file_id)
+                if not self._should_process_file_path(full_path):
+                    continue
+            missing.append((file_id, uid))
 
         if not missing:
             return
@@ -1432,10 +1498,10 @@ class ProcessorService:
         storage_key: str,
     ) -> tuple[str, bytes] | None:
         """Load cached PNG or raw standalone image bytes from blob storage."""
-        cached_key = get_page_png_path(file_id, _STANDALONE_IMAGE_PAGE_ID)
+        cached_key = get_page_png_path(file_id, STANDALONE_IMAGE_PAGE_ID)
         try:
             return (
-                _STANDALONE_IMAGE_PAGE_ID,
+                STANDALONE_IMAGE_PAGE_ID,
                 await self._read_blob_bytes(
                     CACHE_BUCKET,
                     cached_key,
@@ -1447,7 +1513,7 @@ class ProcessorService:
 
         try:
             return (
-                _STANDALONE_IMAGE_PAGE_ID,
+                STANDALONE_IMAGE_PAGE_ID,
                 await self._read_blob_bytes(
                     USER_DATA_BUCKET,
                     storage_key,

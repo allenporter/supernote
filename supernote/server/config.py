@@ -21,6 +21,8 @@ from typing import Any, cast
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.yaml import DataClassYAMLMixin
 
+from supernote.server.utils.image import DEFAULT_IMAGE_EXCLUDE_PATTERNS
+
 logger = logging.getLogger(__name__)
 
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -242,6 +244,17 @@ class ServerConfig(DataClassYAMLMixin):
 
     Env Var: `SUPERNOTE_DEFAULT_USER_QUOTA`
     """
+
+    enable_image_processing: bool = True
+    """Whether standalone raster images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`) are indexed by the background OCR pipeline."""
+
+    image_include_patterns: list[str] = field(default_factory=list)
+    """Optional VFS path globs restricting standalone image indexing (empty = allow all paths not excluded)."""
+
+    image_exclude_patterns: list[str] = field(
+        default_factory=lambda: list(DEFAULT_IMAGE_EXCLUDE_PATTERNS)
+    )
+    """VFS path globs excluded from standalone image indexing (defaults to `MyStyle/**` and `EXPORT/**`)."""
 
     event_log_retention_days: int = 90
     """Number of days to retain domain events in `f_user_event` (0 = retain indefinitely).

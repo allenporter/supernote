@@ -88,6 +88,9 @@ class ProcessorComponent:
             session_manager=core.session_manager,
             file_service=core.file_service,
             coordination_service=core.coordination,
+            enable_image_processing=core.config.enable_image_processing,
+            image_include_patterns=core.config.image_include_patterns,
+            image_exclude_patterns=core.config.image_exclude_patterns,
         )
         core.app[PROCESSOR_SERVICE_KEY] = service
         self._service = service

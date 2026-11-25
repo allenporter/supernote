@@ -6,6 +6,7 @@ from pathlib import Path
 
 from supernote.server.ai.prompts import (
     PageMetadata,
+    format_image_ocr_prompt,
     format_ocr_prompt,
     format_summary_prompt,
     get_summary_json_schema,
@@ -106,3 +107,16 @@ def test_format_ocr_prompt_prefers_filename_prompt_over_page_style(
 
     assert "Daily prompt from filename." in prompt
     assert "Weekly prompt from page_style." not in prompt
+
+
+def test_format_image_ocr_prompt_excludes_rapid_logging_legend() -> None:
+    page_metadata = PageMetadata(
+        file_name="whiteboard.jpg",
+        page_index=0,
+        page_id="img",
+        notebook_create_time=None,
+    )
+    prompt = format_image_ocr_prompt(page_metadata)
+    assert "Image Filename: whiteboard.jpg" in prompt
+    assert "Visual Scene / Photo Summary" in prompt
+    assert "Rapid Logging" not in prompt

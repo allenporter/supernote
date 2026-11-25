@@ -8,16 +8,21 @@ the processing pipeline.
 from __future__ import annotations
 
 import io
-from pathlib import Path
+from collections.abc import Sequence
+from pathlib import Path, PurePosixPath
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 __all__ = [
+    "DEFAULT_IMAGE_EXCLUDE_PATTERNS",
     "DEFAULT_MAX_IMAGE_DIMENSION",
     "MAX_ALLOWED_IMAGE_DIMENSION",
     "MAX_SOURCE_IMAGE_BYTES",
     "MIN_ALLOWED_IMAGE_DIMENSION",
+    "STANDALONE_IMAGE_PAGE_ID",
     "is_image_filename",
+    "is_indexable_image_path",
+    "is_processable_filename",
     "normalize_image_to_png",
 ]
 
@@ -26,6 +31,17 @@ __all__ = [
 _SUPPORTED_IMAGE_EXTENSIONS: frozenset[str] = frozenset(
     {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 )
+
+STANDALONE_IMAGE_PAGE_ID: str = "img"
+"""Virtual `NotePageContentDO.page_id` assigned to 1-page standalone image files."""
+
+DEFAULT_IMAGE_EXCLUDE_PATTERNS: tuple[str, ...] = (
+    "MyStyle/**",
+    "**/MyStyle/**",
+    "EXPORT/**",
+    "**/EXPORT/**",
+)
+"""Default VFS path globs excluded from standalone image indexing (templates and tablet exports)."""
 
 DEFAULT_MAX_IMAGE_DIMENSION: int = 1568
 """Default longest-edge pixel cap matching common vision-model tile boundaries."""
@@ -46,6 +62,42 @@ _PNG_COMPRESS_LEVEL = 6
 def is_image_filename(file_name: str) -> bool:
     """Return True when ``file_name`` has a supported standalone image extension."""
     return Path(file_name).suffix.lower() in _SUPPORTED_IMAGE_EXTENSIONS
+
+
+def is_processable_filename(file_name: str) -> bool:
+    """Return True when ``file_name`` is a `.note` notebook or supported standalone image."""
+    return file_name.lower().endswith(".note") or is_image_filename(file_name)
+
+
+def _matches_vfs_glob(normalized_path: str, pattern: str) -> bool:
+    """Match a lowercase slash-normalized VFS path against a case-insensitive glob pattern."""
+    cleaned_pattern = pattern.strip().lstrip("/").lower()
+    if not cleaned_pattern:
+        return False
+    return PurePosixPath(normalized_path).full_match(cleaned_pattern)
+
+
+def is_indexable_image_path(
+    vfs_path: str,
+    *,
+    enabled: bool = True,
+    include_patterns: Sequence[str] = (),
+    exclude_patterns: Sequence[str] = DEFAULT_IMAGE_EXCLUDE_PATTERNS,
+) -> bool:
+    """Return True when a standalone image at ``vfs_path`` should enter the OCR pipeline."""
+    if not enabled:
+        return False
+    normalized = vfs_path.replace("\\", "/").strip().lstrip("/")
+    if not normalized or not is_image_filename(normalized):
+        return False
+    lower_path = normalized.lower()
+    if include_patterns and not any(
+        _matches_vfs_glob(lower_path, pat) for pat in include_patterns
+    ):
+        return False
+    if any(_matches_vfs_glob(lower_path, pat) for pat in exclude_patterns):
+        return False
+    return True
 
 
 def _needs_exif_transpose(img: Image.Image) -> bool:
