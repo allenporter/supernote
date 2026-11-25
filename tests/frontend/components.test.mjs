@@ -279,6 +279,19 @@ test('SystemPanel.js: loads read-only system components, active counts, and conf
                     JSON.stringify({ success: true, components: initialComponents }),
                 );
             }
+            if (url === '/api/extended/system/components/webhooks') {
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        component: {
+                            ...initialComponents[0],
+                            enabled: false,
+                            running: false,
+                            config: { ...initialComponents[0].config, enabled: false },
+                        },
+                    }),
+                );
+            }
             return new Response(JSON.stringify({ success: true }));
         };
 
@@ -298,6 +311,9 @@ test('SystemPanel.js: loads read-only system components, active counts, and conf
             assert.deepEqual(scope.result.componentConfigSummary(initialComponents[1]), [
                 'debounce_seconds: 60',
             ]);
+
+            await scope.result.handleToggleComponent(scope.result.systemComponents.value[0]);
+            assert.equal(scope.result.systemComponents.value[0].enabled, false);
         } finally {
             scope.unmount();
             delete (/** @type {any} */ (globalThis).window);
