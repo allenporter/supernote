@@ -76,3 +76,22 @@ async def test_http_component_lifecycle(
     assert registrar.router is component_core.app.router
 
     await loader.async_stop_all(component_core)
+
+
+async def test_http_component_proxy_modes_and_validation(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    await load_components(
+        "http",
+        configs={"http": {"proxy_mode": "strict", "trusted_proxies": ["10.0.0.1"]}},
+        start=False,
+    )
+    assert len(component_core.app.middlewares) >= 1
+
+    with pytest.raises(ValueError, match="http.proxy_mode must be one of"):
+        await load_components(
+            "http",
+            configs={"http": {"proxy_mode": "invalid"}},
+            start=False,
+        )
