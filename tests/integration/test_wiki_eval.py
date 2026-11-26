@@ -117,6 +117,7 @@ async def test_run_daily_log_eval_with_fake_model(tmp_path: Path) -> None:
 def test_chronological_drift_eval_dataset_manifest_is_well_formed() -> None:
     dataset = load_wiki_eval_dataset(CHRONOLOGICAL_DRIFT_DATASET_PATH)
     assert dataset.name == "supernote-wiki-chronological-drift-v1"
-    assert len(dataset.notebooks) == 4
-    assert len(dataset.expected_concepts) >= 4
-    assert len(dataset.expected_facts) >= 7
+    assert len(dataset.notebooks) == 12
+    assert sum(len(nb.pages) for nb in dataset.notebooks) >= 70
+    assert len(dataset.expected_concepts) >= 14
+    assert len(dataset.expected_facts) >= 12

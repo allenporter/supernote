@@ -35,7 +35,7 @@ uv run --no-sync python script/eval_wiki.py \
 
 ## Chronological Drift Dataset (`chronological_drift_dataset.yaml`)
 
-Tests whether decisions that evolve across multiple sequential topic notebooks (`FieldNote_Architecture.note` -> `FieldNote_Migration.note` -> `FieldNote_Launch.note`) plus an overlapping long-running `Daily_Log.note` preserve the latest state without reverting to superseded earlier specs.
+Large-scale 12-notebook, **70-page** multi-quarter corpus spanning Feb–Nov 2026: 6 undated deep project notebooks whose later specs supersede earlier ones (`FieldNote_Initial_Spec.note` -> `FieldNote_Midyear_Pivot.note` -> `FieldNote_Launch_Notes.note`, `Home_Energy_Upgrade.note`, `Backyard_Workshop.note`, `Trail_Ultra_Prep.note`), 3 weekly/monthly/quarterly reflection notebooks, 2 recurring topic notebooks (`Reading_Log_2026.note`, `Robotics_Club_2026.note`), and a 32-page running `Daily_Log.note` (4 sequential 8-page windows). Evaluates backfill ordering, chunking, and cross-notebook decision evolution under realistic vault pressure.
 
 ## Running the Eval
 
