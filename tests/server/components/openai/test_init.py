@@ -12,6 +12,7 @@ from supernote.server.ai.models.embedding import (
 )
 from supernote.server.ai.models.summary import ConcurrencyLimitedSummaryModel
 from supernote.server.components.ai import AiComponent
+from supernote.server.components.openai import OpenAIComponent
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import Component, ServerCore
 from tests.server.components.conftest import LoadComponents
@@ -21,12 +22,24 @@ async def test_openai_component_registers_all_ai_platforms(
     component_core: ServerCore,
     load_components: LoadComponents,
 ) -> None:
-    loader = await load_components("openai")
+    loader = await load_components(
+        "openai",
+        configs={
+            "openai": {
+                "enabled": True,
+                "base_url": "http://localhost:11434/v1",
+                "api_key": "sk-local",
+            }
+        },
+    )
     component = loader.get("openai")
+    assert isinstance(component, OpenAIComponent)
     assert isinstance(component, Component)
     assert component.domain == "openai"
     assert component.dependencies == ("ai",)
     assert component.platforms == ("ocr", "summary", "embedding", "text")
+    assert component._config.base_url == "http://localhost:11434/v1"
+    assert component._config.providers["openai"].base_url == "http://localhost:11434/v1"
 
     ai_component = loader.get("ai")
     assert isinstance(ai_component, AiComponent)

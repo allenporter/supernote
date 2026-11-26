@@ -390,8 +390,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
-    prompts_dir: str | None = None
+    prompts_dir: str | None = field(
+        default=None,
+        metadata={"component": ("ai", "prompts_dir")},
+    )
     """Directory where custom AI prompts are located.
+
+    Aliases `ai.prompts_dir`.
 
     Env Var: `SUPERNOTE_PROMPTS_DIR`
     """
@@ -822,6 +827,7 @@ class ServerConfig(DataClassYAMLMixin):
 
         if prompts_dir := os.getenv("SUPERNOTE_PROMPTS_DIR"):
             config.prompts_dir = prompts_dir
+            config._component_sources["ai"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_PROMPTS_DIR: {config.prompts_dir}")
 
         if os.getenv("SUPERNOTE_METRICS_ENABLED"):

@@ -44,6 +44,8 @@ from supernote.server.ai.models.text import (
 from supernote.server.core import ServerCore
 from supernote.server.utils.prompt_loader import PROMPT_LOADER
 
+from .config import AiComponentConfig
+
 if TYPE_CHECKING:
     from supernote.server.config import ModelConfig, ServerConfig
 
@@ -270,6 +272,7 @@ class AiComponent:
 
     def __init__(self) -> None:
         self._registrar: AiRegistrar | None = None
+        self._config: AiComponentConfig = AiComponentConfig()
 
     def get_platform_registrar(self) -> AiRegistrar:
         """Return the `AiRegistrar` initialized during `async_setup`."""
@@ -278,8 +281,9 @@ class AiComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Configure prompt overrides and initialize `AiRegistrar`."""
-        if core.config.prompts_dir:
-            PROMPT_LOADER.configure(Path(core.config.prompts_dir))
+        self._config = AiComponentConfig.from_dict(dict(config))
+        if self._config.prompts_dir:
+            PROMPT_LOADER.configure(Path(self._config.prompts_dir))
         core.app[OCR_MODEL_KEY] = None
         core.app[SUMMARY_MODEL_KEY] = None
         core.app[EMBEDDING_MODEL_KEY] = None
