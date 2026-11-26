@@ -215,13 +215,8 @@ class ConversionService:
         user_id, node = await self._get_required_note_node(user, file_id)
         assert node.storage_key is not None and node.md5 is not None
 
-        blob_content = b"".join(
-            [
-                chunk
-                async for chunk in self.blob_storage.get(
-                    USER_DATA_BUCKET, node.storage_key
-                )
-            ]
+        blob_content = await self.blob_storage.get_bytes(
+            USER_DATA_BUCKET, node.storage_key
         )
         pdf_bytes = await asyncio.to_thread(
             _convert_note_to_pdf_sync, blob_content, page_no_list
@@ -279,13 +274,8 @@ class ConversionService:
         """Read a summary's raw handwriting `.mark` blob from USER_DATA_BUCKET."""
         assert summary.handwrite_inner_name is not None
         try:
-            return b"".join(
-                [
-                    chunk
-                    async for chunk in self.blob_storage.get(
-                        USER_DATA_BUCKET, summary.handwrite_inner_name
-                    )
-                ]
+            return await self.blob_storage.get_bytes(
+                USER_DATA_BUCKET, summary.handwrite_inner_name
             )
         except FileNotFoundError as err:
             raise FileNotFound("Handwriting data not found") from err
@@ -345,25 +335,6 @@ class ConversionService:
             file_name=f"summary_{summary.id}_page_{page_no}.png",
         )
 
-    async def _read_blob_bytes(
-        self,
-        bucket: str,
-        key: str,
-        *,
-        max_bytes: int | None = None,
-    ) -> bytes:
-        """Stream a blob into memory, enforcing an optional byte limit."""
-        chunks: list[bytes] = []
-        total = 0
-        async for chunk in self.blob_storage.get(bucket, key):
-            total += len(chunk)
-            if max_bytes is not None and total > max_bytes:
-                raise ValueError(
-                    f"Image exceeds maximum allowed size of {max_bytes} bytes."
-                )
-            chunks.append(chunk)
-        return b"".join(chunks)
-
     async def _get_page_id(self, file_id: int, page_index: int) -> str | None:
         """Look up the `NotePageContentDO.page_id` for `(file_id, page_index)`."""
         async with self.session_manager.session() as session:
@@ -386,7 +357,7 @@ class ConversionService:
         if page_id is not None:
             png_key = get_page_png_path(file_id, page_id)
             try:
-                return page_id, await self._read_blob_bytes(
+                return page_id, await self.blob_storage.get_bytes(
                     CACHE_BUCKET,
                     png_key,
                     max_bytes=MAX_SOURCE_IMAGE_BYTES,
@@ -409,7 +380,7 @@ class ConversionService:
 
         png_key = get_page_png_path(file_id, page_id)
         try:
-            return page_id, await self._read_blob_bytes(
+            return page_id, await self.blob_storage.get_bytes(
                 CACHE_BUCKET,
                 png_key,
                 max_bytes=MAX_SOURCE_IMAGE_BYTES,
@@ -428,7 +399,7 @@ class ConversionService:
         try:
             return (
                 STANDALONE_IMAGE_PAGE_ID,
-                await self._read_blob_bytes(
+                await self.blob_storage.get_bytes(
                     CACHE_BUCKET,
                     cached_key,
                     max_bytes=MAX_SOURCE_IMAGE_BYTES,
@@ -440,7 +411,7 @@ class ConversionService:
         try:
             return (
                 STANDALONE_IMAGE_PAGE_ID,
-                await self._read_blob_bytes(
+                await self.blob_storage.get_bytes(
                     USER_DATA_BUCKET,
                     storage_key,
                     max_bytes=MAX_SOURCE_IMAGE_BYTES,

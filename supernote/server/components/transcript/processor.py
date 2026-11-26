@@ -207,13 +207,9 @@ class OcrModule(ProcessorModule):
             )
 
         png_path = get_page_png_path(file_id, page_id)
-        chunks = [
-            chunk
-            async for chunk in self.file_service.blob_storage.get(
-                CACHE_BUCKET, png_path
-            )
-        ]
-        png_data = b"".join(chunks)
+        png_data = await self.file_service.blob_storage.get_bytes(
+            CACHE_BUCKET, png_path
+        )
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
         async with session_manager.session() as session:
