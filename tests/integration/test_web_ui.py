@@ -901,6 +901,7 @@ async def test_web_ui_minimal_components_disabled(
         "ai",
         "conversion",
         "mcp",
+        "note_metadata",
         "processor",
         "schedule",
         "search",
