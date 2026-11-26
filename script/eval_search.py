@@ -29,20 +29,23 @@ from evals.search import (  # noqa: E402
 )
 from supernote.server.ai.models.embedding import EmbeddingModel  # noqa: E402
 from supernote.server.components.ai import AiRegistrar  # noqa: E402
+from supernote.server.components.ai.config import AiComponentConfig  # noqa: E402
 from supernote.server.components.fake_ai.embedding import (  # noqa: E402
     FakeEmbeddingModel,
 )
-from supernote.server.components.fake_ai.embedding import (  # noqa: E402
-    create_embedding_model as create_fake_embedding_model,
+from supernote.server.components.gemini.backend import (  # noqa: E402
+    create_gemini_backend,
 )
 from supernote.server.components.gemini.embedding import (  # noqa: E402
-    create_embedding_model as create_gemini_embedding_model,
+    GeminiEmbeddingModel,
+)
+from supernote.server.components.openai.backend import (  # noqa: E402
+    create_openai_backend,
 )
 from supernote.server.components.openai.embedding import (  # noqa: E402
-    create_embedding_model as create_openai_embedding_model,
+    OpenAIEmbeddingModel,
 )
 from supernote.server.config import (  # noqa: E402
-    AiConfig,
     ModelConfig,
     ProviderConfig,
     ServerConfig,
@@ -226,21 +229,35 @@ def _build_embedding_model(args: argparse.Namespace) -> EmbeddingModel:
             dimensions=256, model_id="blended", blended=True
         )
     else:
-        target_cfg = dataclasses.replace(
-            config,
-            ai=AiConfig(
-                providers=providers,
-                embedding=ModelConfig(
-                    provider=provider_name,
-                    model=model_name,
-                    max_concurrency=args.max_concurrency,
-                ),
+        target_cfg = AiComponentConfig(
+            providers=providers,
+            embedding=ModelConfig(
+                provider=provider_name,
+                model=model_name,
+                max_concurrency=args.max_concurrency,
             ),
         )
         registrar = AiRegistrar()
-        registrar.register_embedding("fake", create_fake_embedding_model)
-        registrar.register_embedding("gemini", create_gemini_embedding_model)
-        registrar.register_embedding("openai", create_openai_embedding_model)
+        registrar.register_embedding(
+            "fake",
+            lambda p, m: FakeEmbeddingModel(model_id=m, provider=p),
+        )
+        registrar.register_embedding(
+            "gemini",
+            lambda p, m: (
+                GeminiEmbeddingModel(b, m)
+                if (b := create_gemini_backend(providers, p)) is not None
+                else None
+            ),
+        )
+        registrar.register_embedding(
+            "openai",
+            lambda p, m: (
+                OpenAIEmbeddingModel(b, m)
+                if (b := create_openai_backend(providers, p)) is not None
+                else None
+            ),
+        )
         inner = registrar.create_embedding_model(target_cfg)
 
     if inner is None:
