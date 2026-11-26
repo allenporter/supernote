@@ -19,6 +19,7 @@ from supernote.server.components.conversion.processor import (
     PngConversionModule,
 )
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
@@ -147,6 +148,7 @@ async def test_migrated_legacy_generated_summaries_api_query(tmp_path: Path) -> 
         )
         processor.register_modules(
             hashing=PageHashingModule(app[FILE_SERVICE_KEY]),
+            metadata=NoteMetadataModule(app[FILE_SERVICE_KEY]),
             png=PngConversionModule(app[FILE_SERVICE_KEY]),
             ocr=OcrModule(app[FILE_SERVICE_KEY], ocr_model=None),
             summary=SummaryModule(

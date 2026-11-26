@@ -20,6 +20,7 @@ from supernote.server.components.conversion.processor import (
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorService,
@@ -328,6 +329,7 @@ async def test_handle_note_deleted_cleanup(
     # Trigger deletion event across registered modules
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
+        metadata=NoteMetadataModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
         ocr=OcrModule(file_service=file_service, ocr_model=None),
         summary=SummaryModule(
@@ -843,6 +845,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
     """Verify recover_missing_tasks enqueues files needing OCR, embedding, or summary backfill."""
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
+        metadata=NoteMetadataModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
         ocr=OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
         embedding=EmbeddingModule(
@@ -888,6 +891,16 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     key="global",
                     status="COMPLETED",
                     data="v3",
+                )
+            )
+            session.add(
+                SystemTaskDO(
+                    user_id=1,
+                    file_id=fid,
+                    task_type="NOTE_METADATA",
+                    key="global",
+                    status="COMPLETED",
+                    data="v1",
                 )
             )
             session.add(
@@ -1259,6 +1272,7 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
     )
     processor.register_modules(
         hashing=PageHashingModule(file_service),
+        metadata=NoteMetadataModule(file_service),
         png=PngConversionModule(file_service),
         ocr=OcrModule(file_service, ocr_model),
         embedding=EmbeddingModule(file_service, embedding_model),
@@ -1443,8 +1457,11 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
     file_service: FileService,
     test_user_id: int,
 ) -> None:
-    """Verify VfsItemPurgedEvent purges note, page, and title metadata via PageHashingModule.cleanup_file."""
-    processor_service.register_modules(hashing=PageHashingModule(file_service))
+    """Verify VfsItemPurgedEvent purges note, page, and title metadata via NoteMetadataModule.cleanup_file."""
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service),
+        metadata=NoteMetadataModule(file_service),
+    )
 
     async with session_manager.session() as session:
         session.add_all(
@@ -2277,6 +2294,7 @@ async def test_standalone_image_pipeline_end_to_end_and_search(
     processor.set_modules(
         [
             PageHashingModule(file_service),
+            NoteMetadataModule(file_service),
             PngConversionModule(file_service),
             OcrModule(file_service, _CapturingOcr()),
             EmbeddingModule(file_service, FakeEmbeddingModel()),
@@ -2296,6 +2314,7 @@ async def test_standalone_image_pipeline_end_to_end_and_search(
     tasks = await processor.list_system_tasks(user_id=test_user_id, file_id=file_id)
     task_types = {t.task_type for t in tasks}
     assert TaskType.PAGE_HASHING.value in task_types
+    assert TaskType.NOTE_METADATA.value not in task_types
     assert TaskType.PNG_CONVERSION.value in task_types
     assert TaskType.OCR_EXTRACTION.value in task_types
     assert TaskType.EMBEDDING_GENERATION.value in task_types

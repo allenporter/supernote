@@ -25,7 +25,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `integrity` | Yes | — | `http` | Two-way VFS, database, and disk blob integrity verification endpoints. |
 | `mcp` | Yes | `oauth` | — | Streamable HTTP Model Context Protocol server (`mcp` platform host on port `8081`). |
 | `metrics` | Yes | — | `http` | Prometheus `/metrics` endpoint and periodic storage metrics collector. |
-| `note_metadata` | Yes | `processor` | `http` | Structured `.note` metadata (`POST /api/extended/file/note/metadata`) and signed title crop PNG previews (`GET /api/oss/title/*`). |
+| `note_metadata` | Yes | `processor` | `http`, `processor` | `.note` structure extraction (`NoteMetadataModule`), metadata API (`POST /api/extended/file/note/metadata`), and signed title crop previews (`GET /api/oss/title/*`). |
 | `oauth` | Yes | — | `http` | OAuth 2.1 Authorization Server (PKCE, CIMD, consent UI, token issuance/revocation). |
 | `openai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | OpenAI-compatible provider supporting OpenAI API, Ollama, vLLM, llama.cpp, and LM Studio. |
 | `processor` | Yes | — | `http`, `processor` | Incremental background note/image processing queue, page hashing, and notebook metadata extraction. |
@@ -33,7 +33,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `search` | Yes | `ai` | `http`, `mcp`, `processor` | Lexical keyword search, vector embeddings, hybrid ranking, and `list_notebooks` / `search_notebook_chunks` MCP tools. |
 | `socketio` | Yes | — | `http` | Real-time Socket.IO sync notifications (`FILE-SYN`, `TASK-SYN`, `SUMMARY-SYN`). |
 | `summary` | Yes | `ai`, `conversion` | `http`, `processor` | Reading digests, AI notebook summaries, and cached digest handwriting PDF/PNG rendering. |
-| `transcript` | Yes | `ai` | `http`, `mcp`, `processor` | OCR page transcription stage, transcript storage, and `get_notebook_transcript` MCP tool. |
+| `transcript` | Yes | `ai`, `conversion`, `note_metadata` | `http`, `mcp`, `processor` | OCR page transcription stage, transcript storage, and `get_notebook_transcript` MCP tool. |
 | `web_ui` | Yes | — | `http` | Zero-build Vue 3 editorial Web UI served from `supernote/server/static/`. |
 | `webhooks` | No | `events` | — | HMAC-SHA256 signed outbound HTTP webhooks (`note.sync_completed`, etc.). |
 | `wiki` | No | `ai`, `events` | `http`, `mcp` | Opt-in LLM Wiki compiler, lint engine, Obsidian `.zip` export, and 8 MCP wiki tools. |

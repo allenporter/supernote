@@ -20,7 +20,7 @@ async def test_note_metadata_component_lifecycle(
     assert isinstance(component, Component)
     assert component.domain == "note_metadata"
     assert component.dependencies == ("processor",)
-    assert component.platforms == ("http",)
+    assert component.platforms == ("http", "processor")
     service = component_core.app[NOTE_METADATA_SERVICE_KEY]
     assert isinstance(service, NoteMetadataService)
 

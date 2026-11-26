@@ -11,6 +11,7 @@ from supernote.server.components.conversion.processor import (
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.components.search.processor import EmbeddingModule
@@ -94,6 +95,7 @@ async def test_full_processing_pipeline_with_real_file(
 
     # Register modules with fake task models
     hashing = PageHashingModule(processor_service.file_service)
+    metadata = NoteMetadataModule(processor_service.file_service)
     png = PngConversionModule(processor_service.file_service)
     ocr = OcrModule(processor_service.file_service, fake_ocr_model)
     embedding = EmbeddingModule(processor_service.file_service, fake_embedding_model)
@@ -105,6 +107,7 @@ async def test_full_processing_pipeline_with_real_file(
 
     processor_service.register_modules(
         hashing=hashing,
+        metadata=metadata,
         png=png,
         ocr=ocr,
         embedding=embedding,
@@ -154,8 +157,8 @@ async def test_full_processing_pipeline_with_real_file(
             .all()
         )
 
-        # Hashing (1) + Per-Page (3 types * N pages) + Summary (1)
-        expected_task_count = 1 + (total_pages * 3) + 1
+        # Hashing (1) + Metadata (1) + Per-Page (3 types * N pages) + Summary (1)
+        expected_task_count = 2 + (total_pages * 3) + 1
 
         # Filter for COMPLETED
         completed_tasks = [t for t in tasks if t.status == "COMPLETED"]
@@ -247,6 +250,7 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
 
     processor_service.register_modules(
         hashing=PageHashingModule(processor_service.file_service),
+        metadata=NoteMetadataModule(processor_service.file_service),
         png=PngConversionModule(processor_service.file_service),
         ocr=OcrModule(processor_service.file_service, fake_ocr_model),
         embedding=EmbeddingModule(processor_service.file_service, fake_embedding_model),
@@ -298,4 +302,4 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
             .scalars()
             .all()
         )
-        assert len(completed_tasks) == 1 + (3 * 3) + 1
+        assert len(completed_tasks) == 2 + (3 * 3) + 1

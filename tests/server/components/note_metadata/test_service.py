@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from supernote.server.components.note_metadata import NoteMetadataService
-from supernote.server.components.processor.page_hashing import PageHashingModule
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NoteTitleDO
@@ -62,8 +62,8 @@ async def _hash_heading_note(
             )
         )
         await session.commit()
-    hashing = PageHashingModule(file_service=file_service)
-    assert await hashing.run(file_id, session_manager, user_id=user_id) is True
+    metadata_mod = NoteMetadataModule(file_service=file_service)
+    assert await metadata_mod.run(file_id, session_manager, user_id=user_id) is True
 
 
 async def _read_cache(file_service: FileService, key: str) -> bytes:

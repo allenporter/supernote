@@ -187,10 +187,15 @@ class ProcessorService:
         ocr: ProcessorModule | None = None,
         embedding: ProcessorModule | None = None,
         summary: ProcessorModule | None = None,
+        metadata: ProcessorModule | None = None,
     ) -> None:
         """Register the built-in processing modules into the task dependency graph."""
         self.set_modules(
-            [m for m in (hashing, png, ocr, embedding, summary) if m is not None]
+            [
+                m
+                for m in (hashing, metadata, png, ocr, embedding, summary)
+                if m is not None
+            ]
         )
 
     async def start(self) -> None:

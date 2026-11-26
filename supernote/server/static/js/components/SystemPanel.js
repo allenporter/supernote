@@ -23,6 +23,7 @@ const COMPONENT_SOURCE_LABELS = {
 const TASK_TYPE_LABELS = {
     HASHING: 'Page Hash',
     PAGE_HASHING: 'Page Hash',
+    NOTE_METADATA: 'Note Metadata',
     PNG_CONVERSION: 'Page Render',
     PNG: 'Page Render',
     OCR_EXTRACTION: 'OCR Transcript',
@@ -39,6 +40,7 @@ const TASK_TYPE_LABELS = {
 const STAGE_ORDER = [
     'HASHING',
     'PAGE_HASHING',
+    'NOTE_METADATA',
     'PNG_CONVERSION',
     'OCR_EXTRACTION',
     'EMBEDDING_GENERATION',

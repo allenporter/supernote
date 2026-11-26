@@ -17,8 +17,8 @@ from supernote.models.extended import PageTranscriptVO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.components.ai import EMBEDDING_MODEL_KEY
 from supernote.server.components.note_metadata import NOTE_METADATA_SERVICE_KEY
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
-from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -975,8 +975,8 @@ async def test_extended_note_metadata_returns_notebook_and_pages(
         )
         await session.commit()
 
-    hashing = PageHashingModule(file_service=file_service)
-    assert await hashing.run(file_id, session_manager, user_id=test_user_id) is True
+    metadata = NoteMetadataModule(file_service=file_service)
+    assert await metadata.run(file_id, session_manager, user_id=test_user_id) is True
 
     meta_vo = await extended_client.get_note_metadata(file_id=file_id)
     assert meta_vo.success is True
@@ -1037,8 +1037,8 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
         )
         await session.commit()
 
-    hashing = PageHashingModule(file_service=file_service)
-    assert await hashing.run(file_id, session_manager, user_id=test_user_id) is True
+    metadata = NoteMetadataModule(file_service=file_service)
+    assert await metadata.run(file_id, session_manager, user_id=test_user_id) is True
     async with session_manager.session() as session:
         first = await session.get(NoteTitleDO, (test_user_id, file_id, 0))
         assert first is not None

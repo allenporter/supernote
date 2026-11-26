@@ -88,7 +88,7 @@ class OcrModule(ProcessorModule):
 
     @property
     def depends_on(self) -> tuple[TaskType, ...]:
-        return (TaskType.PNG_CONVERSION,)
+        return (TaskType.PNG_CONVERSION, TaskType.NOTE_METADATA)
 
     @property
     def enabled(self) -> bool:
