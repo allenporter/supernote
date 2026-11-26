@@ -23,7 +23,7 @@ async def test_conversion_component_lifecycle(
     assert isinstance(component, Component)
     assert component.domain == "conversion"
     assert component.dependencies == ("ai", "processor")
-    assert component.platforms == ("http", "processor")
+    assert component.platforms == ("http", "mcp", "processor")
     service = component_core.app[CONVERSION_SERVICE_KEY]
     assert isinstance(service, ConversionService)
     assert service.notebook_preview is False
