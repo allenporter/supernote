@@ -846,6 +846,13 @@ async def test_run_backfill_resolves_short_source_handles_and_drops_hallucinatio
                         "title": "Photo Search",
                         "page_kind": "topic",
                         "body_md": "Photo search notes.",
+                        "claims": [
+                            {
+                                "text": "Old embedding model",
+                                "status": "superseded",
+                                "superseded_by_source": "page01",
+                            }
+                        ],
                         "source_refs": [
                             {"source_type": "note_page", "source_key": "page01"},
                             {"source_type": "note_page", "source_key": "page01"},
@@ -878,3 +885,7 @@ async def test_run_backfill_resolves_short_source_handles_and_drops_hallucinatio
         == "769734329608700452:P20250826075655209501EC105Re539dD"
     )
     assert page.source_refs[0].file_id == 769734329608700452
+    assert (
+        page.claims[0]["superseded_by_source"]
+        == "769734329608700452:P20250826075655209501EC105Re539dD"
+    )

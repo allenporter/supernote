@@ -9,7 +9,6 @@ import pytest
 from supernote.models.wiki import WikiPageDTO, WikiSourceRefDTO, WikiSourceType
 from supernote.server.components.wiki.prompts import (
     build_compile_prompt,
-    build_compile_prompt_bundle,
     get_compile_json_schema,
     get_lint_json_schema,
     parse_compile_plan,
@@ -194,7 +193,7 @@ def test_build_compile_prompt_prioritizes_synthesized_candidates_and_injects_bud
     assert "topics/compost" in selected_slugs
     assert "index" not in selected_slugs
 
-    prompt = build_compile_prompt(pages, diff, {}, max_pages_per_batch=10)
+    prompt = build_compile_prompt(pages, diff, {}, max_pages_per_batch=10).prompt
     assert "up to 10 pages per batch" in prompt
     candidates_section = prompt.split("<candidate_pages>", maxsplit=1)[1].split(
         "</candidate_pages>", maxsplit=1
@@ -244,7 +243,7 @@ def test_select_candidate_pages_uses_word_boundaries_for_short_names() -> None:
     assert ranked_true[0] == "entities/al"
 
 
-def test_build_compile_prompt_bundle_assigns_short_handles_and_hides_raw_ids() -> None:
+def test_build_compile_prompt_assigns_short_handles_and_hides_raw_ids() -> None:
     diff = [
         {
             "event_type": "backfill.note_page",
@@ -257,7 +256,26 @@ def test_build_compile_prompt_bundle_assigns_short_handles_and_hides_raw_ids() -
                 "page_index": 0,
                 "text_content": "Benchmarked photo search embeddings.",
             },
-        }
+        },
+        {
+            "event_type": "schedule.task_created",
+            "entity_type": "schedule_task",
+            "entity_id": "task-uuid-delta",
+            "payload": {"title": "Ship release", "status": "needsAction"},
+        },
+        {
+            "event_type": "file.deleted",
+            "entity_type": "file",
+            "entity_id": "999999",
+            "related_file_id": 999999,
+            "payload": {"file_path": "Old.note"},
+        },
+        {
+            "event_type": "schedule.task_deleted",
+            "entity_type": "schedule_task",
+            "entity_id": "task-uuid-deleted",
+            "payload": {},
+        },
     ]
     linked = {
         "tasks": [
@@ -276,21 +294,23 @@ def test_build_compile_prompt_bundle_assigns_short_handles_and_hides_raw_ids() -
             }
         ],
     }
-    built = build_compile_prompt_bundle([], diff, linked, max_pages_per_batch=10)
-    assert "page01" in built.source_handles
-    assert "task01" in built.source_handles
-    assert len(built.source_handles) == 2
+    built = build_compile_prompt([], diff, linked, max_pages_per_batch=10)
+    assert set(built.source_handles) == {"page01", "task01", "task02"}
     assert (
         built.source_handles["page01"].source_key
         == "769734329608700452:P20250826075655209501EC105Re539dD"
     )
     assert built.source_handles["page01"].file_id == 769734329608700452
     assert built.source_handles["task01"].source_type is WikiSourceType.SCHEDULE_TASK
-    assert built.source_handles["task01"].source_key == "task-uuid-9999"
+    assert built.source_handles["task01"].source_key == "task-uuid-delta"
+    assert built.source_handles["task02"].source_type is WikiSourceType.SCHEDULE_TASK
+    assert built.source_handles["task02"].source_key == "task-uuid-9999"
 
     # Raw snowflake IDs, page IDs, and task UUIDs must not leak into prompt XML.
     assert "769734329608700452" not in built.prompt
     assert "P20250826075655209501EC105Re539dD" not in built.prompt
+    assert "task-uuid-delta" not in built.prompt
     assert "task-uuid-9999" not in built.prompt
     assert '"source_id": "page01"' in built.prompt
     assert '"source_id": "task01"' in built.prompt
+    assert '"source_id": "task02"' in built.prompt

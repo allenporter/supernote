@@ -69,7 +69,7 @@ from .prompts import (
     WikiCompilePlan,
     WikiLintIssueOp,
     WikiLintProposalOp,
-    build_compile_prompt_bundle,
+    build_compile_prompt,
     build_lint_prompt,
     get_compile_json_schema,
     get_lint_json_schema,
@@ -330,7 +330,7 @@ class WikiCompilerWorker:
                 for ev in page.events
             ]
             all_pages = await self._wiki_service.list_pages(user_id, limit=500)
-            built = build_compile_prompt_bundle(
+            built = build_compile_prompt(
                 all_pages,
                 diff_payload,
                 linked_context,
@@ -460,7 +460,7 @@ class WikiCompilerWorker:
                 backfill_page_budget = max(
                     self._config.max_pages_per_batch, max_files * 2, 10
                 )
-                built = build_compile_prompt_bundle(
+                built = build_compile_prompt(
                     all_pages,
                     synthetic_diffs,
                     linked_context=linked_context,
@@ -762,7 +762,7 @@ class WikiCompilerWorker:
                 resolved_type = ref.source_type
                 resolved_key = clean_key
                 resolved_file_id = ref.file_id
-                if normalized_handles:
+                if source_handles is not None:
                     target = normalized_handles.get(
                         clean_key.lower()
                     ) or known_raw_targets.get((str(ref.source_type), clean_key))
@@ -788,6 +788,15 @@ class WikiCompilerWorker:
                         last_event_seq=source_event_seq,
                     )
                 )
+            resolved_claims: list[dict[str, object]] = []
+            for claim in op.claims:
+                claim_dict = claim.to_dict()
+                superseded = str(claim_dict.get("superseded_by_source") or "").strip()
+                if superseded and source_handles is not None:
+                    target = normalized_handles.get(superseded.lower())
+                    if target is not None:
+                        claim_dict["superseded_by_source"] = target.source_key
+                resolved_claims.append(claim_dict)
             try:
                 page = await self._wiki_service.upsert_page(
                     user_id,
@@ -797,7 +806,7 @@ class WikiCompilerWorker:
                         page_kind=page_kind,
                         summary=op.summary,
                         body_md=op.body_md,
-                        claims=[c.to_dict() for c in op.claims],
+                        claims=resolved_claims,
                         aliases=[a for a in op.aliases if a.strip()],
                         source_refs=source_refs,
                         author_kind="compiler",

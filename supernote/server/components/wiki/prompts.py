@@ -56,7 +56,6 @@ __all__ = [
     "WikiPageOp",
     "WikiSourceRefOp",
     "build_compile_prompt",
-    "build_compile_prompt_bundle",
     "build_lint_prompt",
     "get_compile_json_schema",
     "get_lint_json_schema",
@@ -580,7 +579,7 @@ def _extract_note_target(
             page_id = raw_pid.strip()
     if file_id is not None and page_id:
         return f"{file_id}:{page_id}", file_id
-    if entity_id:
+    if ":" in entity_id:
         return entity_id, file_id
     return None
 
@@ -623,9 +622,12 @@ def _assign_source_handles(
         entity_type = str(ev.get("entity_type") or "")
         payload = ev.get("payload")
         payload_map = payload if isinstance(payload, Mapping) else {}
+        is_deleted_event = event_type.endswith(".deleted") or event_type.endswith(
+            "_deleted"
+        )
         is_task = (
-            event_type.startswith("task.")
-            or entity_type == "task"
+            event_type.startswith("schedule.task_")
+            or entity_type == "schedule_task"
             or "task_id" in payload_map
         )
         clean_payload: dict[str, Any] = {}
@@ -635,18 +637,19 @@ def _assign_source_handles(
             clean_payload[key] = value
 
         source_id: str | None = None
-        if is_task:
-            task_id = str(
-                payload_map.get("task_id") or ev.get("entity_id") or ""
-            ).strip()
-            if task_id:
-                source_id = _register(WikiSourceType.SCHEDULE_TASK, task_id, None)
-        else:
-            note_target = _extract_note_target(ev)
-            if note_target is not None:
-                source_id = _register(
-                    WikiSourceType.NOTE_PAGE, note_target[0], note_target[1]
-                )
+        if not is_deleted_event:
+            if is_task:
+                task_id = str(
+                    payload_map.get("task_id") or ev.get("entity_id") or ""
+                ).strip()
+                if task_id:
+                    source_id = _register(WikiSourceType.SCHEDULE_TASK, task_id, None)
+            else:
+                note_target = _extract_note_target(ev)
+                if note_target is not None:
+                    source_id = _register(
+                        WikiSourceType.NOTE_PAGE, note_target[0], note_target[1]
+                    )
 
         clean_ev: dict[str, Any] = {}
         if source_id is not None:
@@ -698,7 +701,7 @@ def _assign_source_handles(
     return prompt_diff, prompt_linked, handles
 
 
-def build_compile_prompt_bundle(
+def build_compile_prompt(
     all_pages: Sequence[WikiPageDTO],
     diff_payload: list[dict[str, Any]],
     linked_context: dict[str, Any],
@@ -743,22 +746,6 @@ def build_compile_prompt_bundle(
         },
     )
     return BuiltCompilePrompt(prompt=prompt, source_handles=source_handles)
-
-
-def build_compile_prompt(
-    all_pages: Sequence[WikiPageDTO],
-    diff_payload: list[dict[str, Any]],
-    linked_context: dict[str, Any],
-    *,
-    max_pages_per_batch: int = 5,
-) -> str:
-    """Render `PromptId.WIKI_COMPILE` with sanitized index, candidates, diff, and context."""
-    return build_compile_prompt_bundle(
-        all_pages,
-        diff_payload,
-        linked_context,
-        max_pages_per_batch=max_pages_per_batch,
-    ).prompt
 
 
 def build_lint_prompt(
