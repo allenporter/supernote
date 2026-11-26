@@ -87,6 +87,7 @@ class BackfillOverview:
     total_files: int
     remaining_pages: int = 0
     total_pages: int = 0
+    current_date: str | None = None
     untranscribed_files: int = 0
     next_files: list[str] = field(default_factory=list)
 
@@ -271,6 +272,11 @@ class WikiSourceService:
             )
             remaining_pages = len(remaining_entries)
             remaining_files = len({e.file_id for e in remaining_entries})
+            current_date = (
+                format_page_date(remaining_entries[0].page_ts_ms)
+                if remaining_entries
+                else None
+            )
             next_files = (
                 list(dict.fromkeys(e.file_name for e in remaining_entries))[
                     :capped_preview
@@ -283,6 +289,7 @@ class WikiSourceService:
             total_files=total_files,
             remaining_pages=remaining_pages,
             total_pages=total_pages,
+            current_date=current_date,
             untranscribed_files=untranscribed,
             next_files=next_files,
         )

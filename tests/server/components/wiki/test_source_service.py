@@ -379,6 +379,7 @@ async def test_list_backfill_page_window_orders_globally_by_page_date_and_sets_p
     assert mid_overview.total_pages == 3
     assert mid_overview.remaining_pages == 1
     assert mid_overview.remaining_files == 1
+    assert mid_overview.current_date == "2026-05-20"
     assert mid_overview.next_files == ["Daily.note"]
 
     win2, cur2 = await svc.list_backfill_page_window(

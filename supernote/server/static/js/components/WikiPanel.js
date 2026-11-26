@@ -849,7 +849,7 @@ export default {
                                 :class="isBackfillDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-stone-100 text-stone-700 border-stone-200'"
                                 class="text-[11px] font-medium px-2 py-0.5 rounded-full border">
                                 <template v-if="backfillTotalPages > 0">
-                                    {{ backfillCompletedPages }} / {{ backfillTotalPages }} pages ({{ backfillPercent }}%)
+                                    {{ backfillCompletedPages }} / {{ backfillTotalPages }} pages ({{ backfillPercent }}%)<template v-if="status?.backfill_current_date"> · {{ status.backfill_current_date }}</template>
                                 </template>
                                 <template v-else>
                                     {{ backfillCompleted }} of {{ backfillTotal }} compiled ({{ backfillPercent }}%)

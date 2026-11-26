@@ -701,6 +701,7 @@ class WikiService:
             backfill_total_files=overview.total_files,
             backfill_remaining_pages=overview.remaining_pages,
             backfill_total_pages=overview.total_pages,
+            backfill_current_date=overview.current_date,
             backfill_untranscribed_files=overview.untranscribed_files,
             backfill_next_files=overview.next_files,
         )
