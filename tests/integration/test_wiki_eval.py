@@ -46,15 +46,15 @@ async def test_run_wiki_eval_end_to_end_with_fake_model_and_vault_export(
         export_dir=export_dir,
     )
 
-    # 17 transcribed notebooks in batches of 5 -> 4 batches.
+    # 17 transcribed notebooks in batches of 5 -> 4 batches, plus deterministic `index` page.
     assert report.metrics.transcribed_notebooks == 17
     assert report.metrics.batches_run == 4
-    assert report.metrics.total_pages == 17
-    # Deterministic fake emits source_digest only, demonstrating the baseline ratio metric.
-    assert report.metrics.non_source_pages == 0
-    assert report.metrics.non_source_ratio == 0.0
-    assert report.metrics.has_index_page is False
-    assert report.metrics.open_lint_total > 0
+    assert report.metrics.total_pages == 18
+    assert report.metrics.has_index_page is True
+    assert report.metrics.pages_by_kind == {"index": 1, "source_digest": 17}
+    # Index links must not mask disconnected orphan_page findings.
+    assert report.metrics.open_lint_total == 17
+    assert report.metrics.open_lint_by_type == {"orphan_page": 17}
 
     # Exported vault + reports exist and are readable.
     assert (export_dir / "report.json").is_file()
@@ -62,7 +62,7 @@ async def test_run_wiki_eval_end_to_end_with_fake_model_and_vault_export(
     parsed = json.loads((export_dir / "report.json").read_text(encoding="utf-8"))
     assert parsed["dataset_name"] == dataset.name
     exported_md = list((export_dir / "vault").rglob("*.md"))
-    assert len(exported_md) == 17
+    assert len(exported_md) == 18
 
     md = format_markdown_report(report)
     assert "Wiki Backfill Eval Report" in md

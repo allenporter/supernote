@@ -306,7 +306,7 @@ class WikiCompilerWorker:
                 }
                 for ev in page.events
             ]
-            all_pages = await self._wiki_service.list_pages(user_id, limit=100)
+            all_pages = await self._wiki_service.list_pages(user_id, limit=500)
             prompt = build_compile_prompt(
                 all_pages,
                 diff_payload,
@@ -332,6 +332,8 @@ class WikiCompilerWorker:
             updated_slugs, skipped_policy = await self._apply_compile_plan(
                 user_id, plan, source_event_seq=max_seq
             )
+            if updated_slugs:
+                await self._wiki_service.sync_index_page(user_id)
             issues = await self._wiki_service.run_structural_lint(user_id)
             await self._update_checkpoint(
                 user_id,
@@ -405,7 +407,7 @@ class WikiCompilerWorker:
             updated_slugs: list[str] = []
             skipped_policy = 0
             if synthetic_diffs:
-                all_pages = await self._wiki_service.list_pages(user_id, limit=100)
+                all_pages = await self._wiki_service.list_pages(user_id, limit=500)
                 task_rows = await self._source_service.list_task_snapshots(
                     user_id, limit=50
                 )
@@ -451,6 +453,8 @@ class WikiCompilerWorker:
                     source_event_seq=None,
                     max_pages=backfill_page_budget,
                 )
+                if updated_slugs:
+                    await self._wiki_service.sync_index_page(user_id)
 
             issues = await self._wiki_service.run_structural_lint(user_id)
             await self._update_checkpoint(
@@ -521,7 +525,12 @@ class WikiCompilerWorker:
         page_cap = (
             max_pages if max_pages is not None else self._config.max_pages_per_batch
         )
-        for op in plan.page_ops[:page_cap]:
+        non_index_ops = [
+            op
+            for op in plan.page_ops
+            if op.slug.strip().lower() != "index" and op.page_kind != "index"
+        ]
+        for op in non_index_ops[:page_cap]:
             slug = op.slug.strip()
             title = op.title.strip()
             if not slug or not title:

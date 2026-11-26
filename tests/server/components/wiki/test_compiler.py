@@ -538,3 +538,68 @@ async def test_apply_compile_plan_strips_redundant_source_type_prefix(
     page = await wiki_service.get_page(1, "projects/aurora")
     assert page is not None
     assert [r.source_key for r in page.source_refs] == ["1:P1"]
+
+
+async def test_apply_compile_plan_skips_llm_index_op_without_consuming_page_cap(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    fake_llm = FakeTextGenerationModel(
+        responses=[
+            {
+                "page_ops": [
+                    {
+                        "slug": "index",
+                        "title": "LLM Index",
+                        "page_kind": "index",
+                        "body_md": "Should be ignored",
+                    },
+                    {
+                        "slug": "projects/one",
+                        "title": "One",
+                        "page_kind": "project",
+                        "body_md": "First",
+                    },
+                    {
+                        "slug": "projects/two",
+                        "title": "Two",
+                        "page_kind": "project",
+                        "body_md": "Second",
+                    },
+                ]
+            }
+        ]
+    )
+    worker = WikiCompilerWorker(
+        config=WikiConfig(enabled=True, auto_compile=False, max_pages_per_batch=2),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=fake_llm,
+    )
+    await event_bus.publish(
+        NotePageTranscribedEvent(
+            user_id=1,
+            file_id=10,
+            file_path="/Note/Test.note",
+            page_id="p1",
+            page_index=0,
+            text_content="One and Two",
+        )
+    )
+    res = await worker.compile_user_delta(1)
+    # Both real pages were applied despite the leading LLM `index` op.
+    assert res.pages_updated == 2
+    assert await wiki_service.get_page(1, "projects/one") is not None
+    assert await wiki_service.get_page(1, "projects/two") is not None
+    # Deterministic `index` was written once (version 1) by `sync_index_page`.
+    index_page = await wiki_service.get_page(1, "index")
+    assert index_page is not None
+    assert index_page.version == 1
+    assert "[[projects/one]]" in index_page.body_md
+    assert "[[projects/two]]" in index_page.body_md
