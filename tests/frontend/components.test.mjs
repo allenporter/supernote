@@ -222,6 +222,54 @@ test('ViewerSidePanel.js: hides image HTML on whitespace-only text and keeps not
     }
 });
 
+test('ViewerSidePanel.js: explains transcript gaps by disabled component, OCR setup, or pending processing', async () => {
+    /** @param {Record<string, unknown>} overrides */
+    const mountPanel = (overrides) =>
+        mountComposable(() =>
+            ViewerSidePanel.setup(
+                {
+                    fileId: '45',
+                    fileCategory: 'note',
+                    isOpenMobile: false,
+                    activeTab: 'transcription',
+                    activePageIndex: 0,
+                    hasCanvasPages: true,
+                    isLoadingTranscript: false,
+                    transcriptPages: [],
+                    displayTranscriptPages: [],
+                    pageMetaByIndex: new Map(),
+                    linksByPageIndex: new Map(),
+                    summaries: [],
+                    aiStatus: { ocrEnabled: false },
+                    transcriptEnabled: true,
+                    summariesEnabled: true,
+                    ...overrides,
+                },
+                { expose() {}, emit() {} },
+            ),
+        );
+
+    const cases = [
+        [{ transcriptEnabled: false }, 'Handwriting transcription is disabled on this server.'],
+        [
+            {},
+            'OCR is not enabled on this server. Configure an AI provider to automatically transcribe handwritten pages.',
+        ],
+        [
+            { aiStatus: { ocrEnabled: true } },
+            'No OCR transcript available for this notebook yet. Background processing may still be running.',
+        ],
+    ];
+    for (const [overrides, expected] of cases) {
+        const panel = await mountPanel(overrides);
+        try {
+            assert.equal(panel.result.transcriptEmptyMessage.value, expected);
+        } finally {
+            panel.unmount();
+        }
+    }
+});
+
 test('SystemPanel.js: loads read-only system components, active counts, and config summaries', async () => {
     const origFetch = globalThis.fetch;
     const initialComponents = [
