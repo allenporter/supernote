@@ -346,6 +346,7 @@ class WikiSourceService:
                     await session.execute(
                         select(UserFileDO.id, UserFileDO.file_name).where(
                             UserFileDO.user_id == user_id,
+                            UserFileDO.is_active == "Y",
                             UserFileDO.id.in_(file_ids),
                         )
                     )
@@ -362,6 +363,7 @@ class WikiSourceService:
                         .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
                         .where(
                             UserFileDO.user_id == user_id,
+                            UserFileDO.is_active == "Y",
                             NotePageContentDO.file_id.in_(file_ids),
                         )
                     )

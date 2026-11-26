@@ -299,6 +299,13 @@ async def test_resolve_source_metadata_returns_names_and_enforces_tenant_isolati
                     is_folder="N",
                     is_active="Y",
                 ),
+                UserFileDO(
+                    id=503,
+                    user_id=1,
+                    file_name="Recycled.note",
+                    is_folder="N",
+                    is_active="N",
+                ),
                 NotePageContentDO(
                     file_id=501,
                     page_index=2,
@@ -339,6 +346,9 @@ async def test_resolve_source_metadata_returns_names_and_enforces_tenant_isolati
             WikiSourceRefDTO(
                 source_type="note_page", source_key="502:P502_0", file_id=502
             ),
+            WikiSourceRefDTO(
+                source_type="note_page", source_key="503:P503_0", file_id=503
+            ),
             WikiSourceRefDTO(source_type="schedule_task", source_key="t-aurora"),
             WikiSourceRefDTO(source_type="schedule_task", source_key="t-secret"),
         ],
@@ -346,6 +356,7 @@ async def test_resolve_source_metadata_returns_names_and_enforces_tenant_isolati
     assert meta[("note_page", "501:P501_2")].file_name == "Aurora_Spec.note"
     assert meta[("note_page", "501:P501_2")].page_index == 2
     assert meta[("schedule_task", "t-aurora")].task_title == "Install UPS"
-    # Tenant isolation: user 2's file and task must not be resolved for user 1.
+    # Tenant isolation and soft-deleted (recycled) file exclusion.
     assert ("note_page", "502:P502_0") not in meta
+    assert ("note_page", "503:P503_0") not in meta
     assert ("schedule_task", "t-secret") not in meta

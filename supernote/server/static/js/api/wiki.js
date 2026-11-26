@@ -269,12 +269,18 @@ export function formatSourceRef(ref) {
               ? String(ref.file_id)
               : null;
         const pageIndex = typeof ref.page_index === 'number' ? ref.page_index : null;
-        const baseName = ref.file_name?.trim() || (fileId ? `Notebook #${fileId}` : rawKey);
+        const resolvedName = ref.file_name?.trim() || '';
+        const baseName = resolvedName || (fileId ? `Notebook #${fileId}` : rawKey);
         const label = pageIndex !== null ? `${baseName} · p.${pageIndex + 1}` : baseName;
+        const clickable = !deleted && Boolean(fileId) && Boolean(resolvedName);
         return {
             label,
-            tooltip: deleted ? `${label} (deleted)` : `Open ${label}`,
-            clickable: !deleted && Boolean(fileId),
+            tooltip: deleted
+                ? `${label} (deleted)`
+                : clickable
+                  ? `Open ${label}`
+                  : `${label} (unavailable)`,
+            clickable,
             kind: 'note',
             fileId,
             pageIndex,
@@ -282,11 +288,17 @@ export function formatSourceRef(ref) {
         };
     }
     if (ref?.source_type === 'schedule_task') {
-        const label = ref.task_title?.trim() || `Task ${rawKey}`;
+        const resolvedTitle = ref.task_title?.trim() || '';
+        const label = resolvedTitle || `Task ${rawKey}`;
+        const clickable = !deleted && Boolean(rawKey) && Boolean(resolvedTitle);
         return {
             label,
-            tooltip: deleted ? `${label} (deleted)` : `Open task: ${label}`,
-            clickable: !deleted && Boolean(rawKey),
+            tooltip: deleted
+                ? `${label} (deleted)`
+                : clickable
+                  ? `Open task: ${label}`
+                  : `${label} (unavailable)`,
+            clickable,
             kind: 'task',
             fileId: null,
             pageIndex: null,

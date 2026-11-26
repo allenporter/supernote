@@ -289,4 +289,20 @@ test('formatSourceRef resolves notebook filenames, 64-bit file IDs, tasks, and d
     assert.equal(task.label, 'Install UPS');
     assert.equal(task.clickable, true);
     assert.equal(task.taskId, 'task-aurora-ups');
+
+    // Unresolved (missing/recycled/hallucinated) sources must not render as clickable buttons.
+    const unresolvedNote = formatSourceRef({
+        source_type: 'note_page',
+        source_key: '999:P1',
+        file_id: 999,
+        is_source_deleted: false,
+    });
+    assert.equal(unresolvedNote.clickable, false);
+
+    const unresolvedTask = formatSourceRef({
+        source_type: 'schedule_task',
+        source_key: 'missing-task',
+        is_source_deleted: false,
+    });
+    assert.equal(unresolvedTask.clickable, false);
 });
