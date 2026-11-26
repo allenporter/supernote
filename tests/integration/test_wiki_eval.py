@@ -14,6 +14,7 @@ from evals.wiki import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASET_PATH = REPO_ROOT / "evals/wiki/dataset.yaml"
+DAILY_LOG_DATASET_PATH = REPO_ROOT / "evals/wiki/daily_log_dataset.yaml"
 
 
 def test_wiki_eval_dataset_manifest_is_multi_batch_and_well_formed() -> None:
@@ -67,3 +68,36 @@ async def test_run_wiki_eval_end_to_end_with_fake_model_and_vault_export(
     md = format_markdown_report(report)
     assert "Wiki Backfill Eval Report" in md
     assert "Non-source synthesized pages" in md
+
+
+def test_daily_log_eval_dataset_manifest_is_well_formed() -> None:
+    dataset = load_wiki_eval_dataset(DAILY_LOG_DATASET_PATH)
+    assert dataset.name == "supernote-wiki-daily-log-v1"
+    file_names = {nb.file_name for nb in dataset.notebooks}
+    assert {
+        "Daily.note",
+        "Monthly_Log_2026.note",
+        "Monthly_Reflections_2026.note",
+        "Q3_2026_Quarterly_Reflection.note",
+    }.issubset(file_names)
+    total_pages = sum(len(nb.pages) for nb in dataset.notebooks)
+    assert total_pages >= 34
+    assert len(dataset.expected_concepts) >= 8
+    assert len(dataset.expected_facts) >= 6
+
+
+async def test_run_daily_log_eval_with_fake_model(tmp_path: Path) -> None:
+    dataset = load_wiki_eval_dataset(DAILY_LOG_DATASET_PATH)
+    export_dir = tmp_path / "daily_log_eval_out"
+    report = await run_wiki_eval(
+        dataset,
+        DeterministicFakeWikiModel(),
+        max_files_per_batch=1,
+        max_pages_per_batch=5,
+        run_semantic_lint=False,
+        export_dir=export_dir,
+    )
+    assert report.metrics.transcribed_notebooks == len(dataset.notebooks)
+    assert report.metrics.batches_run == len(dataset.notebooks)
+    assert report.metrics.has_index_page is True
+    assert (export_dir / "report.md").is_file()

@@ -14,6 +14,25 @@ Repeatable multi-notebook corpus and evaluation harness for measuring LLM Wiki b
   - **Kyoto Autumn Trip** (Gion Ryokan -> Higashiyama Machiya, `Maya` & `Leo`).
   - **Recurring topics**: Strength Training, Reading Notes (DDIA & Design of Everyday Things), Garden & Composting.
 
+## Daily / Monthly / Quarterly Planner Dataset (`daily_log_dataset.yaml`)
+
+`daily_log_dataset.yaml` is a standalone chronological planner corpus with **no dedicated topic notebooks**:
+
+- **`Daily.note`** (30 daily bullet-journal pages, Oct 25 – Nov 23) mixing fleeting errands with recurring project updates.
+- **`Monthly_Log_2026.note`** (October & November monthly calendar highlights, migrated tasks, and habit trackers).
+- **`Monthly_Reflections_2026.note`** (September & October monthly reflections covering wins, energy drains, and adjustments).
+- **`Q3_2026_Quarterly_Reflection.note`** (Q3 quarterly review and Q4 goals/themes).
+
+Use it to evaluate whether the wiki compiler extracts durable projects, people, habits, reflection themes, and evolved decisions from chronological daily/monthly/quarterly logs alone:
+
+```bash
+uv run --no-sync python script/eval_wiki.py \
+  --dataset evals/wiki/daily_log_dataset.yaml \
+  --target gemini:gemini-3.5-flash-lite \
+  --max-files-per-batch 1 \
+  --export-dir /tmp/wiki_eval_daily_log
+```
+
 ## Running the Eval
 
 ```bash
