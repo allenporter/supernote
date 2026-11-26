@@ -1,5 +1,7 @@
 import base64
 import io
+import re
+import zlib
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
@@ -7,12 +9,14 @@ from unittest.mock import patch
 
 import pytest
 from PIL import Image, ImageChops
+from reportlab.pdfgen import canvas as reportlab_canvas
 from syrupy.extensions.image import PNGImageSnapshotExtension
 
 from supernote.notebook import (
     ColorPalette,
     ImageConverter,
     PdfConverter,
+    PdfOutlineEntry,
     PngConverter,
     SvgConverter,
     TextConverter,
@@ -628,6 +632,153 @@ def test_pdf_converter_links(sample_notebook: fileformat.Notebook) -> None:
     pdf_converter = PdfConverter(sample_notebook)
     pdf_bytes = pdf_converter.convert(0, enable_link=True)
     assert pdf_bytes.startswith(b"%PDF-")
+
+
+_PDF_STREAM_RE = re.compile(rb"stream\r?\n(.*?)\r?\n?endstream", re.DOTALL)
+
+
+def _extract_decompressed_pdf_streams(pdf_bytes: bytes) -> list[bytes]:
+    """Return decompressed content streams from a ReportLab-generated PDF."""
+    streams: list[bytes] = []
+    for match in _PDF_STREAM_RE.finditer(pdf_bytes):
+        data = match.group(1).strip()
+        if data.endswith(b"~>"):
+            data = base64.a85decode(data[:-2])
+        try:
+            streams.append(zlib.decompress(data))
+        except zlib.error:
+            streams.append(data)
+    return streams
+
+
+def test_pdf_converter_embeds_invisible_page_texts(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    notebook = make_notebook(
+        width=10,
+        height=10,
+        pages=[{"PAGEID": "P0"}, {"PAGEID": "P1"}],
+    )
+    pdf_bytes = PdfConverter(notebook).convert(
+        -1,
+        page_texts={0: "Alpha agenda notes", 1: "Beta retrospective"},
+    )
+
+    joined = b"\n".join(_extract_decompressed_pdf_streams(pdf_bytes))
+    assert b"3 Tr" in joined
+    assert b"Alpha agenda notes" in joined
+    assert b"Beta retrospective" in joined
+
+
+def test_pdf_converter_omits_invisible_text_when_blank(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    notebook = make_notebook(width=10, height=10, pages=[{"PAGEID": "P0"}])
+    pdf_bytes = PdfConverter(notebook).convert(0, page_texts={0: "   \n\t  "})
+
+    joined = b"\n".join(_extract_decompressed_pdf_streams(pdf_bytes))
+    assert b"3 Tr" not in joined
+
+
+def test_pdf_converter_wraps_and_scales_dense_page_text(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    notebook = make_notebook(width=10, height=10, pages=[{"PAGEID": "P0"}])
+    dense_text = "\n".join(
+        f"Line {idx:03d}: " + "handwritten transcript words " * 6 for idx in range(120)
+    )
+    pdf_bytes = PdfConverter(notebook).convert(0, page_texts={0: dense_text})
+
+    joined = b"\n".join(_extract_decompressed_pdf_streams(pdf_bytes))
+    assert b"3 Tr" in joined
+    assert b"Line 000:" in joined
+    assert b"Line 119:" in joined
+    font_match = re.search(rb"/F1 ([0-9.]+) Tf\s+[0-9.]+ TL\s+3 Tr", joined)
+    assert font_match is not None
+    assert float(font_match.group(1)) < 10.0
+
+
+def test_pdf_converter_embeds_toc_outline_entries(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    # Omit PAGEID to verify outline bookmarks do not depend on firmware PAGEID.
+    notebook = make_notebook(width=10, height=10, pages=[{}, {}])
+    pdf_bytes = PdfConverter(notebook).convert(
+        -1,
+        toc_entries=[
+            PdfOutlineEntry(title="Chapter One", page_index=0, level=1),
+            PdfOutlineEntry(title="Section A", page_index=1, level=2),
+        ],
+    )
+
+    assert b"/Outlines" in pdf_bytes
+    assert b"(Chapter One)" in pdf_bytes
+    assert b"(Section A)" in pdf_bytes
+
+
+def test_pdf_converter_normalizes_non_contiguous_outline_levels(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    notebook = make_notebook(width=10, height=10, pages=[{"PAGEID": "P0"}])
+    recorded: list[tuple[str, int]] = []
+    orig_add_outline = reportlab_canvas.Canvas.addOutlineEntry
+
+    def _record_outline(
+        self: reportlab_canvas.Canvas,
+        title: str,
+        key: str,
+        level: int = 0,
+        closed: int | None = None,
+    ) -> None:
+        recorded.append((title, level))
+        orig_add_outline(self, title, key, level=level, closed=closed)
+
+    with patch.object(reportlab_canvas.Canvas, "addOutlineEntry", _record_outline):
+        pdf_bytes = PdfConverter(notebook).convert(
+            0,
+            toc_entries=[
+                PdfOutlineEntry(title="First H3", page_index=0, level=3),
+                PdfOutlineEntry(title="Sibling H3", page_index=0, level=3),
+                PdfOutlineEntry(title="Child H4", page_index=0, level=4),
+                PdfOutlineEntry(title="Top H1", page_index=0, level=1),
+                PdfOutlineEntry(title="Deep H4", page_index=0, level=4),
+                PdfOutlineEntry(title="Shallower H2", page_index=0, level=2),
+            ],
+        )
+
+    assert recorded == [
+        ("First H3", 0),
+        ("Sibling H3", 0),
+        ("Child H4", 1),
+        ("Top H1", 0),
+        ("Deep H4", 1),
+        ("Shallower H2", 1),
+    ]
+    assert b"/Outlines" in pdf_bytes
+    for title, _ in recorded:
+        assert f"({title})".encode() in pdf_bytes
+
+
+def test_pdf_converter_filters_toc_entries_for_partial_page_export(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    notebook = make_notebook(
+        width=10,
+        height=10,
+        pages=[{"PAGEID": "P0"}, {"PAGEID": "P1"}],
+    )
+    pdf_bytes = PdfConverter(notebook).convert(
+        [1],
+        toc_entries=[
+            PdfOutlineEntry(title="Excluded Page Zero", page_index=0, level=1),
+            PdfOutlineEntry(title="   ", page_index=1, level=1),
+            PdfOutlineEntry(title="Included Page One", page_index=1, level=2),
+        ],
+    )
+
+    assert b"/Outlines" in pdf_bytes
+    assert b"(Included Page One)" in pdf_bytes
+    assert b"(Excluded Page Zero)" not in pdf_bytes
 
 
 def test_single_page_load_and_convert() -> None:

@@ -24,6 +24,8 @@ See `supernote.notebook` and `supernote.guides.notebook_spec`.
 
 import base64
 import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from enum import Enum, auto
 from io import BytesIO
 
@@ -31,6 +33,7 @@ import potrace
 import svgwrite
 from PIL import Image
 from reportlab.lib.pagesizes import A4, landscape, portrait
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
 from . import color, exceptions, fileformat, schema, utils
@@ -444,6 +447,28 @@ class SvgConverter:
         return dwg.tostring()
 
 
+@dataclass(frozen=True)
+class PdfOutlineEntry:
+    """A single PDF Table of Contents outline bookmark entry."""
+
+    title: str
+    """Display text shown in the PDF reader's outline/bookmarks panel."""
+
+    page_index: int
+    """0-based notebook page index the bookmark navigates to."""
+
+    level: int = 1
+    """1-based heading nesting depth (clamped to valid PDF outline nesting)."""
+
+
+_PDF_TEXT_FONT = "Helvetica"
+_PDF_TEXT_DEFAULT_SIZE = 10.0
+_PDF_TEXT_MIN_SIZE = 1.0
+_PDF_TEXT_LEADING_RATIO = 1.2
+_PDF_TEXT_MARGIN = 18.0
+_PDF_TEXT_RENDER_INVISIBLE = 3
+
+
 class PdfConverter:
     class ImgPageRenderer:
         def __init__(self, img: Image.Image, pagesize):
@@ -468,6 +493,9 @@ class PdfConverter:
         page_indices: int | list[int],
         enable_link: bool = False,
         enable_keyword: bool = False,
+        *,
+        page_texts: Mapping[int, str] | None = None,
+        toc_entries: Sequence[PdfOutlineEntry] | None = None,
     ) -> bytes:
         """Returns PDF data of the given page(s).
 
@@ -479,6 +507,12 @@ class PdfConverter:
             enable page links and web links
         enable_keyword : bool
             enable page link where keyword has been identified
+        page_texts : Mapping[int, str] | None
+            optional 0-based page index to plain text mapping embedded as an
+            invisible searchable text layer on each matching page
+        toc_entries : Sequence[PdfOutlineEntry] | None
+            optional ordered Table of Contents outline entries; entries whose
+            page is not included or whose title is blank are skipped
 
         Returns
         -------
@@ -489,7 +523,15 @@ class PdfConverter:
         renderer_class = PdfConverter.ImgPageRenderer
         imglist = self._create_image_list(converter, page_indices)
         pdf_data = BytesIO()
-        self._create_pdf(pdf_data, imglist, renderer_class, enable_link, enable_keyword)
+        self._create_pdf(
+            pdf_data,
+            imglist,
+            renderer_class,
+            enable_link,
+            enable_keyword,
+            page_texts=page_texts,
+            toc_entries=toc_entries,
+        )
         return pdf_data.getvalue()
 
     def _create_image_list(
@@ -516,8 +558,23 @@ class PdfConverter:
         renderer_class: type[ImgPageRenderer],
         enable_link: bool,
         enable_keyword: bool,
+        *,
+        page_texts: Mapping[int, str] | None = None,
+        toc_entries: Sequence[PdfOutlineEntry] | None = None,
     ) -> None:
         c = canvas.Canvas(buf, pagesize=self.pagesize)
+        # Group non-empty TOC entries by page so each entry gets its own unique
+        # bookmark key on that page (ReportLab's outline map keys entries by
+        # destination name, so reusing one key per page overwrites earlier titles).
+        toc_keys_by_page: dict[int, list[str]] = {}
+        if toc_entries:
+            for entry_idx, entry in enumerate(toc_entries):
+                if entry.title.strip():
+                    toc_keys_by_page.setdefault(entry.page_index, []).append(
+                        f"toc_entry_{entry_idx}"
+                    )
+        bookmarked_keys: set[str] = set()
+
         for page_idx, img in imglist:
             page = self.note.page(page_idx)
             pageid = page.page_id
@@ -528,6 +585,14 @@ class PdfConverter:
             c.setPageSize(pagesize)
             renderer = renderer_class(img, pagesize)
             renderer.draw(c)
+            if page_texts is not None:
+                page_text = page_texts.get(page_idx)
+                if page_text:
+                    self._draw_invisible_text(c, page_text, pagesize)
+            for toc_key in toc_keys_by_page.get(page_idx, ()):
+                if toc_key not in bookmarked_keys:
+                    c.bookmarkPage(toc_key)
+                    bookmarked_keys.add(toc_key)
             if enable_keyword:
                 for keyword in page.keywords:
                     try:
@@ -544,7 +609,73 @@ class PdfConverter:
                     c.bookmarkPage(pageid)
                     self._add_links(c, page, renderer.get_scale())
             c.showPage()
+
+        if toc_entries:
+            self._add_outline_entries(c, toc_entries, bookmarked_keys)
         c.save()
+
+    @staticmethod
+    def _draw_invisible_text(
+        cvs: canvas.Canvas, text: str, pagesize: tuple[float, float]
+    ) -> None:
+        """Embed an invisible, searchable text layer fitted inside `pagesize`."""
+        width, height = pagesize
+        usable_width = max(width - 2 * _PDF_TEXT_MARGIN, 1.0)
+        usable_height = max(height - 2 * _PDF_TEXT_MARGIN, 1.0)
+
+        font_size = _PDF_TEXT_DEFAULT_SIZE
+        wrapped_lines = PdfConverter._wrap_text_lines(text, font_size, usable_width)
+        if not wrapped_lines:
+            return
+
+        leading = font_size * _PDF_TEXT_LEADING_RATIO
+        if len(wrapped_lines) * leading > usable_height:
+            # Shrink proportionally so dense transcripts fit inside the page box
+            # without clipping off the bottom edge in PDF text indexers.
+            scale = usable_height / (len(wrapped_lines) * leading)
+            font_size = max(_PDF_TEXT_MIN_SIZE, font_size * scale)
+            leading = font_size * _PDF_TEXT_LEADING_RATIO
+            wrapped_lines = PdfConverter._wrap_text_lines(text, font_size, usable_width)
+
+        text_obj = cvs.beginText(
+            _PDF_TEXT_MARGIN, height - _PDF_TEXT_MARGIN - font_size
+        )
+        text_obj.setFont(_PDF_TEXT_FONT, font_size, leading=leading)
+        text_obj.setTextRenderMode(_PDF_TEXT_RENDER_INVISIBLE)
+        text_obj.textLines(wrapped_lines)
+        cvs.drawText(text_obj)
+
+    @staticmethod
+    def _wrap_text_lines(text: str, font_size: float, max_width: float) -> list[str]:
+        """Split `text` into wrapped lines that fit within `max_width`."""
+        lines: list[str] = []
+        for raw_line in text.splitlines():
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            lines.extend(simpleSplit(stripped, _PDF_TEXT_FONT, font_size, max_width))
+        return lines
+
+    @staticmethod
+    def _add_outline_entries(
+        cvs: canvas.Canvas,
+        toc_entries: Sequence[PdfOutlineEntry],
+        bookmarked_keys: set[str],
+    ) -> None:
+        """Emit PDF outline entries for included pages, normalizing level jumps."""
+        # Maintain a monotonic stack of original 0-based heading levels so
+        # non-contiguous Supernote styles satisfy ReportLab's `level <= prev + 1`
+        # invariant while preserving sibling and parent-child relationships.
+        level_stack: list[int] = []
+        for entry_idx, entry in enumerate(toc_entries):
+            toc_key = f"toc_entry_{entry_idx}"
+            if toc_key not in bookmarked_keys:
+                continue
+            target_level = max(0, entry.level - 1)
+            while level_stack and level_stack[-1] >= target_level:
+                level_stack.pop()
+            cvs.addOutlineEntry(entry.title.strip(), toc_key, level=len(level_stack))
+            level_stack.append(target_level)
 
     def _add_links(
         self, cvs: canvas.Canvas, page: fileformat.Page, scale: tuple[float, float]
