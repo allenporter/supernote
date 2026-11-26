@@ -25,6 +25,9 @@ class WikiConfig(DataClassJSONMixin):
     max_pages_per_batch: int = 5
     """Maximum wiki pages modified per single compilation turn."""
 
+    max_source_pages_per_turn: int = 8
+    """Maximum OCR notebook pages sent to the LLM in a single backfill turn."""
+
     daily_token_budget: int = 200_000
     """Per-user UTC daily LLM token cap across compile and lint passes."""
 
@@ -39,6 +42,8 @@ class WikiConfig(DataClassJSONMixin):
             raise ValueError("debounce_seconds must be >= 0")
         if self.max_pages_per_batch < 1:
             raise ValueError("max_pages_per_batch must be >= 1")
+        if self.max_source_pages_per_turn < 1:
+            raise ValueError("max_source_pages_per_turn must be >= 1")
         if self.daily_token_budget < 0:
             raise ValueError("daily_token_budget must be >= 0")
         if self.lint_event_threshold < 1:

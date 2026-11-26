@@ -889,3 +889,111 @@ async def test_run_backfill_resolves_short_source_handles_and_drops_hallucinatio
         page.claims[0]["superseded_by_source"]
         == "769734329608700452:P20250826075655209501EC105Re539dD"
     )
+
+
+async def test_run_backfill_chunks_large_notebook_into_sequential_windows(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=5001,
+                user_id=1,
+                directory_id=0,
+                file_name="Daily.note",
+                is_folder="N",
+                is_active="Y",
+            )
+        )
+        for i in range(10):
+            session.add(
+                NotePageContentDO(
+                    file_id=5001,
+                    page_index=i,
+                    page_id=f"P_DAILY_{i:02d}",
+                    text_content=f"Day {i + 1}: Solar project update #{i + 1}.",
+                )
+            )
+        await session.commit()
+
+    fake_llm = FakeTextGenerationModel(
+        responses=[
+            {
+                "page_ops": [
+                    {
+                        "slug": "projects/solar",
+                        "title": "Solar Project",
+                        "page_kind": "project",
+                        "summary": "Home solar installation",
+                        "body_md": "Window 1 solar notes.",
+                        "source_refs": [
+                            {"source_type": "note_page", "source_key": "page01"}
+                        ],
+                    }
+                ]
+            },
+            {
+                "page_ops": [
+                    {
+                        "slug": "projects/solar",
+                        "title": "Solar Project",
+                        "page_kind": "project",
+                        "summary": "Home solar installation",
+                        "body_md": "Window 1 + Window 2 solar notes.",
+                        "source_refs": [
+                            {"source_type": "note_page", "source_key": "page01"}
+                        ],
+                    }
+                ]
+            },
+            {
+                "page_ops": [
+                    {
+                        "slug": "topics/reading",
+                        "title": "Reading Notes",
+                        "page_kind": "topic",
+                        "summary": "Books",
+                        "body_md": "Window 3 reading notes.",
+                        "source_refs": [
+                            {"source_type": "note_page", "source_key": "page02"}
+                        ],
+                    }
+                ]
+            },
+        ]
+    )
+    worker = WikiCompilerWorker(
+        config=WikiConfig(
+            enabled=True, auto_compile=False, max_source_pages_per_turn=4
+        ),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=fake_llm,
+    )
+    res = await worker.run_backfill(1, max_files=1)
+    # 10 pages / 4 per turn -> 3 sequential LLM calls; window 2 sees window 1's page.
+    assert len(fake_llm.calls) == 3
+    assert "projects/solar" not in fake_llm.calls[0]["prompt"]
+    assert "projects/solar" in fake_llm.calls[1]["prompt"]
+    assert "Window 1 solar notes." in fake_llm.calls[1]["prompt"]
+    assert res.events_processed == 10
+    assert res.pages_updated == 2
+    assert res.updated_pages == ["projects/solar", "topics/reading"]
+    assert res.remaining_files == 0
+
+    solar = await wiki_service.get_page(1, "projects/solar")
+    assert solar is not None
+    assert {r.source_key for r in solar.source_refs} == {
+        "5001:P_DAILY_00",
+        "5001:P_DAILY_04",
+    }
+    reading = await wiki_service.get_page(1, "topics/reading")
+    assert reading is not None
+    assert [r.source_key for r in reading.source_refs] == ["5001:P_DAILY_09"]
