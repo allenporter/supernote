@@ -63,6 +63,8 @@ import { ApiError, apiRequest, getToken } from './http.js';
  * @property {string | null} last_error
  * @property {number} [backfill_remaining_files]
  * @property {number} [backfill_total_files]
+ * @property {number} [backfill_remaining_pages]
+ * @property {number} [backfill_total_pages]
  * @property {number} [backfill_untranscribed_files]
  * @property {string[]} [backfill_next_files]
  */

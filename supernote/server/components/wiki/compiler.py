@@ -145,6 +145,7 @@ class WikiCompilerWorker:
         self._backfill_tasks: dict[int, asyncio.Task[None]] = {}
         self._backfill_stop_events: dict[int, asyncio.Event] = {}
         self._backfill_starting: set[int] = set()
+        self._in_flight_backfill: dict[int, tuple[int | None, int]] = {}
         self._active_tasks: set[asyncio.Task[None]] = set()
         self._started = False
         self._subscribed = False
@@ -386,6 +387,7 @@ class WikiCompilerWorker:
         *,
         max_files: int = 5,
         _final_status: str = "idle",
+        _stop_event: asyncio.Event | None = None,
     ) -> WikiCompileResult:
         """Compile existing `.note` OCR transcripts newest-first in bounded chunks."""
         async with self._lock_for_user(user_id):
@@ -438,76 +440,111 @@ class WikiCompilerWorker:
             )
             updated_slugs: list[str] = []
             skipped_policy = 0
-            if synthetic_diffs:
-                task_rows = await self._source_service.list_task_snapshots(
-                    user_id, limit=50
-                )
-                linked_context: dict[str, object] = {}
-                if task_rows:
-                    linked_context["tasks"] = [
-                        {
-                            "task_id": t.task_id,
-                            "title": t.title,
-                            "detail": t.detail,
-                            "status": t.status,
-                            "importance": t.importance,
-                            "due_time": t.due_time,
-                            "completed_time": t.completed_time,
-                        }
-                        for t in task_rows
-                    ]
-                backfill_page_budget = max(
-                    self._config.max_pages_per_batch, max_files * 2, 10
-                )
-                window_size = self._config.max_source_pages_per_turn
-                for start in range(0, len(synthetic_diffs), window_size):
-                    window_diffs = synthetic_diffs[start : start + window_size]
-                    all_pages = await self._wiki_service.list_pages(user_id, limit=500)
-                    built = build_compile_prompt(
-                        all_pages,
-                        window_diffs,
-                        linked_context=linked_context,
-                        max_pages_per_batch=backfill_page_budget,
+            stopped_mid_batch = False
+            processed_events = 0
+            start_cursor = cp.backfill_file_cursor
+            try:
+                if synthetic_diffs:
+                    task_rows = await self._source_service.list_task_snapshots(
+                        user_id, limit=50
                     )
-                    try:
-                        raw_plan = await self._text_model.generate_json(
-                            built.prompt,
-                            response_schema=get_compile_json_schema(),
-                            schema_name="wiki_compile_plan",
-                            stage=AIStage.WIKI_COMPILE,
-                        )
-                        plan = parse_compile_plan(raw_plan)
-                    except (AIError, ValueError, TypeError, LookupError) as err:
-                        await self._update_checkpoint(
-                            user_id, status="error", last_error=str(err)
-                        )
-                        raise
-                    window_slugs, window_skipped = await self._apply_compile_plan(
-                        user_id,
-                        plan,
-                        source_event_seq=None,
-                        max_pages=backfill_page_budget,
-                        source_handles=built.source_handles,
+                    linked_context: dict[str, object] = {}
+                    if task_rows:
+                        linked_context["tasks"] = [
+                            {
+                                "task_id": t.task_id,
+                                "title": t.title,
+                                "detail": t.detail,
+                                "status": t.status,
+                                "importance": t.importance,
+                                "due_time": t.due_time,
+                                "completed_time": t.completed_time,
+                            }
+                            for t in task_rows
+                        ]
+                    backfill_page_budget = max(
+                        self._config.max_pages_per_batch, max_files * 2, 10
                     )
-                    updated_slugs.extend(window_slugs)
-                    skipped_policy += window_skipped
-                    if window_slugs:
-                        await self._wiki_service.sync_index_page(user_id)
-                updated_slugs = list(dict.fromkeys(updated_slugs))
+                    window_size = self._config.max_source_pages_per_turn
+                    for start in range(0, len(synthetic_diffs), window_size):
+                        if (
+                            start > 0
+                            and _stop_event is not None
+                            and _stop_event.is_set()
+                        ):
+                            stopped_mid_batch = True
+                            break
+                        window_diffs = synthetic_diffs[start : start + window_size]
+                        all_pages = await self._wiki_service.list_pages(
+                            user_id, limit=500
+                        )
+                        built = build_compile_prompt(
+                            all_pages,
+                            window_diffs,
+                            linked_context=linked_context,
+                            max_pages_per_batch=backfill_page_budget,
+                        )
+                        try:
+                            raw_plan = await self._text_model.generate_json(
+                                built.prompt,
+                                response_schema=get_compile_json_schema(),
+                                schema_name="wiki_compile_plan",
+                                stage=AIStage.WIKI_COMPILE,
+                            )
+                            plan = parse_compile_plan(raw_plan)
+                        except (AIError, ValueError, TypeError, LookupError) as err:
+                            await self._update_checkpoint(
+                                user_id, status="error", last_error=str(err)
+                            )
+                            raise
+                        window_slugs, window_skipped = await self._apply_compile_plan(
+                            user_id,
+                            plan,
+                            source_event_seq=None,
+                            max_pages=backfill_page_budget,
+                            source_handles=built.source_handles,
+                        )
+                        updated_slugs.extend(window_slugs)
+                        skipped_policy += window_skipped
+                        processed_events += len(window_diffs)
+                        if window_slugs:
+                            await self._wiki_service.sync_index_page(user_id)
+                        self._in_flight_backfill[user_id] = (
+                            start_cursor,
+                            processed_events,
+                        )
+                    updated_slugs = list(dict.fromkeys(updated_slugs))
 
-            issues = await self._wiki_service.run_structural_lint(user_id)
-            remaining_files, _ = await self._source_service.count_backfill_progress(
-                user_id, before_file_id=next_cursor
-            )
-            resolved_status = "idle" if remaining_files == 0 else _final_status
-            await self._update_checkpoint(
-                user_id,
-                backfill_file_cursor=next_cursor,
-                status=resolved_status,
-                last_error=None,
-            )
+                issues = await self._wiki_service.run_structural_lint(user_id)
+                if stopped_mid_batch:
+                    (
+                        remaining_files,
+                        _,
+                    ) = await self._source_service.count_backfill_progress(
+                        user_id, before_file_id=start_cursor
+                    )
+                    resolved_status = "idle"
+                    await self._update_checkpoint(
+                        user_id, status="idle", last_error=None
+                    )
+                else:
+                    (
+                        remaining_files,
+                        _,
+                    ) = await self._source_service.count_backfill_progress(
+                        user_id, before_file_id=next_cursor
+                    )
+                    resolved_status = "idle" if remaining_files == 0 else _final_status
+                    await self._update_checkpoint(
+                        user_id,
+                        backfill_file_cursor=next_cursor,
+                        status=resolved_status,
+                        last_error=None,
+                    )
+            finally:
+                self._in_flight_backfill.pop(user_id, None)
             return WikiCompileResult(
-                events_processed=len(synthetic_diffs),
+                events_processed=processed_events,
                 pages_updated=len(updated_slugs),
                 skipped_policy_pages=skipped_policy,
                 lint_issues_open=len(issues),
@@ -523,6 +560,10 @@ class WikiCompilerWorker:
         return user_id in self._backfill_starting or (
             task is not None and not task.done()
         )
+
+    def in_flight_backfill(self, user_id: int) -> tuple[int | None, int] | None:
+        """Return `(start_cursor, pages_done)` for an active backfill batch, or `None`."""
+        return self._in_flight_backfill.get(user_id)
 
     async def start_backfill_job(
         self, user_id: int, *, max_files_per_turn: int = 1
@@ -595,6 +636,7 @@ class WikiCompilerWorker:
                             user_id,
                             max_files=capped_files,
                             _final_status="backfilling",
+                            _stop_event=stop_event,
                         )
                         if res.status == "paused":
                             paused = True

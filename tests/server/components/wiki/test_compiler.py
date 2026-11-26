@@ -997,3 +997,83 @@ async def test_run_backfill_chunks_large_notebook_into_sequential_windows(
     reading = await wiki_service.get_page(1, "topics/reading")
     assert reading is not None
     assert [r.source_key for r in reading.source_refs] == ["5001:P_DAILY_09"]
+
+
+async def test_run_backfill_stops_cooperatively_between_windows_without_advancing_cursor(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=5002,
+                user_id=1,
+                directory_id=0,
+                file_name="BigDaily.note",
+                is_folder="N",
+                is_active="Y",
+            )
+        )
+        for i in range(8):
+            session.add(
+                NotePageContentDO(
+                    file_id=5002,
+                    page_index=i,
+                    page_id=f"P_BIG_{i:02d}",
+                    text_content=f"Big day {i + 1}",
+                )
+            )
+        await session.commit()
+
+    stop_event = asyncio.Event()
+
+    class _StopAfterFirstWindowModel(FakeTextGenerationModel):
+        async def generate_json(self, prompt, **kwargs):
+            res = await super().generate_json(prompt, **kwargs)
+            stop_event.set()
+            return res
+
+    fake_llm = _StopAfterFirstWindowModel(
+        responses=[
+            {
+                "page_ops": [
+                    {
+                        "slug": "topics/big",
+                        "title": "Big",
+                        "page_kind": "topic",
+                        "body_md": "Window 1",
+                        "source_refs": [
+                            {"source_type": "note_page", "source_key": "page01"}
+                        ],
+                    }
+                ]
+            },
+            {"page_ops": []},
+        ]
+    )
+    worker = WikiCompilerWorker(
+        config=WikiConfig(
+            enabled=True, auto_compile=False, max_source_pages_per_turn=4
+        ),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=fake_llm,
+    )
+    res = await worker.run_backfill(
+        1, max_files=1, _final_status="backfilling", _stop_event=stop_event
+    )
+    # Stopped after window 1 (4 pages), did NOT advance cursor past BigDaily.note.
+    assert len(fake_llm.calls) == 1
+    assert res.status == "idle"
+    assert res.events_processed == 4
+    assert res.remaining_files == 1
+    status = await wiki_service.get_status(1)
+    assert status.backfill_remaining_files == 1
+    assert status.backfill_remaining_pages == 8
+    assert worker.in_flight_backfill(1) is None
