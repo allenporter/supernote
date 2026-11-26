@@ -278,6 +278,11 @@ class WikiService:
             )
             await session.commit()
 
+        if canonical != "index":
+            existing_index = await self.get_page(user_id, "index")
+            if existing_index is not None and existing_index.edit_policy == "auto":
+                await self.sync_index_page(user_id)
+
     async def list_revisions(
         self, user_id: int, slug: str, *, limit: int = 50
     ) -> list[WikiRevisionDTO]:
@@ -477,6 +482,7 @@ class WikiService:
                     link.target_page_id is not None
                     and link.from_page_id != link.target_page_id
                     and link.from_page_id in page_by_id
+                    and page_by_id[link.from_page_id].page_kind not in ("index", "log")
                 ):
                     inbound_targets.add(link.target_page_id)
                 elif link.target_page_id is None and link.from_page_id in page_by_id:

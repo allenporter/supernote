@@ -322,3 +322,44 @@ async def test_sync_index_page_generates_catalog_is_idempotent_and_respects_prot
     idx3 = await service.sync_index_page(1)
     assert idx3 is not None
     assert idx3.body_md == "Hand-crafted index"
+
+
+async def test_index_links_do_not_mask_orphan_pages_and_delete_refreshes_index(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    service = WikiService(session_manager)
+    await service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="topics/lonely",
+            title="Lonely Topic",
+            page_kind="topic",
+            body_md="No other content page links here.",
+            author_kind="compiler",
+        ),
+    )
+    await service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="projects/beta",
+            title="Beta",
+            page_kind="project",
+            body_md="Standalone project.",
+            author_kind="compiler",
+        ),
+    )
+    await service.sync_index_page(1)
+
+    # Inbound links from `index` must not hide genuinely orphaned content pages.
+    issues = await service.run_structural_lint(1)
+    orphan_descs = [i.description for i in issues if i.issue_type == "orphan_page"]
+    assert any("topics/lonely" in d for d in orphan_descs)
+
+    # Deleting a page must immediately refresh the auto-managed `index` so it
+    # never retains a broken wikilink to the deleted page.
+    await service.delete_page(1, "projects/beta")
+    index_after = await service.get_page(1, "index")
+    assert index_after is not None
+    assert "projects/beta" not in index_after.body_md
+    issues_after = await service.run_structural_lint(1)
+    assert not any(i.issue_type == "broken_link" for i in issues_after)

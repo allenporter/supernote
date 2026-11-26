@@ -486,7 +486,9 @@ def select_candidate_pages(
             score += 100
         names = [p.title, *p.aliases]
         if corpus_lower and any(
-            name.strip() and name.strip().lower() in corpus_lower for name in names
+            (norm := name.strip().lower())
+            and re.search(rf"\b{re.escape(norm)}\b", corpus_lower)
+            for name in names
         ):
             score += 40
         if corpus_tokens:

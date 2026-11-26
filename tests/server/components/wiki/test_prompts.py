@@ -201,3 +201,43 @@ def test_build_compile_prompt_prioritizes_synthesized_candidates_and_injects_bud
     assert '"slug": "projects/aurora"' in candidates_section
     assert '"slug": "topics/garden"' in candidates_section
     assert '"slug": "index"' not in candidates_section
+
+
+def test_select_candidate_pages_uses_word_boundaries_for_short_names() -> None:
+    def _entity(idx: int, slug: str, title: str, update_time: int) -> WikiPageDTO:
+        return WikiPageDTO(
+            page_id=idx,
+            slug=slug,
+            title=title,
+            page_kind="entity",
+            summary="",
+            body_md="body",
+            claims=[],
+            edit_policy="auto",
+            last_author_kind="compiler",
+            version=1,
+            create_time=update_time,
+            update_time=update_time,
+        )
+
+    pages = [
+        _entity(1, "entities/al", "Al", 10),
+        _entity(2, "entities/maya", "Maya", 20),
+        _entity(3, "entities/bob", "Bob", 30),
+    ]
+    # "also" contains "al" as a substring, but should NOT match entity "Al".
+    diff_false = [
+        {"payload": {"text_content": "We also talked with Maya about the final plan."}}
+    ]
+    ranked_false = [
+        p.slug for p in select_candidate_pages(pages, diff_false, {}, limit=2)
+    ]
+    assert ranked_false[0] == "entities/maya"
+    assert "entities/al" not in ranked_false
+
+    # Standalone word "Al" SHOULD match entity "Al".
+    diff_true = [{"payload": {"text_content": "Met with Al at noon."}}]
+    ranked_true = [
+        p.slug for p in select_candidate_pages(pages, diff_true, {}, limit=2)
+    ]
+    assert ranked_true[0] == "entities/al"

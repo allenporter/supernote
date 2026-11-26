@@ -52,7 +52,9 @@ async def test_run_wiki_eval_end_to_end_with_fake_model_and_vault_export(
     assert report.metrics.total_pages == 18
     assert report.metrics.has_index_page is True
     assert report.metrics.pages_by_kind == {"index": 1, "source_digest": 17}
-    assert report.metrics.open_lint_total == 0
+    # Index links must not mask disconnected orphan_page findings.
+    assert report.metrics.open_lint_total == 17
+    assert report.metrics.open_lint_by_type == {"orphan_page": 17}
 
     # Exported vault + reports exist and are readable.
     assert (export_dir / "report.json").is_file()
