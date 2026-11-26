@@ -26,6 +26,8 @@ export default {
         linksByPageIndex: { type: Map, default: () => new Map() },
         summaries: { type: Array, default: () => [] },
         aiStatus: { type: Object, default: null },
+        transcriptEnabled: { type: Boolean, default: true },
+        summariesEnabled: { type: Boolean, default: true },
     },
     emits: ['update:activeTab', 'close-mobile', 'select-page', 'keyword-click', 'link-click'],
     /**
@@ -42,7 +44,9 @@ export default {
      *   pageMetaByIndex: Map<number, NotePageMeta>,
      *   linksByPageIndex: Map<number, NoteLink[]>,
      *   summaries: NoteSummary[],
-     *   aiStatus: AiStatus | null
+     *   aiStatus: AiStatus | null,
+     *   transcriptEnabled: boolean,
+     *   summariesEnabled: boolean
      * }} props
      * @param {{
      *   expose: (exposed: Record<string, any>) => void,
@@ -168,6 +172,16 @@ export default {
             return renderMarkdown(page.text);
         });
 
+        const transcriptEmptyMessage = computed(() => {
+            if (!props.transcriptEnabled) {
+                return 'Handwriting transcription is disabled on this server.';
+            }
+            if (props.aiStatus && !props.aiStatus.ocrEnabled) {
+                return 'OCR is not enabled on this server. Configure an AI provider to automatically transcribe handwritten pages.';
+            }
+            return 'No OCR transcript available for this notebook yet. Background processing may still be running.';
+        });
+
         const renderedSummaries = computed(() =>
             props.summaries.map((s, idx) => ({
                 id: s.id || String(idx),
@@ -188,6 +202,7 @@ export default {
             isStandaloneImage,
             primaryImagePage,
             primaryImageHtml,
+            transcriptEmptyMessage,
             getPageMeta,
             getPageKeywords,
             getPageLinks,
@@ -208,8 +223,8 @@ export default {
         <div :class="isOpenMobile ? 'translate-y-0 visible pointer-events-auto' : 'translate-y-full invisible pointer-events-none md:translate-y-0 md:visible md:pointer-events-auto'"
             class="fixed md:static inset-x-0 bottom-0 z-[70] md:z-10 h-[65vh] md:h-full w-full max-w-[100vw] md:max-w-none md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
 
-            <!-- Segmented Tab Selector (hidden for standalone images with no summaries) -->
-            <div v-if="!isStandaloneImage" class="p-2 border-b border-stone-200/80 grid grid-cols-2 gap-1 bg-stone-100/70">
+            <!-- Segmented Tab Selector (hidden for standalone images and when summaries are disabled) -->
+            <div v-if="!isStandaloneImage && summariesEnabled" class="p-2 border-b border-stone-200/80 grid grid-cols-2 gap-1 bg-stone-100/70">
                 <button @click="$emit('update:activeTab', 'transcription')" type="button"
                     :class="activeTab === 'transcription'
                         ? 'bg-white text-slate-900 shadow-sm font-semibold'
@@ -277,6 +292,9 @@ export default {
                         <div v-if="primaryImageHtml" class="markdown-prose" data-image-analysis v-html="primaryImageHtml"></div>
                         <span v-else class="italic text-stone-500 font-sans">No text or description available for this image.</span>
                     </div>
+                </div>
+                <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
+                    {{ transcriptEmptyMessage }}
                 </div>
             </div>
 
@@ -393,27 +411,17 @@ export default {
                     </div>
 
                     <div v-if="transcriptPages.length === 0" class="bg-stone-50/80 p-4 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                        <template v-if="aiStatus && !aiStatus.ocrEnabled">
-                            OCR is not enabled on this server. Configure an AI provider to automatically transcribe handwritten pages.
-                        </template>
-                        <template v-else>
-                            No OCR transcript available for this notebook yet. Background processing may still be running.
-                        </template>
+                        {{ transcriptEmptyMessage }}
                     </div>
                 </div>
 
                 <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                    <template v-if="aiStatus && !aiStatus.ocrEnabled">
-                        OCR is not enabled on this server. Configure an AI provider to automatically transcribe handwritten pages.
-                    </template>
-                    <template v-else>
-                        No OCR transcript available for this notebook yet. Background processing may still be running.
-                    </template>
+                    {{ transcriptEmptyMessage }}
                 </div>
             </div>
 
             <!-- Tab 2: Real Summaries -->
-            <div v-if="activeTab === 'insights'" class="p-4 flex-1 overflow-y-auto space-y-3">
+            <div v-if="activeTab === 'insights' && summariesEnabled" class="p-4 flex-1 overflow-y-auto space-y-3">
                 <div class="flex items-center justify-between gap-2">
                     <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider truncate">Notebook Summaries</h4>
                     <button @click="$emit('close-mobile')" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
