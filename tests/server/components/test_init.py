@@ -10,9 +10,11 @@ import pkgutil
 import subprocess
 import sys
 from collections import deque
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from aiohttp import web
 
 import supernote.server.components as components_pkg
 from supernote.server.components import (
@@ -24,7 +26,11 @@ from supernote.server.components import (
     load_component_from_spec,
 )
 from supernote.server.components.ai import AiComponent
-from supernote.server.components.http import HTTP_REGISTRAR_KEY, jwt_auth_middleware
+from supernote.server.components.http import (
+    HTTP_REGISTRAR_KEY,
+    HttpRegistrar,
+    jwt_auth_middleware,
+)
 from supernote.server.core import (
     Component,
     ComponentError,
@@ -524,3 +530,66 @@ def test_load_component_from_spec_rejects_domain_mismatch() -> None:
     )
     with pytest.raises(ComponentError, match="expected 'wrong_domain'"):
         load_component_from_spec(spec)
+
+
+# Routes that the Web UI gates behind `isComponentRunning(domain)` / `isTabAvailable(...)`.
+# Keep this map in sync with `supernote/server/static/js/` when moving routes between components.
+UI_GATED_COMPONENT_ROUTES: dict[str, set[str]] = {
+    "ai": {"/api/extended/ai/status"},
+    "config": {
+        "/api/extended/system/features",
+        "/api/extended/system/components",
+    },
+    "conversion": {
+        "/api/extended/file/note/cover",
+        "/api/file/note/to/png",
+    },
+    "processor": {
+        "/api/extended/file/note/metadata",
+        "/api/extended/file/processing/status",
+        "/api/extended/system/tasks",
+        "/api/extended/system/tasks/retry",
+    },
+    "schedule": {
+        "/api/file/schedule/task/all",
+        "/api/file/schedule/group/all",
+        "/api/schedule/feed.ics",
+    },
+    "search": {"/api/extended/search"},
+    "summary": {
+        "/api/extended/file/summary/list",
+        "/api/file/query/summary",
+        "/api/file/query/summary/group",
+    },
+    "transcript": {"/api/extended/transcript"},
+    "wiki": {
+        "/api/extended/wiki/pages",
+        "/api/extended/wiki/status",
+        "/api/extended/wiki/search",
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("domain", "expected_routes"),
+    sorted(UI_GATED_COMPONENT_ROUTES.items()),
+)
+async def test_ui_gated_routes_owned_by_expected_components(
+    component_core: ServerCore,
+    domain: str,
+    expected_routes: set[str],
+) -> None:
+    """Each route gated by `isComponentRunning(domain)` in the Web UI is registered by `domain`."""
+    probe_app = web.Application()
+    probe_core = replace(component_core, app=probe_app)
+    registrar = HttpRegistrar(probe_app.router)
+
+    http_mod = importlib.import_module(f"supernote.server.components.{domain}.http")
+    await http_mod.async_setup_http(probe_core, registrar)
+
+    registered = {r.canonical for r in probe_app.router.resources()}
+    missing = expected_routes - registered
+    assert not missing, (
+        f"Component {domain!r} no longer registers UI-gated route(s) {sorted(missing)}; "
+        "update the Web UI `isComponentRunning(...)` gate to the new owning component."
+    )
