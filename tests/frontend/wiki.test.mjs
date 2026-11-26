@@ -184,6 +184,34 @@ for (const { name, mode, result, expected } of [
         },
     },
     {
+        name: 'background backfill start',
+        mode: 'backfill_start',
+        result: { mode: 'backfill_start', status: 'backfilling', remaining_files: 7 },
+        expected: {
+            message:
+                'Started background backfill (7 notebooks queued, 1 per turn). You can safely leave this tab.',
+            type: 'success',
+        },
+    },
+    {
+        name: 'background backfill stop',
+        mode: 'backfill_stop',
+        result: { mode: 'backfill_stop', status: 'stopping', remaining_files: 5 },
+        expected: {
+            message: 'Stopping backfill after the current notebook finishes.',
+            type: 'info',
+        },
+    },
+    {
+        name: 'background backfill reset',
+        mode: 'backfill_reset',
+        result: { mode: 'backfill_reset', status: 'idle', remaining_files: 9 },
+        expected: {
+            message: 'Backfill cursor reset — 9 notebooks ready to rebuild.',
+            type: 'info',
+        },
+    },
+    {
         name: 'up-to-date incremental compile',
         mode: 'incremental',
         result: { mode: 'incremental', events_processed: 0, pages_updated: 0, status: 'idle' },

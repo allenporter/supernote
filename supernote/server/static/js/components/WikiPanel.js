@@ -70,7 +70,6 @@ export default {
         const showLintPanel = ref(false);
         const showBackfillPanel = ref(false);
         const backfillBannerDismissed = ref(false);
-        const isBackfillAllRunning = ref(false);
         const stopBackfillRequested = ref(false);
         /** @type {import('vue').Ref<string[]>} */
         const activeBatchFiles = ref([]);
@@ -97,6 +96,9 @@ export default {
         let loadSeq = 0;
         let selectSeq = 0;
         let isUnmounted = false;
+        /** @type {ReturnType<typeof setInterval> | null} */
+        let backfillPollTimer = null;
+        let backfillPollInFlight = false;
 
         const filteredPages = computed(() => {
             const source = searchHits.value !== null ? searchHits.value : pages.value;
@@ -129,9 +131,13 @@ export default {
         const isBackfillDone = computed(
             () => backfillTotal.value > 0 && backfillRemaining.value === 0,
         );
+        const isServerBackfilling = computed(() => status.value?.status === 'backfilling');
+        const isBackfillActive = computed(
+            () => runningAction.value === 'backfill' || isServerBackfilling.value,
+        );
         const isBackfillBannerVisible = computed(() => {
             if (isDisabled.value || error.value) return false;
-            if (runningAction.value === 'backfill') return true;
+            if (isBackfillActive.value) return true;
             if (showBackfillPanel.value) return true;
             if (lastBackfillSummary.value && !backfillBannerDismissed.value) return true;
             // Show inline progress banner automatically when backfill is partially done and wiki has pages.
@@ -182,6 +188,14 @@ export default {
                 if (seq !== loadSeq) return;
                 status.value = st;
                 lintIssues.value = issues;
+                if (st?.status === 'backfilling') {
+                    showBackfillPanel.value = true;
+                    backfillBannerDismissed.value = false;
+                    startBackfillPoll();
+                } else {
+                    stopBackfillPoll();
+                    stopBackfillRequested.value = false;
+                }
 
                 const targetSlug =
                     preferredSlug ||
@@ -351,8 +365,70 @@ export default {
             }
         }
 
+        function stopBackfillPoll() {
+            if (backfillPollTimer !== null) {
+                clearInterval(backfillPollTimer);
+                backfillPollTimer = null;
+            }
+        }
+
+        function startBackfillPoll() {
+            if (backfillPollTimer !== null || isUnmounted) return;
+            backfillPollTimer = setInterval(async () => {
+                if (isUnmounted || backfillPollInFlight) return;
+                backfillPollInFlight = true;
+                try {
+                    const prevStatus = status.value?.status;
+                    const [list, st, issues] = await Promise.all([
+                        fetchWikiPages(),
+                        fetchWikiStatus(),
+                        fetchWikiLintIssues('open'),
+                    ]);
+                    if (isUnmounted) return;
+                    if (list !== null) {
+                        pages.value = list;
+                        if (!activePage.value && list.length > 0) {
+                            await selectSlug(list[0].slug, { replaceHistory: true });
+                        }
+                    }
+                    if (st) status.value = st;
+                    lintIssues.value = issues;
+
+                    if (st?.status !== 'backfilling') {
+                        stopBackfillPoll();
+                        stopBackfillRequested.value = false;
+                        if (prevStatus === 'backfilling') {
+                            if (
+                                (st?.backfill_remaining_files ?? 0) === 0 &&
+                                (st?.backfill_total_files ?? 0) > 0
+                            ) {
+                                showToast(
+                                    `Background backfill complete — all ${st?.backfill_total_files} notebooks compiled.`,
+                                    'success',
+                                );
+                            } else if (st?.status === 'error') {
+                                showToast(
+                                    st.last_error || 'Background backfill stopped with an error.',
+                                    'error',
+                                );
+                            } else {
+                                showToast(
+                                    `Background backfill stopped (${st?.backfill_remaining_files ?? 0} remaining).`,
+                                    'info',
+                                );
+                            }
+                        }
+                    }
+                } catch {
+                    // Transient poll failure; retry on next interval.
+                } finally {
+                    backfillPollInFlight = false;
+                }
+            }, 2000);
+        }
+
         function toggleBackfillPanel() {
-            if (isBackfillBannerVisible.value && runningAction.value !== 'backfill') {
+            if (isBackfillBannerVisible.value && !isBackfillActive.value) {
                 showBackfillPanel.value = false;
                 backfillBannerDismissed.value = true;
             } else {
@@ -362,129 +438,101 @@ export default {
         }
 
         function dismissBackfillBanner() {
-            if (runningAction.value === 'backfill') return;
+            if (isBackfillActive.value) return;
             showBackfillPanel.value = false;
             backfillBannerDismissed.value = true;
         }
 
-        function requestStopBackfill() {
+        async function requestStopBackfill() {
             stopBackfillRequested.value = true;
+            try {
+                const result = await triggerWikiCompile('backfill_stop');
+                const toast = formatWikiActionResult('backfill_stop', result);
+                showToast(toast.message, toast.type);
+            } catch (err) {
+                stopBackfillRequested.value = false;
+                showToast(getErrorMessage(err), 'error');
+            }
+        }
+
+        async function handleResetBackfill() {
+            if (isBusy.value || isDisabled.value || isBackfillActive.value) return;
+            isBusy.value = true;
+            try {
+                const result = await triggerWikiCompile('backfill_reset');
+                lastBackfillSummary.value = null;
+                backfillBannerDismissed.value = false;
+                showBackfillPanel.value = true;
+                const toast = formatWikiActionResult('backfill_reset', result);
+                showToast(toast.message, toast.type);
+                await loadAll(activePage.value?.slug || '');
+            } catch (err) {
+                showToast(getErrorMessage(err), 'error');
+            } finally {
+                isBusy.value = false;
+            }
         }
 
         /**
-         * Run either a single backfill batch (`runAll = false`) or loop until all
-         * remaining OCR'd notebooks are compiled (`runAll = true`).
+         * Run either a single synchronous backfill batch (`runAll = false`) or start
+         * the server-side continuous background backfill job (`runAll = true`, 1 notebook per turn).
          *
          * @param {boolean} [runAll=false]
          */
         async function handleBackfill(runAll = false) {
-            if (isBusy.value || isDisabled.value || isBackfillDone.value) return;
-            isBusy.value = true;
-            runningAction.value = 'backfill';
-            isBackfillAllRunning.value = runAll;
-            stopBackfillRequested.value = false;
+            if (
+                isBusy.value ||
+                isDisabled.value ||
+                isBackfillDone.value ||
+                isBackfillActive.value
+            ) {
+                return;
+            }
             backfillBannerDismissed.value = false;
             showBackfillPanel.value = true;
 
-            /** @type {string[]} */
-            const allFiles = [];
-            /** @type {string[]} */
-            const allPages = [];
-            let batchesRun = 0;
-            let stoppedEarly = false;
-            let pausedOrEmpty = false;
-            /** @type {import('../api/wiki.js').WikiCompileResult | null} */
-            let lastResult = null;
+            if (runAll) {
+                isBusy.value = true;
+                stopBackfillRequested.value = false;
+                try {
+                    const result = await triggerWikiCompile('backfill_start', { maxFiles: 1 });
+                    const toast = formatWikiActionResult('backfill_start', result);
+                    showToast(toast.message, toast.type);
+                    await loadAll(activePage.value?.slug || '');
+                } catch (err) {
+                    if (!isUnmounted) {
+                        showToast(getErrorMessage(err), 'error');
+                    }
+                } finally {
+                    isBusy.value = false;
+                }
+                return;
+            }
 
+            isBusy.value = true;
+            runningAction.value = 'backfill';
+            activeBatchFiles.value = [...backfillNextFiles.value];
             try {
-                while (!isUnmounted) {
-                    activeBatchFiles.value = [...backfillNextFiles.value];
-                    const result = await triggerWikiCompile('backfill');
-                    lastResult = result;
-                    if (isUnmounted) return;
+                const result = await triggerWikiCompile('backfill', { maxFiles: 5 });
+                if (isUnmounted) return;
+                const toast = formatWikiActionResult('backfill', result);
+                showToast(toast.message, toast.type);
 
-                    if (result?.status === 'paused') {
-                        const toast = formatWikiActionResult('backfill', result);
-                        showToast(toast.message, toast.type);
-                        pausedOrEmpty = true;
-                        await loadAll(activePage.value?.slug || '');
-                        break;
-                    }
-
-                    const batchFiles = Array.isArray(result?.files_processed)
-                        ? result.files_processed
-                        : [];
-                    const batchPages = Array.isArray(result?.updated_pages)
-                        ? result.updated_pages
-                        : [];
-                    const eventsProcessed = result?.events_processed ?? 0;
-
-                    if (batchFiles.length === 0 && eventsProcessed === 0) {
-                        if (batchesRun === 0) {
-                            const toast = formatWikiActionResult('backfill', result);
-                            showToast(toast.message, toast.type);
-                        }
-                        pausedOrEmpty = true;
-                        await loadAll(activePage.value?.slug || '');
-                        break;
-                    }
-
-                    batchesRun += 1;
-                    for (const f of batchFiles) {
-                        if (!allFiles.includes(f)) allFiles.push(f);
-                    }
-                    for (const slug of batchPages) {
-                        if (!allPages.includes(slug)) allPages.push(slug);
-                    }
-
-                    const remaining =
-                        typeof result?.remaining_files === 'number' ? result.remaining_files : null;
-
+                const batchFiles = Array.isArray(result?.files_processed)
+                    ? result.files_processed
+                    : [];
+                const batchPages = Array.isArray(result?.updated_pages) ? result.updated_pages : [];
+                if (batchFiles.length > 0 || batchPages.length > 0) {
                     lastBackfillSummary.value = {
-                        filesProcessed: [...allFiles],
-                        updatedPages: [...allPages],
-                        batchesRun,
-                        completed: remaining === 0,
+                        filesProcessed: batchFiles,
+                        updatedPages: batchPages,
+                        batchesRun: 1,
+                        completed: result?.remaining_files === 0,
                         stopped: false,
                     };
-
-                    const preferredSlug = activePage.value?.slug || batchPages[0] || '';
-                    await loadAll(preferredSlug);
-                    if (isUnmounted) return;
-
-                    if (!runAll || remaining === 0 || backfillRemaining.value === 0) {
-                        break;
-                    }
-                    if (stopBackfillRequested.value) {
-                        stoppedEarly = true;
-                        break;
-                    }
                 }
-
-                if (!isUnmounted && !pausedOrEmpty && batchesRun > 0) {
-                    const isDoneNow = backfillRemaining.value === 0;
-                    lastBackfillSummary.value = {
-                        filesProcessed: [...allFiles],
-                        updatedPages: [...allPages],
-                        batchesRun,
-                        completed: isDoneNow,
-                        stopped: stoppedEarly,
-                    };
-                    if (stoppedEarly) {
-                        showToast(
-                            `Stopped backfill after ${batchesRun} ${batchesRun === 1 ? 'batch' : 'batches'} (${allFiles.length} ${allFiles.length === 1 ? 'notebook' : 'notebooks'} compiled, ${backfillRemaining.value} remaining).`,
-                            'info',
-                        );
-                    } else if (runAll && batchesRun > 1) {
-                        showToast(
-                            `Backfill complete — compiled ${allFiles.length} ${allFiles.length === 1 ? 'notebook' : 'notebooks'} (${allPages.length} ${allPages.length === 1 ? 'page' : 'pages'} updated).`,
-                            'success',
-                        );
-                    } else if (lastResult) {
-                        const toast = formatWikiActionResult('backfill', lastResult);
-                        showToast(toast.message, toast.type);
-                    }
-                }
+                const preferredSlug = activePage.value?.slug || batchPages[0] || '';
+                await loadAll(preferredSlug);
             } catch (err) {
                 if (!isUnmounted) {
                     showToast(getErrorMessage(err), 'error');
@@ -497,8 +545,6 @@ export default {
                 }
             } finally {
                 activeBatchFiles.value = [];
-                isBackfillAllRunning.value = false;
-                stopBackfillRequested.value = false;
                 runningAction.value = '';
                 isBusy.value = false;
             }
@@ -589,7 +635,7 @@ export default {
 
         onUnmounted(() => {
             isUnmounted = true;
-            stopBackfillRequested.value = true;
+            stopBackfillPoll();
         });
 
         return {
@@ -616,7 +662,8 @@ export default {
             showLintPanel,
             showBackfillPanel,
             isBackfillBannerVisible,
-            isBackfillAllRunning,
+            isServerBackfilling,
+            isBackfillActive,
             stopBackfillRequested,
             activeBatchFiles,
             lastBackfillSummary,
@@ -647,6 +694,7 @@ export default {
             toggleBackfillPanel,
             dismissBackfillBanner,
             requestStopBackfill,
+            handleResetBackfill,
             handleBackfill,
             handleRunAction,
             handleResolveIssue,
@@ -678,12 +726,13 @@ export default {
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
                         New Page
                     </button>
-                    <button v-if="backfillRemaining > 0 || runningAction === 'backfill'"
+                    <button v-if="backfillTotal > 0 || isBackfillActive"
                         type="button" @click="toggleBackfillPanel" :disabled="isDisabled"
                         :class="isBackfillBannerVisible ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-stone-200 text-slate-700 hover:bg-stone-50'"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors">
-                        <template v-if="runningAction === 'backfill'">Backfilling…</template>
-                        <template v-else>Backfill ({{ backfillRemaining }} left)</template>
+                        <template v-if="isBackfillActive">Backfilling…</template>
+                        <template v-else-if="backfillRemaining > 0">Backfill ({{ backfillRemaining }} left)</template>
+                        <template v-else>Backfill</template>
                     </button>
                     <button type="button" @click="handleRunAction('incremental')" :disabled="isDisabled || isBusy"
                         title="Compile recent notebook and task changes since the last update"
@@ -722,7 +771,7 @@ export default {
                     <div class="min-w-0 flex-1 space-y-0.5">
                         <div class="flex flex-wrap items-center gap-2">
                             <h3 class="text-xs font-semibold text-slate-900">
-                                <template v-if="runningAction === 'backfill'">Compiling Notebooks…</template>
+                                <template v-if="isBackfillActive">Compiling Notebooks…</template>
                                 <template v-else-if="isBackfillDone">Backfill Complete</template>
                                 <template v-else>Notebook Backfill</template>
                             </h3>
@@ -736,7 +785,13 @@ export default {
                             </span>
                         </div>
                         <p class="text-xs text-stone-500">
-                            <template v-if="runningAction === 'backfill' && activeBatchFiles.length > 0">
+                            <template v-if="isServerBackfilling">
+                                Running on the server (1 notebook per turn) — safe to switch tabs or reload.
+                                <template v-if="backfillNextFiles.length > 0">
+                                    Compiling: <span class="font-medium text-slate-700">{{ backfillNextFiles[0] }}</span>
+                                </template>
+                            </template>
+                            <template v-else-if="runningAction === 'backfill' && activeBatchFiles.length > 0">
                                 Compiling {{ activeBatchFiles.length }} {{ activeBatchFiles.length === 1 ? 'notebook' : 'notebooks' }}:
                                 <span class="font-medium text-slate-700">{{ activeBatchFiles.join(', ') }}</span>
                             </template>
@@ -747,14 +802,11 @@ export default {
                                 All {{ backfillTotal }} OCR’d {{ backfillTotal === 1 ? 'notebook has' : 'notebooks have' }} been compiled into your wiki. New edits update automatically.
                             </template>
                             <template v-else>
-                                Compiles OCR’d notebooks newest-first in batches of 5.
-                                <template v-if="hasOnlySourceDigests || backfillCompleted > 0">
-                                    Early batches create source digests; cross-notebook topics, projects, and entities emerge as more notebooks are compiled.
-                                </template>
+                                Compiles OCR’d notebooks newest-first on the server (1 notebook per turn for rich synthesis), or run a single 5-notebook batch.
                             </template>
                         </p>
                     </div>
-                    <button v-if="runningAction !== 'backfill'" type="button" @click="dismissBackfillBanner"
+                    <button v-if="!isBackfillActive" type="button" @click="dismissBackfillBanner"
                         aria-label="Hide backfill panel"
                         class="shrink-0 text-stone-400 hover:text-slate-700 px-1.5 py-0.5 rounded text-sm leading-none transition-colors">
                         &times;
@@ -796,10 +848,10 @@ export default {
                 </div>
 
                 <!-- Next Batch Queue Preview & Controls -->
-                <div v-if="backfillRemaining > 0" class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pt-0.5">
-                    <div v-if="backfillNextFiles.length > 0 && runningAction !== 'backfill'" class="min-w-0 flex-1 space-y-1">
+                <div v-if="backfillRemaining > 0 || isBackfillDone" class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pt-0.5">
+                    <div v-if="backfillRemaining > 0 && backfillNextFiles.length > 0 && !isBackfillActive" class="min-w-0 flex-1 space-y-1">
                         <div class="text-[11px] font-medium text-stone-500">
-                            Up next (batch of {{ backfillNextFiles.length }}):
+                            Up next (newest first):
                         </div>
                         <div class="flex flex-wrap gap-1.5">
                             <span v-for="fname in backfillNextFiles" :key="fname"
@@ -808,16 +860,17 @@ export default {
                             </span>
                         </div>
                     </div>
+                    <div v-else class="min-w-0 flex-1"></div>
                     <div class="flex flex-wrap items-center gap-2 shrink-0">
-                        <template v-if="runningAction === 'backfill'">
-                            <button v-if="isBackfillAllRunning" type="button" @click="requestStopBackfill"
+                        <template v-if="isBackfillActive">
+                            <button v-if="isServerBackfilling" type="button" @click="requestStopBackfill"
                                 :disabled="stopBackfillRequested"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50 transition-colors">
-                                {{ stopBackfillRequested ? 'Stopping after batch…' : 'Stop After Current Batch' }}
+                                {{ stopBackfillRequested ? 'Stopping after notebook…' : 'Stop After Current Notebook' }}
                             </button>
                             <span v-else class="text-xs text-stone-500">Running single batch…</span>
                         </template>
-                        <template v-else>
+                        <template v-else-if="backfillRemaining > 0">
                             <button type="button" @click="handleBackfill(true)" :disabled="isBusy"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
                                 Backfill All Remaining ({{ backfillRemaining }})
@@ -825,6 +878,17 @@ export default {
                             <button v-if="backfillRemaining > nextBatchCount" type="button" @click="handleBackfill(false)" :disabled="isBusy"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
                                 Next {{ nextBatchCount }} Only
+                            </button>
+                            <button v-if="backfillCompleted > 0" type="button" @click="handleResetBackfill" :disabled="isBusy"
+                                class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors">
+                                Reset Cursor
+                            </button>
+                        </template>
+                        <template v-else-if="isBackfillDone">
+                            <button type="button" @click="handleResetBackfill" :disabled="isBusy"
+                                title="Reset backfill cursor to re-compile all OCR'd notebooks"
+                                class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
+                                Reset &amp; Rebuild
                             </button>
                         </template>
                     </div>

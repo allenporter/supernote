@@ -88,12 +88,19 @@ class WikiCompileRequestDTO(DataClassJSONMixin):
     """Optional request body for `POST /api/extended/wiki/compile`."""
 
     mode: str = "incremental"
-    max_files: int = 5
+    max_files: int | None = None
 
     def __post_init__(self) -> None:
-        if self.mode not in ("incremental", "backfill", "lint"):
+        if self.mode not in (
+            "incremental",
+            "backfill",
+            "backfill_start",
+            "backfill_stop",
+            "backfill_reset",
+            "lint",
+        ):
             raise ValueError(f"Unsupported compile mode: {self.mode!r}")
-        if self.max_files < 1 or self.max_files > 20:
+        if self.max_files is not None and (self.max_files < 1 or self.max_files > 20):
             raise ValueError("max_files must be between 1 and 20")
 
 
@@ -309,7 +316,27 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
             res = await compiler.compile_user_delta(user_id)
             return _compile_result_response(req_dto.mode, res)
         if req_dto.mode == "backfill":
-            res = await compiler.run_backfill(user_id, max_files=req_dto.max_files)
+            res = await compiler.run_backfill(
+                user_id,
+                max_files=req_dto.max_files if req_dto.max_files is not None else 5,
+            )
+            return _compile_result_response(req_dto.mode, res)
+        if req_dto.mode == "backfill_start":
+            res = await compiler.start_backfill_job(
+                user_id,
+                max_files_per_turn=(
+                    req_dto.max_files if req_dto.max_files is not None else 1
+                ),
+            )
+            return _compile_result_response(req_dto.mode, res)
+        if req_dto.mode == "backfill_stop":
+            res = await compiler.stop_backfill_job(user_id)
+            return _compile_result_response(req_dto.mode, res)
+        if req_dto.mode == "backfill_reset":
+            try:
+                res = await compiler.reset_backfill(user_id)
+            except ValueError as err:
+                return web.json_response({"error": str(err)}, status=409)
             return _compile_result_response(req_dto.mode, res)
         issues = await compiler.run_semantic_lint(user_id)
         return web.json_response(
