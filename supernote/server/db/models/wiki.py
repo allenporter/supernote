@@ -316,7 +316,10 @@ class WikiCheckpointDO(Base):
     """UTC epoch milliseconds of the most recent completed lint pass."""
 
     backfill_file_cursor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    """Last `UserFileDO.id` processed during opt-in historical backfill."""
+    """Legacy `UserFileDO.id` backfill cursor (superseded by `backfill_page_cursor`)."""
+
+    backfill_page_cursor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    """Opaque chronological page cursor (`ts_ms:file_id:page_index:row_id`) for global page-date backfill."""
 
     tokens_used_day: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     """Cumulative LLM tokens consumed during `budget_day_utc`."""
