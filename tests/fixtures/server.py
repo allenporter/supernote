@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
     from supernote.client.admin import AdminClient
     from supernote.client.client import Client
+    from supernote.client.config import ConfigClient
     from supernote.client.device import DeviceClient
     from supernote.client.events import EventsClient
     from supernote.client.extended import ExtendedClient
@@ -450,6 +451,14 @@ def schedule_client(authenticated_client: Client) -> ScheduleClient:
     from supernote.client.schedule import ScheduleClient  # noqa: PLC0415
 
     return ScheduleClient(authenticated_client)
+
+
+@pytest.fixture
+def config_client(authenticated_client: Client) -> ConfigClient:
+    """Create an authenticated ConfigClient against the test server."""
+    from supernote.client.config import ConfigClient  # noqa: PLC0415
+
+    return ConfigClient(authenticated_client)
 
 
 @pytest.fixture

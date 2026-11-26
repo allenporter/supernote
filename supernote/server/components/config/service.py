@@ -21,20 +21,24 @@ from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mashumaro.mixins.dict import DataClassDictMixin
 
 from supernote.models.base import ErrorCode
+from supernote.models.config import (
+    ComponentConfigSource,
+    ComponentFieldSpecVO,
+    ComponentFieldType,
+    ComponentStatusVO,
+)
 from supernote.server.components import (
     BUILTIN_COMPONENTS,
     BuiltinComponentSpec,
     is_component_enabled,
     load_component_from_spec,
 )
-from supernote.server.config import ComponentConfigSource, ServerConfig
+from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentError, ComponentLoader, ServerCore
 from supernote.server.exceptions import (
     InvalidInputError,
     SupernoteError,
 )
-
-from .models import ComponentFieldSpecVO, ComponentFieldType, ComponentStatusVO
 
 if TYPE_CHECKING:
     from supernote.server.services.coordination import CoordinationService
@@ -419,6 +423,12 @@ class ConfigService:
             restart_required=(entry.enabled != running),
             config=dict(entry.config),
             fields=extract_component_field_specs(spec),
+        )
+
+    def list_running_domains(self) -> list[str]:
+        """Return the sorted domains of built-in components currently running."""
+        return sorted(
+            spec.domain for spec in self._specs if self._loader.is_running(spec.domain)
         )
 
     async def list_component_statuses(self) -> list[ComponentStatusVO]:

@@ -1,4 +1,8 @@
-"""Request and response models for the `config` vertical server component."""
+"""Wire models for the server component configuration API.
+
+Shared by the `config` server component (`supernote.server.components.config`)
+and `supernote.client.config.ConfigClient`.
+"""
 
 from __future__ import annotations
 
@@ -11,17 +15,32 @@ from mashumaro import field_options
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from supernote.models.base import BaseResponse
-from supernote.server.config import ComponentConfigSource
+from .base import BaseResponse
 
 __all__ = [
+    "ComponentConfigSource",
     "ComponentFieldSpecVO",
     "ComponentFieldType",
     "ComponentListResponseVO",
     "ComponentStatusResponseVO",
     "ComponentStatusVO",
+    "ServerFeaturesVO",
     "UpdateComponentConfigDTO",
 ]
+
+
+class ComponentConfigSource(StrEnum):
+    """Origin tier for a component's effective configuration."""
+
+    ENV = "env"
+    YAML = "yaml"
+    DATABASE = "database"
+    DEFAULT = "default"
+
+    @property
+    def is_static(self) -> bool:
+        """Whether this tier comes from static startup configuration (`env` or `yaml`)."""
+        return self in (ComponentConfigSource.ENV, ComponentConfigSource.YAML)
 
 
 class ComponentFieldType(StrEnum):
@@ -131,3 +150,14 @@ class ComponentStatusResponseVO(BaseResponse):
     """Response payload for `PUT /api/extended/system/components/{domain}`."""
 
     component: ComponentStatusVO | None = None
+
+
+@dataclass
+class ServerFeaturesVO(BaseResponse):
+    """Response payload for `GET /api/extended/system/features`."""
+
+    running_components: list[str] = field(
+        default_factory=list,
+        metadata=field_options(alias="runningComponents"),
+    )
+    """Sorted domains of built-in components currently running on this server."""

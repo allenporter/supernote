@@ -18,7 +18,7 @@ Live priorities and active tracks are organized in **[ROADMAP.md](../ROADMAP.md)
 
 This project uses `pytest` and `pytest-asyncio` with Home Assistant–style component testing norms:
 
-- **High-level boundaries first**: Exercise HTTP routes through the typed async SDK clients (`DeviceClient`, `WebClient`, `ExtendedClient`, `AdminClient`, `SummaryClient`, `ScheduleClient`, `EventsClient`, `WikiClient`), MCP tools through `mcp_session` + `call_mcp_tool`, and server components through the `load_components` fixture.
+- **High-level boundaries first**: Exercise HTTP routes through the typed async SDK clients (`DeviceClient`, `WebClient`, `ExtendedClient`, `AdminClient`, `SummaryClient`, `ScheduleClient`, `EventsClient`, `WikiClient`, `ConfigClient`), MCP tools through `mcp_session` + `call_mcp_tool`, and server components through the `load_components` fixture.
 - **Fakes over mocks**: Prefer the real in-process SQLite `session_manager`, `LocalBlobStorage`, `LocalEventBus`, and `fake_ai` providers over `unittest.mock`; reserve mocks for external SDK boundaries, env/clock control, and targeted fault injection.
 - **Async auto mode**: `pyproject.toml` configures `asyncio_mode = "auto"`, so write plain `async def test_...():` functions without `@pytest.mark.asyncio`.
 - **Shared fixtures**: Server and typed-client harness fixtures live in `tests/fixtures/server.py`, core service fixtures in `tests/server/conftest.py`, and component/MCP harness fixtures in `tests/server/components/conftest.py`.

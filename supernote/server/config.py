@@ -18,7 +18,6 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -26,26 +25,13 @@ import yaml
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.yaml import DataClassYAMLMixin
 
+from supernote.models.config import ComponentConfigSource
 from supernote.server.utils.image import DEFAULT_IMAGE_EXCLUDE_PATTERNS
 
 logger = logging.getLogger(__name__)
 
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 _COMPONENT_DOMAIN_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-
-
-class ComponentConfigSource(StrEnum):
-    """Origin tier for a component's effective configuration."""
-
-    ENV = "env"
-    YAML = "yaml"
-    DATABASE = "database"
-    DEFAULT = "default"
-
-    @property
-    def is_static(self) -> bool:
-        """Whether this tier comes from static startup configuration (`env` or `yaml`)."""
-        return self in (ComponentConfigSource.ENV, ComponentConfigSource.YAML)
 
 
 def _normalize_log_level(level_name: str) -> str:

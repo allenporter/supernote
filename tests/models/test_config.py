@@ -1,10 +1,11 @@
-"""Unit tests for `supernote.server.components.config.models`."""
+"""Unit tests for `supernote.models.config`."""
 
 from __future__ import annotations
 
 import pytest
 
-from supernote.server.components.config.models import (
+from supernote.models.config import (
+    ComponentConfigSource,
     ComponentFieldSpecVO,
     ComponentFieldType,
     ComponentListResponseVO,
@@ -12,7 +13,6 @@ from supernote.server.components.config.models import (
     ComponentStatusVO,
     UpdateComponentConfigDTO,
 )
-from supernote.server.config import ComponentConfigSource
 
 
 @pytest.mark.parametrize(

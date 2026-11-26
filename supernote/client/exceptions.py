@@ -4,7 +4,7 @@ This module defines `SupernoteException` and its specialized subclasses raised b
 `supernote.client.client.Client`, `supernote.client.login_client.LoginClient`, and
 `supernote.client.socket.SupernoteSocketClient`, including HTTP/API error mappings
 (`ApiException`, `UnauthorizedException`, `ForbiddenException`, `NotFoundException`,
-`GoneException`, `BadRequestException`), `SmsVerificationRequired`, and `SupernoteSocketError`.
+`GoneException`, `BadRequestException`, `ConflictException`), `SmsVerificationRequired`, and `SupernoteSocketError`.
 See `supernote.client` for error-handling examples.
 """
 
@@ -47,3 +47,7 @@ class GoneException(ApiException):
 
 class BadRequestException(ApiException):
     """Bad request (400)."""
+
+
+class ConflictException(ApiException):
+    """Request conflicts with current server state (409)."""
