@@ -2,7 +2,7 @@
 
 `supernote.server` is organized around a concrete core host (`ServerCore`) and **22 lazy-loaded vertical components** under `supernote/server/components/`. Disabled components are never imported at startup, keeping bare sync deployments around ~135 MB of RAM while letting you opt into higher-level capabilities one domain at a time.
 
-For lifecycle contracts, dependency resolution, and plugin rules, see [ADR 0001: ServerCore and Vertical Component Architecture](./adr/0001-server-core-component-architecture.md), [ADR 0003: Component Configuration and Runtime Reconfiguration Architecture](./adr/0003-component-configuration-architecture.md), and [Server & Sync Protocol Architecture](./server_architecture.md).
+For lifecycle contracts, dependency resolution, and plugin rules, see [ADR 0001: ServerCore and Vertical Component Architecture](./adr/0001-server-core-component-architecture.md), [ADR 0003: Component Configuration and Runtime Reconfiguration Architecture](./adr/0003-component-configuration-architecture.md), [ADR 0004: Notebook Processing, Metadata, Conversion, and Transcript Component Ownership](./adr/0004-note-processing-component-ownership.md), and [Server & Sync Protocol Architecture](./server_architecture.md).
 
 ## Core host vs. optional components
 
