@@ -2,36 +2,23 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from aiohttp.test_utils import TestClient
 
 from supernote.client.extended import ExtendedClient
 from supernote.models.base import ProcessingStatus
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import (
-    NoteMetadataDO,
-    NotePageMetadataDO,
-    SystemTaskDO,
-)
+from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 
-HEADING_NOTE_PATH = (
-    Path(__file__).parents[3]
-    / "testdata"
-    / "philips"
-    / "heading-n5-20260016-backgrounds-marker.note"
-)
 
-
-async def test_processor_http_routes_tasks_status_and_metadata(
+async def test_processor_http_routes_tasks_and_status(
     extended_client: ExtendedClient,
     client: TestClient,
     auth_headers: dict[str, str],
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
-    """Processor HTTP platform serves system tasks, file processing status, and notebook metadata."""
+    """Processor HTTP platform serves system tasks and file processing status."""
     file_id = 8801
     async with session_manager.session() as session:
         session.add(
@@ -51,35 +38,7 @@ async def test_processor_http_routes_tasks_status_and_metadata(
                 task_type="HASHING",
                 key="global",
                 status=ProcessingStatus.COMPLETED.value,
-                data="v2",
-            )
-        )
-        session.add(
-            NoteMetadataDO(
-                user_id=test_user_id,
-                file_id=file_id,
-                native_file_id="F8801",
-                file_type="NOTE",
-                signature="SN_FILE_VER_20230015",
-                total_pages=1,
-                header_json='{"APPLY_EQUIPMENT": "N5"}',
-                footer_json="{}",
-            )
-        )
-        session.add(
-            NotePageMetadataDO(
-                user_id=test_user_id,
-                file_id=file_id,
-                page_index=0,
-                page_id="P1",
-                content_hash="h1",
-                page_style="style_white",
-                has_ink=True,
-                has_drawables=True,
-                page_json="{}",
-                keywords_json="[]",
-                titles_json="[]",
-                links_json="[]",
+                data="v3",
             )
         )
         await session.commit()
@@ -91,10 +50,6 @@ async def test_processor_http_routes_tasks_status_and_metadata(
 
     status_vo = await extended_client.get_processing_status([file_id])
     assert status_vo.status_map == {str(file_id): ProcessingStatus.COMPLETED}
-
-    meta_vo = await extended_client.get_note_metadata(file_id)
-    assert meta_vo.total_pages == 1
-    assert meta_vo.equipment == "N5"
 
     bad_resp = await client.post(
         "/api/extended/file/processing/status",

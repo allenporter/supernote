@@ -8,8 +8,8 @@ platform so other components can contribute `ProcessorModule` stages via
 ``<component>.processor:async_setup_processor(core, registrar)``, which are
 compiled into a dependency-ordered `TaskGraph` during startup.
 
-It also exposes user-facing processing status/metadata endpoints and admin queue
-controls and reprocessing endpoints.
+It also exposes user-facing processing status and system task endpoints, as well as
+admin queue controls and reprocessing endpoints.
 
 Provides `ProcessorComponent`, `ProcessorService`, `ProcessorRegistrar`,
 `ProcessorModule`, `TaskGraph`, `TaskScope`, and `PROCESSOR_SERVICE_KEY`.

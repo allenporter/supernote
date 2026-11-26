@@ -29,19 +29,14 @@ from supernote.server.routes.oss import stream_blob_response, verify_signed_user
 from supernote.server.services.user import UserService
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
-from . import NOTE_METADATA_SERVICE_KEY
-from .service import NoteMetadataService
+from .service import NOTE_METADATA_SERVICE_KEY, NoteMetadataService
 
 __all__ = [
-    "TITLE_IMAGE_ROUTE",
     "async_setup_http",
 ]
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
-
-TITLE_IMAGE_ROUTE = "/api/oss/title/{file_id}/{bitmap_md5}"
-"""Signed download route for a cached note title crop PNG."""
 
 
 @routes.post("/api/extended/file/note/metadata")
@@ -56,7 +51,9 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
     user_service: UserService = request.app[USER_SERVICE_KEY]
     metadata_service: NoteMetadataService = request.app[NOTE_METADATA_SERVICE_KEY]
 
-    if not (user_id := await user_service.get_user_id(user_email)):
+    try:
+        user_id = await user_service.get_user_id(user_email)
+    except ValueError:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
@@ -66,30 +63,30 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
             user_id=user_id,
             file_id=req_dto.file_id,
         )
-        if metadata_vo is None:
-            return web.json_response(
-                {"error": f"No metadata found for notebook {req_dto.file_id}"},
-                status=404,
-            )
-        url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-        base_url = get_request_base_url(request)
-        for title in metadata_vo.titles:
-            if title.bitmap_md5:
-                signed_path = await url_signer.sign(
-                    TITLE_IMAGE_ROUTE.format(
-                        file_id=req_dto.file_id, bitmap_md5=title.bitmap_md5
-                    ),
-                    user=user_email,
-                    single_use=False,
-                )
-                title.image_url = f"{base_url}{signed_path}"
-        return web.json_response(metadata_vo.to_dict())
     except Exception as err:
         logger.exception("Error fetching notebook metadata")
         return SupernoteError.uncaught(err).to_response()
 
+    if metadata_vo is None:
+        return web.json_response(
+            {"error": f"No metadata found for notebook {req_dto.file_id}"},
+            status=404,
+        )
 
-@routes.get(TITLE_IMAGE_ROUTE)
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    base_url = get_request_base_url(request)
+    for title in metadata_vo.titles:
+        if title.bitmap_md5:
+            signed_path = await url_signer.sign(
+                f"/api/oss/title/{req_dto.file_id}/{title.bitmap_md5}",
+                user=user_email,
+                single_use=False,
+            )
+            title.image_url = f"{base_url}{signed_path}"
+    return web.json_response(metadata_vo.to_dict())
+
+
+@routes.get("/api/oss/title/{file_id}/{bitmap_md5}")
 @public_route
 async def handle_oss_title_download(request: web.Request) -> web.StreamResponse:
     """Stream a note title's handwriting crop PNG from a signed URL."""

@@ -1187,7 +1187,9 @@ async def test_extended_note_metadata_invalid_dto_and_errors(
     assert bad_resp.status == 400
 
     with (
-        patch.object(user_service, "get_user_id", return_value=None),
+        patch.object(
+            user_service, "get_user_id", side_effect=ValueError("User not found")
+        ),
         pytest.raises(ApiException, match="404"),
     ):
         await extended_client.get_note_metadata(file_id=101)
