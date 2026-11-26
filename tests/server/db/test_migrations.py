@@ -97,7 +97,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "e9f0a1b2c3d4"
+        assert version == "b8c9d0e1f2a3"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -193,7 +193,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "e9f0a1b2c3d4"
+        assert version == "b8c9d0e1f2a3"
 
         # Verify task columns and types
         tasks = conn.execute(

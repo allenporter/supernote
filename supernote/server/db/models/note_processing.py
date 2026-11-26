@@ -1,7 +1,8 @@
-"""ORM models (`NoteMetadataDO`, `NotePageMetadataDO`, `NotePageContentDO`, and `SystemTaskDO`) for the `.note` processing pipeline.
+"""ORM models (`NoteMetadataDO`, `NotePageMetadataDO`, `NoteTitleDO`, `NotePageContentDO`, and `SystemTaskDO`) for the `.note` processing pipeline.
 
 - `NoteMetadataDO` (`f_note_metadata`) & `NotePageMetadataDO` (`f_note_page_metadata`): Persist structural
   `.note` header, footer, and per-page metadata parsed during `PageHashingModule`.
+- `NoteTitleDO` (`f_note_title`): Native notebook titles in reading order with transcribed heading text.
 - `NotePageContentDO` (`f_note_page_content`): Stores per-page layer MD5 hashes (`content_hash`),
   OCR transcripts (`text_content`), and JSON-serialized vector embeddings (`embedding`, `embedding_model`)
   queried by `supernote.server.components.search.service.SearchService`.
@@ -185,6 +186,82 @@ class NotePageMetadataDO(Base):
             if kw and kw.strip():
                 texts.append(kw.strip())
         return texts
+
+
+class NoteTitleDO(Base):
+    """Native notebook title (Supernote "Heading") with its transcribed text (`f_note_title`).
+
+    `PageHashingModule` rebuilds these rows on every hash pass in reading order
+    (`page_index`, then top-to-bottom, left-to-right). `bitmap_md5` identifies a
+    title's handwriting independent of its slot, so `text_content` carries over
+    when pages are edited, moved, or inserted and only new or redrawn titles need
+    transcription. Legacy firmware stores full-page title bitmaps, so there
+    repositioning a title on its page also counts as redrawn.
+    """
+
+    __tablename__ = "f_note_title"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
+    """Owner user ID."""
+
+    file_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True, nullable=False
+    )
+    """The numeric ID of the source file."""
+
+    title_index: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    """0-based position of this title in notebook reading order."""
+
+    page_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    """0-based index of the page the title is on."""
+
+    rect_left: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Left edge of the title's `<TITLERECT>` in page pixels (`None` if absent)."""
+
+    rect_top: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Top edge of the title's `<TITLERECT>` in page pixels (`None` if absent)."""
+
+    rect_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Width of the title's `<TITLERECT>` in pixels (`None` if absent)."""
+
+    rect_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Height of the title's `<TITLERECT>` in pixels (`None` if absent)."""
+
+    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    """Normalized 1..4 level from `TitleMetadata.heading_level`."""
+
+    style: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Raw `<TITLESTYLE>` code; firmware uses it for the background the user picked."""
+
+    bitmap_md5: Mapped[str | None] = mapped_column(String, nullable=True)
+    """MD5 of the raw `<TITLEBITMAP>` bytes, or `None` when the title has no bitmap."""
+
+    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Transcribed heading text, or `None` until a transcription is available."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp."""
+
+    @property
+    def rect(self) -> list[int] | None:
+        """Bounding box `[left, top, width, height]`, or `None` when `<TITLERECT>` was absent."""
+        if (
+            self.rect_left is None
+            or self.rect_top is None
+            or self.rect_width is None
+            or self.rect_height is None
+        ):
+            return None
+        return [self.rect_left, self.rect_top, self.rect_width, self.rect_height]
 
 
 class NotePageContentDO(Base):

@@ -10,6 +10,7 @@ See `supernote.guides.note_processing_design`.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 from collections.abc import Sequence
@@ -21,13 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from supernote.models.base import TaskType
-from supernote.notebook import Notebook, Page, load, parse_metadata
+from supernote.notebook import Notebook, Page, Title, load, parse_metadata
+from supernote.notebook.parser import load_title_bitmaps
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
     NotePageMetadataDO,
+    NoteTitleDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -76,6 +79,14 @@ def _serialize_page_annotations(page_obj: Page) -> tuple[str, str, str]:
     return keywords_json, titles_json, links_json
 
 
+def _title_reading_order(title: Title) -> tuple[int, int, int]:
+    """Sort key placing titles by page, then top-to-bottom, then left-to-right."""
+    rect = title.metadata.rect
+    if rect is None:
+        return (title.page_number, 0, 0)
+    return (title.page_number, rect.top, rect.left)
+
+
 def _load_incremental_notebook(
     path: str,
     cached_ink: dict[str, bool],
@@ -87,6 +98,9 @@ def _load_incremental_notebook(
     with open(path, "rb") as stream:
         metadata = parse_metadata(stream, policy="loose")
         notebook = Notebook(metadata)
+        # Title bitmaps are a few KB each; hashing them lets transcribed title
+        # text be matched to its handwriting across passes (see `_sync_titles`).
+        load_title_bitmaps(stream, notebook.titles)
 
         for i, page_info in enumerate(metadata.pages):
             raw_pid = page_info.page_id
@@ -144,11 +158,12 @@ class PageHashingModule(ProcessorModule):
     def version(self) -> str:
         """Module schema version recorded in `SystemTaskDO.data`.
 
-        Bumping to `v2` causes `ProcessorService.recover_missing_tasks()` to
-        re-run `PageHashingModule` on previously hashed `.note` files so
-        `f_note_metadata` and `f_note_page_metadata` are backfilled automatically.
+        Bumping it causes `ProcessorService.recover_missing_tasks()` to re-run
+        `PageHashingModule` on previously hashed `.note` files so newly persisted
+        tables are backfilled automatically (`v2`: `f_note_metadata` and
+        `f_note_page_metadata`; `v3`: `f_note_title`).
         """
-        return "v2"
+        return "v3"
 
     async def run_if_needed(
         self,
@@ -190,6 +205,11 @@ class PageHashingModule(ProcessorModule):
             )
             await session.execute(
                 delete(NotePageMetadataDO).where(NotePageMetadataDO.file_id == file_id)
+            )
+            await session.execute(
+                delete(NoteTitleDO).where(
+                    NoteTitleDO.user_id == user_id, NoteTitleDO.file_id == file_id
+                )
             )
             await session.commit()
 
@@ -278,6 +298,9 @@ class PageHashingModule(ProcessorModule):
                 notebook=notebook,
                 page_identities=page_identities,
                 page_has_ink=page_has_ink,
+            )
+            await self._sync_titles(
+                session, user_id=user_id, file_id=file_id, notebook=notebook
             )
             content_diff = await self._sync_page_content_hashes(
                 session,
@@ -431,6 +454,63 @@ class PageHashingModule(ProcessorModule):
             unchanged=legacy_unchanged,
             deleted=legacy_deleted,
         )
+
+    async def _sync_titles(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        file_id: int,
+        notebook: Notebook,
+    ) -> None:
+        """Reconcile `NoteTitleDO` rows with the notebook's titles in reading order.
+
+        Rows are updated in place by `title_index` so unchanged titles emit no SQL
+        `UPDATE`. `text_content` is matched by `bitmap_md5` rather than position,
+        so transcriptions follow their handwriting when titles shift between slots.
+        """
+        existing = {
+            row.title_index: row
+            for row in (
+                await session.execute(
+                    select(NoteTitleDO)
+                    .where(
+                        NoteTitleDO.user_id == user_id,
+                        NoteTitleDO.file_id == file_id,
+                    )
+                    .order_by(NoteTitleDO.title_index)
+                )
+            ).scalars()
+        }
+        # Built before any row is mutated; with duplicate digests (copy-pasted
+        # titles) the highest `title_index` wins deterministically.
+        text_by_md5 = {
+            row.bitmap_md5: row.text_content
+            for row in existing.values()
+            if row.bitmap_md5 and row.text_content is not None
+        }
+
+        for idx, title in enumerate(sorted(notebook.titles, key=_title_reading_order)):
+            row = existing.pop(idx, None)
+            if row is None:
+                row = NoteTitleDO(user_id=user_id, file_id=file_id, title_index=idx)
+                session.add(row)
+            rect = title.metadata.rect
+            bitmap_md5 = (
+                hashlib.md5(title.content).hexdigest() if title.content else None
+            )
+            row.page_index = title.page_number
+            row.rect_left = rect.left if rect else None
+            row.rect_top = rect.top if rect else None
+            row.rect_width = rect.width if rect else None
+            row.rect_height = rect.height if rect else None
+            row.level = title.heading_level
+            row.style = title.style
+            row.bitmap_md5 = bitmap_md5
+            row.text_content = text_by_md5.get(bitmap_md5) if bitmap_md5 else None
+
+        for stale in existing.values():
+            await session.delete(stale)
 
     async def _sync_page_content_hashes(
         self,

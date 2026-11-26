@@ -38,6 +38,7 @@ from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
     NotePageMetadataDO,
+    NoteTitleDO,
     SystemTaskDO,
 )
 from supernote.server.db.models.summary import SummaryDO
@@ -886,7 +887,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
-                    data="v2",
+                    data="v3",
                 )
             )
             session.add(
@@ -1015,7 +1016,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
-                    data="v2",
+                    data="v3",
                 ),
                 # Up-to-date note -> skip
                 UserFileDO(
@@ -1032,7 +1033,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
-                    data="v2",
+                    data="v3",
                 ),
                 # Brand-new note for test_user_id (no tasks yet) -> enqueue
                 UserFileDO(
@@ -1442,7 +1443,7 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
     file_service: FileService,
     test_user_id: int,
 ) -> None:
-    """Verify VfsItemPurgedEvent purges NoteMetadataDO and NotePageMetadataDO via PageHashingModule.cleanup_file."""
+    """Verify VfsItemPurgedEvent purges note, page, and title metadata via PageHashingModule.cleanup_file."""
     processor_service.register_modules(hashing=PageHashingModule(file_service))
 
     async with session_manager.session() as session:
@@ -1454,11 +1455,17 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
                 NotePageMetadataDO(
                     user_id=test_user_id, file_id=601, page_index=0, page_id="p0"
                 ),
+                NoteTitleDO(
+                    user_id=test_user_id, file_id=601, title_index=0, page_index=0
+                ),
                 NoteMetadataDO(
                     user_id=test_user_id, file_id=602, file_type="note", total_pages=1
                 ),
                 NotePageMetadataDO(
                     user_id=test_user_id, file_id=602, page_index=0, page_id="p0"
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id, file_id=602, title_index=0, page_index=0
                 ),
             ]
         )
@@ -1481,8 +1488,10 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
     async with session_manager.session() as session:
         assert await session.get(NoteMetadataDO, (test_user_id, 601)) is None
         assert await session.get(NotePageMetadataDO, (test_user_id, 601, 0)) is None
+        assert await session.get(NoteTitleDO, (test_user_id, 601, 0)) is None
         assert await session.get(NoteMetadataDO, (test_user_id, 602)) is not None
         assert await session.get(NotePageMetadataDO, (test_user_id, 602, 0)) is not None
+        assert await session.get(NoteTitleDO, (test_user_id, 602, 0)) is not None
 
 
 async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
@@ -1491,7 +1500,7 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
     file_service: FileService,
     test_user_id: int,
 ) -> None:
-    """Verify recover_missing_tasks re-enqueues files hashed before PageHashingModule v2."""
+    """Verify recover_missing_tasks re-enqueues files hashed by an older PageHashingModule version."""
     processor_service.register_modules(hashing=PageHashingModule(file_service))
 
     async with session_manager.session() as session:
@@ -1525,7 +1534,7 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
-                    data="v2",
+                    data="v3",
                 ),
             ]
         )
