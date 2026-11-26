@@ -294,7 +294,9 @@ export default {
             const [pagesData, summariesData, metaData] = await Promise.all([
                 transcriptEnabled.value ? fetchTranscript(id).catch(() => []) : [],
                 summariesEnabled.value ? fetchSummaries(id).catch(() => []) : [],
-                isComponentRunning('processor') ? fetchNoteMetadata(id).catch(() => null) : null,
+                isComponentRunning('note_metadata')
+                    ? fetchNoteMetadata(id).catch(() => null)
+                    : null,
             ]);
             if (seq !== activeLoadSeq) return false;
 

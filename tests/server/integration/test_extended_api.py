@@ -16,6 +16,7 @@ from supernote.models.base import ProcessingStatus
 from supernote.models.extended import PageTranscriptVO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.components.ai import EMBEDDING_MODEL_KEY
+from supernote.server.components.note_metadata import NOTE_METADATA_SERVICE_KEY
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
@@ -1193,7 +1194,7 @@ async def test_extended_note_metadata_invalid_dto_and_errors(
 
     with (
         patch.object(
-            client.app[PROCESSOR_SERVICE_KEY],
+            client.app[NOTE_METADATA_SERVICE_KEY],
             "get_note_metadata",
             side_effect=RuntimeError("metadata boom"),
         ),

@@ -544,8 +544,8 @@ UI_GATED_COMPONENT_ROUTES: dict[str, set[str]] = {
         "/api/extended/file/note/cover",
         "/api/file/note/to/png",
     },
+    "note_metadata": {"/api/extended/file/note/metadata"},
     "processor": {
-        "/api/extended/file/note/metadata",
         "/api/extended/file/processing/status",
         "/api/extended/system/tasks",
         "/api/extended/system/tasks/retry",

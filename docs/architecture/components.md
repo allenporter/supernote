@@ -1,6 +1,6 @@
 # Server Component Catalog
 
-`supernote.server` is organized around a concrete core host (`ServerCore`) and **22 lazy-loaded vertical components** under `supernote/server/components/`. Disabled components are never imported at startup, keeping bare sync deployments around ~135 MB of RAM while letting you opt into higher-level capabilities one domain at a time.
+`supernote.server` is organized around a concrete core host (`ServerCore`) and **23 lazy-loaded vertical components** under `supernote/server/components/`. Disabled components are never imported at startup, keeping bare sync deployments around ~135 MB of RAM while letting you opt into higher-level capabilities one domain at a time.
 
 For lifecycle contracts, dependency resolution, and plugin rules, see [ADR 0001: ServerCore and Vertical Component Architecture](./adr/0001-server-core-component-architecture.md), [ADR 0003: Component Configuration and Runtime Reconfiguration Architecture](./adr/0003-component-configuration-architecture.md), [ADR 0004: Notebook Processing, Metadata, Conversion, and Transcript Component Ownership](./adr/0004-note-processing-component-ownership.md), and [Server & Sync Protocol Architecture](./server_architecture.md).
 
@@ -25,6 +25,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `integrity` | Yes | — | `http` | Two-way VFS, database, and disk blob integrity verification endpoints. |
 | `mcp` | Yes | `oauth` | — | Streamable HTTP Model Context Protocol server (`mcp` platform host on port `8081`). |
 | `metrics` | Yes | — | `http` | Prometheus `/metrics` endpoint and periodic storage metrics collector. |
+| `note_metadata` | Yes | `processor` | `http` | Structured `.note` metadata (`POST /api/extended/file/note/metadata`) and signed title crop PNG previews (`GET /api/oss/title/*`). |
 | `oauth` | Yes | — | `http` | OAuth 2.1 Authorization Server (PKCE, CIMD, consent UI, token issuance/revocation). |
 | `openai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | OpenAI-compatible provider supporting OpenAI API, Ollama, vLLM, llama.cpp, and LM Studio. |
 | `processor` | Yes | — | `http`, `processor` | Incremental background note/image processing queue, page hashing, and notebook metadata extraction. |
