@@ -14,7 +14,11 @@ from supernote.server.components.integrity.service import (
 )
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NoteTitleDO,
+    SystemTaskDO,
+)
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
@@ -23,6 +27,7 @@ from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_page_png_path,
     get_summary_handwriting_prefix,
+    get_title_png_path,
 )
 
 
@@ -735,3 +740,47 @@ async def test_verify_full_disk_summary_renders(
         for i in dirty_report.issues
         if i.issue_type == IntegrityIssueType.UNREFERENCED_BLOB
     } == {stale_key, deleted_key}
+
+
+async def test_verify_full_disk_title_crops(
+    integrity_service: IntegrityService,
+    blob_storage: LocalBlobStorage,
+    test_user_id: int,
+    db_session: AsyncSession,
+) -> None:
+    """Verify cached title crops are referenced only by persisted titles of active notes."""
+    note_bytes = b"note-bytes"
+    note_key = f"note-{uuid.uuid4()}"
+    await blob_storage.put(USER_DATA_BUCKET, note_key, note_bytes)
+    db_session.add_all(
+        [
+            UserFileDO(
+                id=7301,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="Headings.note",
+                storage_key=note_key,
+                md5=hashlib.md5(note_bytes).hexdigest(),
+            ),
+            NoteTitleDO(
+                user_id=test_user_id,
+                file_id=7301,
+                title_index=0,
+                page_index=0,
+                bitmap_md5="a" * 32,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    current_key = get_title_png_path(7301, "a" * 32)
+    stale_key = get_title_png_path(7301, "b" * 32)
+    await blob_storage.put(CACHE_BUCKET, current_key, b"png")
+    await blob_storage.put(CACHE_BUCKET, stale_key, b"png")
+
+    report = await integrity_service.verify_full_disk()
+    assert {
+        i.file_name
+        for i in report.issues
+        if i.issue_type == IntegrityIssueType.UNREFERENCED_BLOB
+    } == {stale_key}

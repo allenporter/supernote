@@ -12,7 +12,7 @@ from supernote.server.components.processor.page_hashing import (
     PageHashingModule,
     _title_reading_order,
 )
-from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
@@ -25,6 +25,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePagesDeltaEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
+from supernote.server.utils.paths import get_title_png_path
 
 
 @pytest.fixture
@@ -908,6 +909,47 @@ async def test_page_hashing_deletes_stale_title_rows(
 
     rows = await _title_rows(session_manager, 1064)
     assert [r.title_index for r in rows] == [0, 1, 2, 3]
+
+
+async def test_page_hashing_deletes_crop_of_redrawn_title(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    await _hash_heading_note(page_hashing_module, session_manager, blob_storage, 1065)
+    previous_md5 = "a" * 32
+    async with session_manager.session() as session:
+        row_1 = await session.get(NoteTitleDO, (7, 1065, 1))
+        assert row_1 is not None
+        row_1.bitmap_md5 = previous_md5
+        await session.commit()
+    current_key = get_title_png_path(1065, HEADING_TITLE_MD5S[0])
+    previous_key = get_title_png_path(1065, previous_md5)
+    await blob_storage.put(CACHE_BUCKET, current_key, b"png")
+    await blob_storage.put(CACHE_BUCKET, previous_key, b"png")
+
+    assert await page_hashing_module.run(1065, session_manager, user_id=7) is True
+
+    assert await blob_storage.exists(CACHE_BUCKET, current_key)
+    assert not await blob_storage.exists(CACHE_BUCKET, previous_key)
+
+
+async def test_page_hashing_cleanup_file_deletes_title_crops(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    purged_key = get_title_png_path(1066, "a" * 32)
+    kept_key = get_title_png_path(1067, "a" * 32)
+    await blob_storage.put(CACHE_BUCKET, purged_key, b"png")
+    await blob_storage.put(CACHE_BUCKET, kept_key, b"png")
+
+    await page_hashing_module.cleanup_file(
+        file_id=1066, user_id=7, session_manager=session_manager
+    )
+
+    assert not await blob_storage.exists(CACHE_BUCKET, purged_key)
+    assert await blob_storage.exists(CACHE_BUCKET, kept_key)
 
 
 async def test_page_hashing_skips_unchanged_title_rows_on_rehash(

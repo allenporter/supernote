@@ -23,7 +23,11 @@ from supernote.models.system import (
 )
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NoteTitleDO,
+    SystemTaskDO,
+)
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -34,6 +38,7 @@ from supernote.server.utils.paths import (
     get_page_png_path,
     get_summary_handwriting_prefix,
     get_summary_handwriting_prefix_of,
+    get_title_png_path,
     is_valid_page_id,
 )
 
@@ -996,6 +1001,18 @@ class IntegrityService:
             page_id = task_key.removeprefix("page_")
             if is_valid_page_id(page_id):
                 referenced.add(get_page_png_path(fid, page_id))
+
+        title_stmt = select(NoteTitleDO.file_id, NoteTitleDO.bitmap_md5).join(
+            UserFileDO,
+            and_(
+                UserFileDO.id == NoteTitleDO.file_id,
+                UserFileDO.user_id == NoteTitleDO.user_id,
+                UserFileDO.is_active == "Y",
+            ),
+        )
+        for fid, bitmap_md5 in (await session.execute(title_stmt)).all():
+            if bitmap_md5:
+                referenced.add(get_title_png_path(fid, bitmap_md5))
 
         conv_stmt = select(UserFileDO.user_id, UserFileDO.id, UserFileDO.md5).where(
             UserFileDO.is_active == "Y",

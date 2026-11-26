@@ -3,6 +3,7 @@
 Mounts onto the main `aiohttp` application via `async_setup_http`:
 - User endpoints: `GET /api/extended/system/tasks`, `POST /api/extended/system/tasks/retry`,
   `POST /api/extended/file/processing/status`, `POST /api/extended/file/note/metadata`
+- Signed download (`@public_route`): `GET /api/oss/title/{file_id}/{bitmap_md5}`
 - Admin endpoints (`@require_admin`): `POST /api/admin/queue/stop`,
   `POST /api/admin/queue/start`, `GET /api/admin/queue/status`,
   `POST /api/admin/reprocess`, `GET /api/admin/tasks`
@@ -11,6 +12,7 @@ Mounts onto the main `aiohttp` application via `async_setup_http`:
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 
 from aiohttp import web
 
@@ -35,14 +37,22 @@ from supernote.server.components.http import (
     parse_json_dto,
     parse_json_object,
 )
+from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import InvalidInputError, SupernoteError
+from supernote.server.exceptions import (
+    InvalidInputError,
+    SupernoteError,
+)
 from supernote.server.keys import (
     REQUEST_USER_KEY,
+    URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.routes.decorators import require_admin
+from supernote.server.metrics import OSSTransferKind
+from supernote.server.routes.decorators import public_route, require_admin
+from supernote.server.routes.oss import stream_blob_response, verify_signed_user
 from supernote.server.services.user import UserService
+from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 from . import PROCESSOR_SERVICE_KEY
 from .service import ProcessorService
@@ -53,6 +63,9 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
+
+TITLE_IMAGE_ROUTE = "/api/oss/title/{file_id}/{bitmap_md5}"
+"""Signed download route for a cached note title crop PNG."""
 
 
 @routes.get("/api/extended/system/tasks")
@@ -167,10 +180,69 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
                 {"error": f"No metadata found for notebook {req_dto.file_id}"},
                 status=404,
             )
+        url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+        base_url = get_request_base_url(request)
+        for title in metadata_vo.titles:
+            if title.bitmap_md5:
+                signed_path = await url_signer.sign(
+                    TITLE_IMAGE_ROUTE.format(
+                        file_id=req_dto.file_id, bitmap_md5=title.bitmap_md5
+                    ),
+                    user=user_email,
+                    single_use=False,
+                )
+                title.image_url = f"{base_url}{signed_path}"
         return web.json_response(metadata_vo.to_dict())
     except Exception as err:
         logger.exception("Error fetching notebook metadata")
         return SupernoteError.uncaught(err).to_response()
+
+
+@routes.get(TITLE_IMAGE_ROUTE)
+@public_route
+async def handle_oss_title_download(request: web.Request) -> web.StreamResponse:
+    """Stream a note title's handwriting crop PNG from a signed URL."""
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
+    blob_storage = processor_service.file_service.blob_storage
+    bitmap_md5 = request.match_info["bitmap_md5"]
+    try:
+        user_email = await verify_signed_user(request)
+    except SupernoteError as err:
+        return err.to_response()
+    try:
+        user_id = await user_service.get_user_id(user_email)
+    except ValueError:
+        return _title_image_not_found()
+    # `file_id` is part of the signed path, so it is always the integer we signed.
+    png_key = await processor_service.get_title_png_key(
+        user_id=user_id,
+        file_id=int(request.match_info["file_id"]),
+        bitmap_md5=bitmap_md5,
+    )
+    if png_key is None:
+        return _title_image_not_found()
+    try:
+        metadata = await blob_storage.get_metadata(CACHE_BUCKET, png_key)
+    except FileNotFoundError:
+        # Crop removed by a concurrent re-hash or purge since it was resolved.
+        return _title_image_not_found()
+    return await stream_blob_response(
+        request=request,
+        blob_storage=blob_storage,
+        bucket=CACHE_BUCKET,
+        storage_key=png_key,
+        file_name=f"title_{bitmap_md5}.png",
+        file_size=metadata.size,
+        kind=OSSTransferKind.PNG_PREVIEW,
+    )
+
+
+def _title_image_not_found() -> web.Response:
+    return web.json_response(
+        create_error_response("Title image not found").to_dict(),
+        status=HTTPStatus.NOT_FOUND,
+    )
 
 
 @routes.post("/api/admin/queue/stop")

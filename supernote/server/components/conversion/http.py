@@ -22,7 +22,7 @@ from supernote.models.file_device import PdfDTO, PdfVO, PngDTO, PngPageVO, PngVO
 from supernote.server.components.http import HttpRegistrar, parse_json_dto
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import AccessDenied, InvalidInputError, SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     COMPONENT_LOADER_KEY,
@@ -31,7 +31,7 @@ from supernote.server.keys import (
 )
 from supernote.server.metrics import OSSTransferKind
 from supernote.server.routes.decorators import public_route
-from supernote.server.routes.oss import stream_blob_response
+from supernote.server.routes.oss import stream_blob_response, verify_signed_user
 from supernote.server.services.blob import BlobStorage
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
@@ -154,24 +154,6 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
         return SupernoteError.uncaught(err).to_response()
 
 
-async def _verify_signed_user(
-    request: web.Request,
-    *,
-    signed_query_keys: tuple[str, ...] = (),
-) -> str:
-    """Verify a signed cache-download URL and return the signed user email."""
-    # TODO: Embed and verify numeric `user_id` instead of user email in UrlSigner
-    # tokens to avoid leaking email in signed query params and extra DB lookups.
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-    payload = await url_signer.verify(
-        request.path_qs, consume=False, signed_query_keys=signed_query_keys
-    )
-    user_email = payload.get("user")
-    if not user_email:
-        raise AccessDenied("Missing user identity in signature")
-    return str(user_email)
-
-
 async def _stream_cached_note_render(
     request: web.Request,
     *,
@@ -211,7 +193,7 @@ async def _stream_cached_note_render(
 async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
     """Handle converted note page PNG download from CACHE_BUCKET."""
     try:
-        user_email = await _verify_signed_user(request)
+        user_email = await verify_signed_user(request)
     except SupernoteError as err:
         return err.to_response()
 
@@ -238,7 +220,7 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
 async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
     """Handle converted note PDF download from CACHE_BUCKET."""
     try:
-        user_email = await _verify_signed_user(request, signed_query_keys=("pages",))
+        user_email = await verify_signed_user(request, signed_query_keys=("pages",))
     except SupernoteError as err:
         return err.to_response()
 

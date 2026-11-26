@@ -21,7 +21,11 @@ from aiohttp import BodyPartReader, web
 from supernote.models.base import create_error_response
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
 from supernote.server.constants import USER_DATA_BUCKET
-from supernote.server.exceptions import InvalidInputError, SupernoteError
+from supernote.server.exceptions import (
+    AccessDenied,
+    InvalidInputError,
+    SupernoteError,
+)
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     FILE_SERVICE_KEY,
@@ -275,6 +279,24 @@ def _build_download_headers(
     if is_range:
         headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
     return headers
+
+
+async def verify_signed_user(
+    request: web.Request,
+    *,
+    signed_query_keys: tuple[str, ...] = (),
+) -> str:
+    """Verify a signed cache-download URL and return the signed user email."""
+    # TODO: Embed and verify numeric `user_id` instead of user email in UrlSigner
+    # tokens to avoid leaking email in signed query params and extra DB lookups.
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    payload = await url_signer.verify(
+        request.path_qs, consume=False, signed_query_keys=signed_query_keys
+    )
+    user_email = payload.get("user")
+    if not user_email:
+        raise AccessDenied("Missing user identity in signature")
+    return str(user_email)
 
 
 async def stream_blob_response(
