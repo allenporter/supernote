@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import zipfile
-from dataclasses import replace
 from typing import Any
 from unittest.mock import patch
 
@@ -25,6 +24,7 @@ from supernote.models.wiki import WikiSourceRefDTO, WikiSourceType
 from supernote.server.ai.base import AIError
 from supernote.server.components.wiki.compiler import WIKI_COMPILER_KEY
 from supernote.server.components.wiki.service import WIKI_SERVICE_KEY
+from supernote.server.components.wiki.source_service import BackfillOverview
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.keys import USER_SERVICE_KEY
 from supernote.server.services.user import UserService
@@ -316,20 +316,33 @@ async def test_wiki_http_status_subtracts_in_flight_backfill_pages(
     assert base_status.backfill_total_pages == 0
     assert base_status.backfill_remaining_pages == 0
 
+    overview = BackfillOverview(
+        remaining_files=2,
+        total_files=2,
+        remaining_pages=50,
+        total_pages=50,
+    )
     with (
         patch.object(
-            service,
-            "get_status",
-            return_value=replace(
-                base_status,
-                backfill_total_files=2,
-                backfill_remaining_files=2,
-                backfill_total_pages=50,
-                backfill_remaining_pages=50,
-            ),
+            service._source_service,
+            "get_backfill_overview",
+            return_value=overview,
         ),
-        patch.object(compiler, "in_flight_backfill_pages", return_value=16),
+        patch.object(compiler, "in_flight_backfill", return_value=(None, 16)),
     ):
         live = await wiki_client.get_status()
         assert live.backfill_total_pages == 50
         assert live.backfill_remaining_pages == 34
+
+    # Stale in-flight cursor (after DB cursor already advanced) must NOT double-subtract.
+    with (
+        patch.object(
+            service._source_service,
+            "get_backfill_overview",
+            return_value=overview,
+        ),
+        patch.object(compiler, "in_flight_backfill", return_value=(999, 16)),
+    ):
+        stale = await wiki_client.get_status()
+        assert stale.backfill_total_pages == 50
+        assert stale.backfill_remaining_pages == 50
