@@ -317,6 +317,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
         "expected_yaml_enabled",
         "db_override",
         "env_override",
+        "expected_env_source",
         "expected_env_subset",
         "expected_env_enabled",
     ),
@@ -329,6 +330,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
             True,
             {"enabled": False, "retention_days": 7},
             {"SUPERNOTE_EVENT_LOG_RETENTION_DAYS": "30"},
+            ComponentConfigSource.ENV,
             {"retention_days": 30},
             True,
         ),
@@ -343,6 +345,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
                 "SUPERNOTE_METRICS_ENABLED": "true",
                 "SUPERNOTE_METRICS_PATH": "/env-metrics",
             },
+            ComponentConfigSource.ENV,
             {"enabled": True, "path": "/env-metrics"},
             True,
         ),
@@ -372,6 +375,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
                 "SUPERNOTE_MCP_PORT": "9092",
                 "SUPERNOTE_MCP_BASE_URL": "https://env-mcp.example.com",
             },
+            ComponentConfigSource.ENV,
             {
                 "enabled": True,
                 "port": 9092,
@@ -399,6 +403,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
                 "SUPERNOTE_PROXY_MODE": "relaxed",
                 "SUPERNOTE_TRUSTED_PROXIES": "192.168.1.1,10.1.0.0/16",
             },
+            ComponentConfigSource.ENV,
             {
                 "proxy_mode": "relaxed",
                 "trusted_proxies": ["192.168.1.1", "10.1.0.0/16"],
@@ -413,6 +418,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
             True,
             {"enabled": False, "notebook_preview": True},
             {"SUPERNOTE_WEB_NOTEBOOK_PREVIEW": "true"},
+            ComponentConfigSource.ENV,
             {"notebook_preview": True},
             True,
         ),
@@ -444,7 +450,8 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
                 "image_exclude_patterns": [],
             },
             {},
-            {},
+            ComponentConfigSource.YAML,
+            {"enable_image_processing": False},
             True,
         ),
         (
@@ -455,6 +462,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
             False,
             {"enabled": True},
             {"SUPERNOTE_WEB_ENABLED": "true"},
+            ComponentConfigSource.ENV,
             {"enabled": True},
             True,
         ),
@@ -497,6 +505,7 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
                 "SUPERNOTE_GEMINI_OCR_MODEL": "gemini-2.5-pro",
                 "SUPERNOTE_GEMINI_MAX_CONCURRENCY": "9",
             },
+            ComponentConfigSource.ENV,
             {
                 "prompts_dir": "/env/prompts",
                 "ocr": {
@@ -519,6 +528,7 @@ async def test_migrated_components_legacy_and_root_yaml_parity_with_tier_precede
     expected_yaml_enabled: bool,
     db_override: dict[str, object],
     env_override: dict[str, str],
+    expected_env_source: ComponentConfigSource,
     expected_env_subset: dict[str, object],
     expected_env_enabled: bool,
 ) -> None:
@@ -550,19 +560,16 @@ async def test_migrated_components_legacy_and_root_yaml_parity_with_tier_precede
     assert legacy_resolved.config == expected_yaml_config
     assert root_resolved.config == expected_yaml_config
 
-    if env_override:
-        for cfg_dir in (legacy_dir, root_dir):
-            with patch.dict(os.environ, env_override):
-                env_server_cfg = ServerConfig.load(cfg_dir)
-            env_resolved = (
-                await async_resolve_component_configs(
-                    env_server_cfg, coordination_service
-                )
-            )[domain]
-            assert env_resolved.source == ComponentConfigSource.ENV
-            assert env_resolved.enabled is expected_env_enabled
-            for key, expected_val in expected_env_subset.items():
-                assert env_resolved.config[key] == expected_val
+    for cfg_dir in (legacy_dir, root_dir):
+        with patch.dict(os.environ, env_override):
+            env_server_cfg = ServerConfig.load(cfg_dir)
+        env_resolved = (
+            await async_resolve_component_configs(env_server_cfg, coordination_service)
+        )[domain]
+        assert env_resolved.source == expected_env_source
+        assert env_resolved.enabled is expected_env_enabled
+        for key, expected_val in expected_env_subset.items():
+            assert env_resolved.config[key] == expected_val
 
 
 async def test_ai_and_provider_root_yaml_compatibility(
