@@ -504,6 +504,7 @@ async def test_apply_compile_plan_strips_redundant_source_type_prefix(
             )
         )
         await session.commit()
+        note_id = note.id
 
     fake_llm = FakeTextGenerationModel(
         responses=[
@@ -517,8 +518,8 @@ async def test_apply_compile_plan_strips_redundant_source_type_prefix(
                         "source_refs": [
                             {
                                 "source_type": "note_page",
-                                "source_key": "note_page:1:P1",
-                                "file_id": 1,
+                                "source_key": f"note_page:{note_id}:P1",
+                                "file_id": note_id,
                             }
                         ],
                     }
@@ -538,7 +539,7 @@ async def test_apply_compile_plan_strips_redundant_source_type_prefix(
     assert res.pages_updated == 1
     page = await wiki_service.get_page(1, "projects/aurora")
     assert page is not None
-    assert [r.source_key for r in page.source_refs] == ["1:P1"]
+    assert [r.source_key for r in page.source_refs] == [f"{note_id}:P1"]
 
 
 async def test_apply_compile_plan_skips_llm_index_op_without_consuming_page_cap(
@@ -805,3 +806,86 @@ async def test_background_backfill_guards_double_start_preserves_status_and_heal
         assert final_status.backfill_remaining_files == 0
     finally:
         await worker.stop()
+
+
+async def test_run_backfill_resolves_short_source_handles_and_drops_hallucinations(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=769734329608700452,
+                user_id=1,
+                directory_id=0,
+                file_name="Daily.note",
+                is_folder="N",
+                is_active="Y",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=769734329608700452,
+                page_index=0,
+                page_id="P20250826075655209501EC105Re539dD",
+                text_content="10.27-10.30 Multi-day notes about photo search.",
+            )
+        )
+        await session.commit()
+
+    fake_llm = FakeTextGenerationModel(
+        responses=[
+            {
+                "page_ops": [
+                    {
+                        "slug": "topics/photo-search",
+                        "title": "Photo Search",
+                        "page_kind": "topic",
+                        "body_md": "Photo search notes.",
+                        "claims": [
+                            {
+                                "text": "Old embedding model",
+                                "status": "superseded",
+                                "superseded_by_source": "page01",
+                            }
+                        ],
+                        "source_refs": [
+                            {"source_type": "note_page", "source_key": "page01"},
+                            {"source_type": "note_page", "source_key": "page01"},
+                            {"source_type": "note_page", "source_key": "page99"},
+                            {
+                                "source_type": "note_page",
+                                "source_key": "769734329608700452:P20250828HALLUCINATED",
+                            },
+                        ],
+                    }
+                ]
+            }
+        ]
+    )
+    worker = WikiCompilerWorker(
+        config=WikiConfig(enabled=True, auto_compile=False),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=fake_llm,
+    )
+    res = await worker.run_backfill(1, max_files=1)
+    assert res.pages_updated == 1
+    page = await wiki_service.get_page(1, "topics/photo-search")
+    assert page is not None
+    assert len(page.source_refs) == 1
+    assert (
+        page.source_refs[0].source_key
+        == "769734329608700452:P20250826075655209501EC105Re539dD"
+    )
+    assert page.source_refs[0].file_id == 769734329608700452
+    assert (
+        page.claims[0]["superseded_by_source"]
+        == "769734329608700452:P20250826075655209501EC105Re539dD"
+    )

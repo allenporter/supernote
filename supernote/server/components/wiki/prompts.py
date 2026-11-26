@@ -45,6 +45,8 @@ from supernote.server.utils.prompt_loader import PROMPT_LOADER, PromptId
 from .models import WikiPageDTO
 
 __all__ = [
+    "BuiltCompilePrompt",
+    "SourceRefTarget",
     "WikiClaimOp",
     "WikiCompilePlan",
     "WikiLintIssueOp",
@@ -65,6 +67,23 @@ __all__ = [
 ]
 
 
+@dataclass(frozen=True)
+class SourceRefTarget:
+    """Resolved server-side provenance target for a short prompt-local handle."""
+
+    source_type: WikiSourceType
+    source_key: str
+    file_id: int | None = None
+
+
+@dataclass(frozen=True)
+class BuiltCompilePrompt:
+    """Rendered compile prompt plus the `handle -> SourceRefTarget` lookup map."""
+
+    prompt: str
+    source_handles: dict[str, SourceRefTarget]
+
+
 @dataclass
 class WikiSourceRefOp(DataClassJSONMixin):
     """A single provenance citation emitted inside a compiled wiki page op."""
@@ -74,12 +93,17 @@ class WikiSourceRefOp(DataClassJSONMixin):
     )
     source_key: str = field(
         metadata={
-            "description": "Stable source identifier ('{file_id}:{page_id}' or '{task_id}')."
+            "description": (
+                "Exact short source_id handle from <source_diff> or <linked_context> "
+                "(e.g. 'page01' or 'task01')."
+            )
         }
     )
     file_id: int | None = field(
         default=None,
-        metadata={"description": "Optional numeric VFS file ID for note sources."},
+        metadata={
+            "description": "Optional numeric VFS file ID (resolved server-side)."
+        },
     )
 
 
@@ -526,14 +550,165 @@ def select_candidate_pages(
     return ranked[: max(1, limit)]
 
 
+def _parse_int_id(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _extract_note_target(
+    ev: Mapping[str, Any],
+) -> tuple[str, int | None] | None:
+    """Return `(source_key, file_id)` for a note-page diff event, or `None`."""
+    payload = ev.get("payload")
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    file_id = _parse_int_id(payload_map.get("file_id")) or _parse_int_id(
+        ev.get("related_file_id")
+    )
+    page_id = str(payload_map.get("page_id") or "").strip()
+    entity_id = str(ev.get("entity_id") or "").strip()
+    if (not page_id or file_id is None) and ":" in entity_id:
+        raw_fid, raw_pid = entity_id.split(":", maxsplit=1)
+        if file_id is None:
+            file_id = _parse_int_id(raw_fid)
+        if not page_id:
+            page_id = raw_pid.strip()
+    if file_id is not None and page_id:
+        return f"{file_id}:{page_id}", file_id
+    if ":" in entity_id:
+        return entity_id, file_id
+    return None
+
+
+def _assign_source_handles(
+    diff_payload: list[dict[str, Any]],
+    linked_context: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, SourceRefTarget]]:
+    """Replace raw file/page/task IDs with short prompt-local handles (`page01`, `task01`)."""
+    handles: dict[str, SourceRefTarget] = {}
+    reverse_map: dict[tuple[WikiSourceType, str], str] = {}
+    page_seq = 0
+    task_seq = 0
+
+    def _register(
+        source_type: WikiSourceType, source_key: str, file_id: int | None
+    ) -> str:
+        nonlocal page_seq, task_seq
+        dedup_key = (source_type, source_key)
+        existing = reverse_map.get(dedup_key)
+        if existing is not None:
+            return existing
+        if source_type is WikiSourceType.SCHEDULE_TASK:
+            task_seq += 1
+            handle = f"task{task_seq:02d}"
+        else:
+            page_seq += 1
+            handle = f"page{page_seq:02d}"
+        reverse_map[dedup_key] = handle
+        handles[handle] = SourceRefTarget(
+            source_type=source_type,
+            source_key=source_key,
+            file_id=file_id,
+        )
+        return handle
+
+    prompt_diff: list[dict[str, Any]] = []
+    for ev in diff_payload:
+        event_type = str(ev.get("event_type") or "")
+        entity_type = str(ev.get("entity_type") or "")
+        payload = ev.get("payload")
+        payload_map = payload if isinstance(payload, Mapping) else {}
+        is_deleted_event = event_type.endswith(".deleted") or event_type.endswith(
+            "_deleted"
+        )
+        is_task = (
+            event_type.startswith("schedule.task_")
+            or entity_type == "schedule_task"
+            or "task_id" in payload_map
+        )
+        clean_payload: dict[str, Any] = {}
+        for key, value in payload_map.items():
+            if key in ("file_id", "page_id", "task_id"):
+                continue
+            clean_payload[key] = value
+
+        source_id: str | None = None
+        if not is_deleted_event:
+            if is_task:
+                task_id = str(
+                    payload_map.get("task_id") or ev.get("entity_id") or ""
+                ).strip()
+                if task_id:
+                    source_id = _register(WikiSourceType.SCHEDULE_TASK, task_id, None)
+            else:
+                note_target = _extract_note_target(ev)
+                if note_target is not None:
+                    source_id = _register(
+                        WikiSourceType.NOTE_PAGE, note_target[0], note_target[1]
+                    )
+
+        clean_ev: dict[str, Any] = {}
+        if source_id is not None:
+            clean_ev["source_id"] = source_id
+        if event_type:
+            clean_ev["event_type"] = event_type
+        if clean_payload:
+            clean_ev["payload"] = clean_payload
+        prompt_diff.append(clean_ev)
+
+    prompt_linked: dict[str, Any] = {}
+    raw_tasks = linked_context.get("tasks")
+    if isinstance(raw_tasks, list):
+        clean_tasks: list[dict[str, Any]] = []
+        for item in raw_tasks:
+            if not isinstance(item, Mapping):
+                continue
+            task_id = str(item.get("task_id") or "").strip()
+            clean_task = {k: v for k, v in item.items() if k != "task_id"}
+            if task_id:
+                clean_task["source_id"] = _register(
+                    WikiSourceType.SCHEDULE_TASK, task_id, None
+                )
+            clean_tasks.append(clean_task)
+        prompt_linked["tasks"] = clean_tasks
+
+    raw_linked_pages = linked_context.get("linked_note_pages")
+    if isinstance(raw_linked_pages, list):
+        clean_pages: list[dict[str, Any]] = []
+        for item in raw_linked_pages:
+            if not isinstance(item, Mapping):
+                continue
+            fid = _parse_int_id(item.get("file_id"))
+            pid = str(item.get("page_id") or "").strip()
+            clean_page = {
+                k: v for k, v in item.items() if k not in ("file_id", "page_id")
+            }
+            if fid is not None and pid:
+                clean_page["source_id"] = _register(
+                    WikiSourceType.NOTE_PAGE, f"{fid}:{pid}", fid
+                )
+            clean_pages.append(clean_page)
+        prompt_linked["linked_note_pages"] = clean_pages
+
+    for key, value in linked_context.items():
+        if key not in ("tasks", "linked_note_pages"):
+            prompt_linked[key] = value
+
+    return prompt_diff, prompt_linked, handles
+
+
 def build_compile_prompt(
     all_pages: Sequence[WikiPageDTO],
     diff_payload: list[dict[str, Any]],
     linked_context: dict[str, Any],
     *,
     max_pages_per_batch: int = 5,
-) -> str:
-    """Render `PromptId.WIKI_COMPILE` with sanitized index, candidates, diff, and context."""
+) -> BuiltCompilePrompt:
+    """Render `PromptId.WIKI_COMPILE` using short source handles and return the lookup map."""
     compact_index = "\n".join(
         f"- [[{p.slug}]] ({p.page_kind}): {p.title} — {p.summary}"
         for p in all_pages
@@ -554,19 +729,23 @@ def build_compile_prompt(
         }
         for p in selected_candidates
     ]
+    prompt_diff, prompt_linked, source_handles = _assign_source_handles(
+        diff_payload, linked_context
+    )
     template = PROMPT_LOADER.get_prompt(PromptId.WIKI_COMPILE)
-    return render_prompt_template(
+    prompt = render_prompt_template(
         template,
         {
             "max_pages_per_batch": str(max(1, max_pages_per_batch)),
             "compact_index_md": sanitize_xml_payload(compact_index),
             "candidate_pages_json": sanitize_xml_payload(json.dumps(candidate_pages)),
-            "diff_events_json": sanitize_xml_payload(json.dumps(diff_payload)),
+            "diff_events_json": sanitize_xml_payload(json.dumps(prompt_diff)),
             "linked_note_and_task_context_json": sanitize_xml_payload(
-                json.dumps(linked_context)
+                json.dumps(prompt_linked)
             ),
         },
     )
+    return BuiltCompilePrompt(prompt=prompt, source_handles=source_handles)
 
 
 def build_lint_prompt(

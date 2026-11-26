@@ -193,7 +193,7 @@ def test_build_compile_prompt_prioritizes_synthesized_candidates_and_injects_bud
     assert "topics/compost" in selected_slugs
     assert "index" not in selected_slugs
 
-    prompt = build_compile_prompt(pages, diff, {}, max_pages_per_batch=10)
+    prompt = build_compile_prompt(pages, diff, {}, max_pages_per_batch=10).prompt
     assert "up to 10 pages per batch" in prompt
     candidates_section = prompt.split("<candidate_pages>", maxsplit=1)[1].split(
         "</candidate_pages>", maxsplit=1
@@ -241,3 +241,76 @@ def test_select_candidate_pages_uses_word_boundaries_for_short_names() -> None:
         p.slug for p in select_candidate_pages(pages, diff_true, {}, limit=2)
     ]
     assert ranked_true[0] == "entities/al"
+
+
+def test_build_compile_prompt_assigns_short_handles_and_hides_raw_ids() -> None:
+    diff = [
+        {
+            "event_type": "backfill.note_page",
+            "entity_id": "769734329608700452:P20250826075655209501EC105Re539dD",
+            "related_file_id": 769734329608700452,
+            "payload": {
+                "file_id": "769734329608700452",
+                "file_path": "Daily.note",
+                "page_id": "P20250826075655209501EC105Re539dD",
+                "page_index": 0,
+                "text_content": "Benchmarked photo search embeddings.",
+            },
+        },
+        {
+            "event_type": "schedule.task_created",
+            "entity_type": "schedule_task",
+            "entity_id": "task-uuid-delta",
+            "payload": {"title": "Ship release", "status": "needsAction"},
+        },
+        {
+            "event_type": "file.deleted",
+            "entity_type": "file",
+            "entity_id": "999999",
+            "related_file_id": 999999,
+            "payload": {"file_path": "Old.note"},
+        },
+        {
+            "event_type": "schedule.task_deleted",
+            "entity_type": "schedule_task",
+            "entity_id": "task-uuid-deleted",
+            "payload": {},
+        },
+    ]
+    linked = {
+        "tasks": [
+            {
+                "task_id": "task-uuid-9999",
+                "title": "Run embedding eval",
+                "status": "needsAction",
+            }
+        ],
+        "linked_note_pages": [
+            {
+                "file_id": 769734329608700452,
+                "page_id": "P20250826075655209501EC105Re539dD",
+                "page_index": 0,
+                "text_content": "Duplicate ref reuses page01.",
+            }
+        ],
+    }
+    built = build_compile_prompt([], diff, linked, max_pages_per_batch=10)
+    assert set(built.source_handles) == {"page01", "task01", "task02"}
+    assert (
+        built.source_handles["page01"].source_key
+        == "769734329608700452:P20250826075655209501EC105Re539dD"
+    )
+    assert built.source_handles["page01"].file_id == 769734329608700452
+    assert built.source_handles["task01"].source_type is WikiSourceType.SCHEDULE_TASK
+    assert built.source_handles["task01"].source_key == "task-uuid-delta"
+    assert built.source_handles["task02"].source_type is WikiSourceType.SCHEDULE_TASK
+    assert built.source_handles["task02"].source_key == "task-uuid-9999"
+
+    # Raw snowflake IDs, page IDs, and task UUIDs must not leak into prompt XML.
+    assert "769734329608700452" not in built.prompt
+    assert "P20250826075655209501EC105Re539dD" not in built.prompt
+    assert "task-uuid-delta" not in built.prompt
+    assert "task-uuid-9999" not in built.prompt
+    assert '"source_id": "page01"' in built.prompt
+    assert '"source_id": "task01"' in built.prompt
+    assert '"source_id": "task02"' in built.prompt

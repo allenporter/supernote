@@ -36,7 +36,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from aiohttp import web
@@ -65,6 +65,7 @@ from .models import (
     WikiUpsertInput,
 )
 from .prompts import (
+    SourceRefTarget,
     WikiCompilePlan,
     WikiLintIssueOp,
     WikiLintProposalOp,
@@ -329,7 +330,7 @@ class WikiCompilerWorker:
                 for ev in page.events
             ]
             all_pages = await self._wiki_service.list_pages(user_id, limit=500)
-            prompt = build_compile_prompt(
+            built = build_compile_prompt(
                 all_pages,
                 diff_payload,
                 linked_context,
@@ -339,7 +340,7 @@ class WikiCompilerWorker:
             # Execute LLM HTTP call strictly outside any open SQLite session.
             try:
                 raw_plan = await self._text_model.generate_json(
-                    prompt,
+                    built.prompt,
                     response_schema=get_compile_json_schema(),
                     schema_name="wiki_compile_plan",
                     stage=AIStage.WIKI_COMPILE,
@@ -352,7 +353,10 @@ class WikiCompilerWorker:
                 raise
 
             updated_slugs, skipped_policy = await self._apply_compile_plan(
-                user_id, plan, source_event_seq=max_seq
+                user_id,
+                plan,
+                source_event_seq=max_seq,
+                source_handles=built.source_handles,
             )
             if updated_slugs:
                 await self._wiki_service.sync_index_page(user_id)
@@ -456,7 +460,7 @@ class WikiCompilerWorker:
                 backfill_page_budget = max(
                     self._config.max_pages_per_batch, max_files * 2, 10
                 )
-                prompt = build_compile_prompt(
+                built = build_compile_prompt(
                     all_pages,
                     synthetic_diffs,
                     linked_context=linked_context,
@@ -464,7 +468,7 @@ class WikiCompilerWorker:
                 )
                 try:
                     raw_plan = await self._text_model.generate_json(
-                        prompt,
+                        built.prompt,
                         response_schema=get_compile_json_schema(),
                         schema_name="wiki_compile_plan",
                         stage=AIStage.WIKI_COMPILE,
@@ -480,6 +484,7 @@ class WikiCompilerWorker:
                     plan,
                     source_event_seq=None,
                     max_pages=backfill_page_budget,
+                    source_handles=built.source_handles,
                 )
                 if updated_slugs:
                     await self._wiki_service.sync_index_page(user_id)
@@ -718,12 +723,20 @@ class WikiCompilerWorker:
         *,
         source_event_seq: int | None,
         max_pages: int | None = None,
+        source_handles: Mapping[str, SourceRefTarget] | None = None,
     ) -> tuple[list[str], int]:
         updated_slugs: list[str] = []
         skipped_policy = 0
         page_cap = (
             max_pages if max_pages is not None else self._config.max_pages_per_batch
         )
+        normalized_handles: dict[str, SourceRefTarget] = {}
+        known_raw_targets: dict[tuple[str, str], SourceRefTarget] = {}
+        if source_handles:
+            for handle, target in source_handles.items():
+                normalized_handles[handle.lower()] = target
+                known_raw_targets[(str(target.source_type), target.source_key)] = target
+
         non_index_ops = [
             op
             for op in plan.page_ops
@@ -736,6 +749,7 @@ class WikiCompilerWorker:
                 continue
             page_kind = op.page_kind if op.page_kind in VALID_PAGE_KINDS else "topic"
             source_refs: list[WikiSourceRefDTO] = []
+            seen_refs: set[tuple[str, str]] = set()
             for ref in op.source_refs:
                 if not ref.source_type or not ref.source_key:
                     continue
@@ -745,14 +759,44 @@ class WikiCompilerWorker:
                     clean_key = clean_key[len(redundant_prefix) :]
                 if not clean_key:
                     continue
+                resolved_type = ref.source_type
+                resolved_key = clean_key
+                resolved_file_id = ref.file_id
+                if source_handles is not None:
+                    target = normalized_handles.get(
+                        clean_key.lower()
+                    ) or known_raw_targets.get((str(ref.source_type), clean_key))
+                    if target is None:
+                        logger.debug(
+                            "Dropping unrecognized source_ref %r on %r",
+                            ref.source_key,
+                            slug,
+                        )
+                        continue
+                    resolved_type = target.source_type
+                    resolved_key = target.source_key
+                    resolved_file_id = target.file_id
+                dedup_key = (str(resolved_type), resolved_key)
+                if dedup_key in seen_refs:
+                    continue
+                seen_refs.add(dedup_key)
                 source_refs.append(
                     WikiSourceRefDTO(
-                        source_type=ref.source_type,
-                        source_key=clean_key,
-                        file_id=ref.file_id,
+                        source_type=resolved_type,
+                        source_key=resolved_key,
+                        file_id=resolved_file_id,
                         last_event_seq=source_event_seq,
                     )
                 )
+            resolved_claims: list[dict[str, object]] = []
+            for claim in op.claims:
+                claim_dict = claim.to_dict()
+                superseded = str(claim_dict.get("superseded_by_source") or "").strip()
+                if superseded and source_handles is not None:
+                    target = normalized_handles.get(superseded.lower())
+                    if target is not None:
+                        claim_dict["superseded_by_source"] = target.source_key
+                resolved_claims.append(claim_dict)
             try:
                 page = await self._wiki_service.upsert_page(
                     user_id,
@@ -762,7 +806,7 @@ class WikiCompilerWorker:
                         page_kind=page_kind,
                         summary=op.summary,
                         body_md=op.body_md,
-                        claims=[c.to_dict() for c in op.claims],
+                        claims=resolved_claims,
                         aliases=[a for a in op.aliases if a.strip()],
                         source_refs=source_refs,
                         author_kind="compiler",
