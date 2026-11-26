@@ -360,6 +360,8 @@ interface NoteTitle {
     text: string | null;
     style: string | null;
     rect: [number, number, number, number] | null;
+    bitmapMd5: string | null;
+    imageUrl: string | null;
 }
 
 interface NotePageMeta {

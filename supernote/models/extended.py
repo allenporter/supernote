@@ -465,6 +465,14 @@ class NoteTitleVO(DataClassJSONMixin):
     """Raw `<TITLESTYLE>` code for the background the user picked on the device."""
     rect: list[int] | None = None
     """Title bounding box `[left, top, width, height]` in page pixels."""
+    bitmap_md5: str | None = field(
+        metadata=field_options(alias="bitmapMd5"), default=None
+    )
+    """MD5 of the title's handwriting bitmap; changes only when the title is redrawn."""
+    image_url: str | None = field(
+        metadata=field_options(alias="imageUrl"), default=None
+    )
+    """Signed URL of the title's handwriting crop PNG, or `None` if it has no bitmap."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

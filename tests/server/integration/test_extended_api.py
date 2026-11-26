@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
+from yarl import URL
 
 from supernote.client.api import Supernote
 from supernote.client.exceptions import ApiException
@@ -1049,12 +1050,25 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
         headers=auth_headers,
     )
     assert resp.status == 200
-    assert (await resp.json())["titles"] == [
+    titles = (await resp.json())["titles"]
+    image_urls = [URL(t.pop("imageUrl")) for t in titles]
+    md5s = [
+        "4f60eac0ba701b4983269a55649430ad",
+        "b094a9f71c442cf2a0544d737603b0dc",
+        "f14caee340e90ceab17cad156682ca9c",
+        "63bcfe0053116378ededa5038ba7e389",
+    ]
+    assert [(u.is_absolute(), u.path) for u in image_urls] == [
+        (True, f"/api/oss/title/{file_id}/{md5}") for md5 in md5s
+    ]
+    assert all(u.query for u in image_urls)
+    assert titles == [
         {
             "pageIndex": 1,
             "level": 1,
             "text": "Black",
             "style": "1000254",
+            "bitmapMd5": "4f60eac0ba701b4983269a55649430ad",
             "rect": [500, 329, 356, 148],
         },
         {
@@ -1062,6 +1076,7 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
             "level": 2,
             "text": None,
             "style": "1157254",
+            "bitmapMd5": "b094a9f71c442cf2a0544d737603b0dc",
             "rect": [480, 691, 582, 178],
         },
         {
@@ -1069,6 +1084,7 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
             "level": 3,
             "text": None,
             "style": "1201000",
+            "bitmapMd5": "f14caee340e90ceab17cad156682ca9c",
             "rect": [490, 1016, 284, 125],
         },
         {
@@ -1076,6 +1092,7 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
             "level": 4,
             "text": None,
             "style": "1000000",
+            "bitmapMd5": "63bcfe0053116378ededa5038ba7e389",
             "rect": [508, 1295, 290, 118],
         },
     ]

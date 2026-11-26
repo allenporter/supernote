@@ -14,6 +14,8 @@ Includes startup recovery (`recover_tasks`), missing/version-outdated task disco
 """
 
 import asyncio
+import hashlib
+import io
 import json
 import logging
 import time
@@ -33,7 +35,9 @@ from supernote.models.extended import (
     WebNoteMetadataVO,
 )
 from supernote.notebook import exceptions as notebook_exceptions
+from supernote.notebook.converter import ImageConverter
 from supernote.notebook.fileformat import Notebook
+from supernote.notebook.parser import load_title_bitmaps, parse_metadata
 from supernote.notebook.schema import (
     LinkDirection,
     LinkType,
@@ -91,7 +95,7 @@ from supernote.server.utils.note_content import (
     infer_page_date,
     normalize_page_style_type,
 )
-from supernote.server.utils.paths import get_page_png_path
+from supernote.server.utils.paths import get_page_png_path, get_title_png_path
 
 from .base import ProcessorModule, TaskGraph, TaskScope
 
@@ -105,6 +109,22 @@ _IMAGE_NAME_SUFFIX_PATTERNS: tuple[str, ...] = (
     "%.webp",
     "%.bmp",
 )
+
+
+def _render_title_pngs(path: str) -> dict[str, bytes]:
+    """Render every title crop of a note in one parse, keyed by `<TITLEBITMAP>` MD5."""
+    with open(path, "rb") as stream:
+        notebook = Notebook(parse_metadata(stream, policy="loose"))
+        load_title_bitmaps(stream, notebook.titles)
+    converter = ImageConverter(notebook)
+    pngs: dict[str, bytes] = {}
+    for title in notebook.titles:
+        if not title.content:
+            continue
+        buf = io.BytesIO()
+        converter.convert_title(title).save(buf, format="PNG")
+        pngs[hashlib.md5(title.content).hexdigest()] = buf.getvalue()
+    return pngs
 
 
 @dataclass(frozen=True)
@@ -1448,6 +1468,7 @@ class ProcessorService:
                     text=t.text_content,
                     style=t.style,
                     rect=t.rect,
+                    bitmap_md5=t.bitmap_md5,
                 )
                 for t in title_rows
             ],
@@ -1558,6 +1579,57 @@ class ProcessorService:
             )
         except FileNotFoundError:
             return None
+
+    async def get_title_png_key(
+        self, *, user_id: int, file_id: int, bitmap_md5: str
+    ) -> str | None:
+        """Return the `CACHE_BUCKET` key of a title crop PNG, rendering it on a cache miss.
+
+        Returns `None` unless `user_id` owns the active note and one of its
+        persisted titles has this `bitmap_md5`, or if the note no longer contains
+        that bitmap or its crop cannot be decoded.
+        """
+        async with self.session_manager.session() as session:
+            storage_key = (
+                await session.execute(
+                    select(UserFileDO.storage_key)
+                    .join(
+                        NoteTitleDO,
+                        and_(
+                            NoteTitleDO.user_id == UserFileDO.user_id,
+                            NoteTitleDO.file_id == UserFileDO.id,
+                        ),
+                    )
+                    .where(
+                        UserFileDO.id == file_id,
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.is_active == "Y",
+                        NoteTitleDO.bitmap_md5 == bitmap_md5,
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+        if not storage_key:
+            return None
+
+        png_key = get_title_png_path(file_id, bitmap_md5)
+        blob_storage = self.file_service.blob_storage
+        if await blob_storage.exists(CACHE_BUCKET, png_key):
+            return png_key
+
+        # A cache miss usually means the whole outline is uncached, so render and
+        # store every crop from one parse instead of re-parsing per title.
+        path = blob_storage.get_blob_path(USER_DATA_BUCKET, storage_key)
+        try:
+            pngs = await asyncio.to_thread(_render_title_pngs, str(path))
+        except (notebook_exceptions.SupernoteLibException, FileNotFoundError) as err:
+            logger.warning(f"Failed to render titles of file {file_id}: {err}")
+            return None
+        for md5, png_bytes in pngs.items():
+            await blob_storage.put(
+                CACHE_BUCKET, get_title_png_path(file_id, md5), png_bytes
+            )
+        return png_key if bitmap_md5 in pngs else None
 
     async def get_page_image(
         self,

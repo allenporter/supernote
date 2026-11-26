@@ -374,6 +374,8 @@ def test_web_note_metadata_models() -> None:
                 text="Sprint goals",
                 style="1157254",
                 rect=[480, 691, 582, 178],
+                bitmap_md5="b094a9f71c442cf2a0544d737603b0dc",
+                image_url="https://host/api/oss/title/1/abc?signature=x",
             )
         ],
         links=[
@@ -413,6 +415,8 @@ def test_web_note_metadata_models() -> None:
                 "text": "Sprint goals",
                 "style": "1157254",
                 "rect": [480, 691, 582, 178],
+                "bitmapMd5": "b094a9f71c442cf2a0544d737603b0dc",
+                "imageUrl": "https://host/api/oss/title/1/abc?signature=x",
             }
         ],
         "links": [

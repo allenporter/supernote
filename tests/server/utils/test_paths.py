@@ -16,6 +16,8 @@ from supernote.server.utils.paths import (
     get_summary_handwriting_prefix,
     get_summary_handwriting_prefix_of,
     get_summary_id,
+    get_title_png_path,
+    get_title_png_prefix,
     is_valid_page_id,
     parse_file_chunk_name,
 )
@@ -38,6 +40,14 @@ def test_get_page_png_path() -> None:
     assert not is_valid_page_id("../../102/pages/victim")
     with pytest.raises(ValueError, match="Invalid page_id"):
         get_page_png_path(123, "../../102/pages/victim")
+
+
+def test_get_title_png_path() -> None:
+    md5 = "4f60eac0ba701b4983269a55649430ad"
+    assert get_title_png_prefix(123) == "123/titles/"
+    assert get_title_png_path(123, md5) == f"123/titles/{md5}.png"
+    with pytest.raises(ValueError, match="Invalid bitmap_md5"):
+        get_title_png_path(123, "../../102/pages/victim")
 
 
 def test_get_file_chunk_path() -> None:

@@ -39,7 +39,12 @@ from supernote.server.metrics import record_note_page_diff
 from supernote.server.services.file import FileService
 from supernote.server.utils.hashing import get_md5_hash
 from supernote.server.utils.image import STANDALONE_IMAGE_PAGE_ID, is_image_filename
-from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
+from supernote.server.utils.paths import (
+    get_page_png_path,
+    get_title_png_path,
+    get_title_png_prefix,
+    is_valid_page_id,
+)
 
 from .base import ProcessorModule, TaskScope
 
@@ -212,6 +217,17 @@ class PageHashingModule(ProcessorModule):
                 )
             )
             await session.commit()
+        blob_storage = self.file_service.blob_storage
+        for key in await blob_storage.list_blobs(
+            CACHE_BUCKET, get_title_png_prefix(file_id)
+        ):
+            await self._delete_cache_blob(key)
+
+    async def _delete_cache_blob(self, key: str) -> None:
+        try:
+            await self.file_service.blob_storage.delete(CACHE_BUCKET, key)
+        except OSError as e:
+            logger.warning(f"Failed to delete cache blob {key}: {e}")
 
     async def process(
         self,
@@ -489,6 +505,8 @@ class PageHashingModule(ProcessorModule):
             for row in existing.values()
             if row.bitmap_md5 and row.text_content is not None
         }
+        previous_md5s = {row.bitmap_md5 for row in existing.values() if row.bitmap_md5}
+        current_md5s: set[str] = set()
 
         for idx, title in enumerate(sorted(notebook.titles, key=_title_reading_order)):
             row = existing.pop(idx, None)
@@ -508,9 +526,18 @@ class PageHashingModule(ProcessorModule):
             row.style = title.style
             row.bitmap_md5 = bitmap_md5
             row.text_content = text_by_md5.get(bitmap_md5) if bitmap_md5 else None
+            if bitmap_md5:
+                current_md5s.add(bitmap_md5)
 
         for stale in existing.values():
             await session.delete(stale)
+
+        # Title crops are cached by bitmap MD5; drop crops for handwriting that
+        # no longer appears in the note (redrawn or deleted titles). Deleting
+        # before the caller commits is safe: a rollback keeps the rows and the
+        # crop is simply re-rendered on its next request.
+        for stale_md5 in previous_md5s - current_md5s:
+            await self._delete_cache_blob(get_title_png_path(file_id, stale_md5))
 
     async def _sync_page_content_hashes(
         self,
@@ -620,11 +647,7 @@ class PageHashingModule(ProcessorModule):
                     deleted_page_texts.append((pid, last_text))
                 await session.delete(row)
 
-                png_path = get_page_png_path(file_id, pid)
-                try:
-                    await self.file_service.blob_storage.delete(CACHE_BUCKET, png_path)
-                except (FileNotFoundError, OSError) as e:
-                    logger.warning(f"Failed to delete orphan PNG {pid}: {e}")
+                await self._delete_cache_blob(get_page_png_path(file_id, pid))
 
                 await session.execute(
                     delete(SystemTaskDO)
