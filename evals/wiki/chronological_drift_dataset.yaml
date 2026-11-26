@@ -1,0 +1,132 @@
+---
+name: supernote-wiki-chronological-drift-v1
+description: >-
+  Multi-notebook chronological evolution corpus (Project FieldNote) spanning
+  Jan-Oct 2026 across 3 sequential topic notebooks plus an overlapping
+  long-running Daily_Log.note. Evaluates whether backfill ordering and page
+  dates preserve the latest evolved decisions instead of reverting to stale
+  earlier specs.
+notebooks:
+  - file_name: FieldNote_Architecture.note
+    description: Early architecture notes (Jan-Feb 2026) with initial stack decisions that are later superseded.
+    pages:
+      - page_index: 0
+        page_id: P20260115090000ARCH0001
+        text_content: |-
+          Project FieldNote — Initial Architecture (Jan 15)
+          - Tech Lead: Devon
+          - Database: PostgreSQL on AWS RDS ($420/mo estimated)
+          - Auth: Auth0 managed SaaS ($300/mo)
+          - Mobile Client: React Native (shared TypeScript codebase)
+          - Target v1.0 launch date: June 1
+      - page_index: 1
+        page_id: P20260220143000ARCH0002
+        text_content: |-
+          FieldNote Sync Sketch (Feb 20)
+          - Devon prototyped React Native SQLite bridge for offline caching.
+          - RDS connection pooler (PgBouncer) added for sync workers.
+          - Still targeting June 1 v1.0 beta with Auth0 login flow.
+  - file_name: FieldNote_Migration.note
+    description: Mid-year pivot notes (May-Jun 2026) superseding Auth0, React Native, leadership, and launch date.
+    pages:
+      - page_index: 0
+        page_id: P20260504100000MIGR0001
+        text_content: |-
+          FieldNote Mid-Year Pivot (May 4)
+          - Leadership change: Devon moved to platform infra; Sora is now Tech Lead for FieldNote.
+          - Auth migration: Dropped Auth0 due to pricing; switched to self-hosted Keycloak (saves $300/mo).
+          - Launch date pushed from June 1 to September 15 to absorb rewrites.
+      - page_index: 1
+        page_id: P20260618160000MIGR0002
+        text_content: |-
+          Mobile Rewrite Decision (Jun 18)
+          - React Native offline sync bridge hit too many background-thread crashes.
+          - Sora approved full switch to Flutter for the mobile client.
+          - Keycloak OIDC flow verified working cleanly in Flutter prototype.
+  - file_name: FieldNote_Launch.note
+    description: Launch & post-launch notes (Sep 2026) superseding RDS PostgreSQL and recording final v1.0 state.
+    pages:
+      - page_index: 0
+        page_id: P20260912180000LNCH0001
+        text_content: |-
+          FieldNote v1.0 Shipped! (Sep 12)
+          - Shipped v1.0 on September 12 (3 days ahead of the Sep 15 target!).
+          - Database finalized: replaced AWS RDS PostgreSQL ($420/mo) with embedded SQLite + Litestream on Fly.io ($18/mo).
+          - Flutter offline sync hit 99.95% reliability across launch week.
+          - Sora led the release war room; Devon handled Fly.io infra rollout.
+      - page_index: 1
+        page_id: P20260928110000LNCH0002
+        text_content: |-
+          Post-Launch Roadmap (Sep 28)
+          - Current production stack: SQLite + Litestream on Fly.io ($18/mo), self-hosted Keycloak auth, Flutter mobile app.
+          - Next major focus: Offline-first Plugin SDK for third-party exporters.
+          - Recruiting a product designer to help Sora polish the Plugin SDK UX.
+  - file_name: Daily_Log.note
+    description: Long-running daily log overlapping Jan-Oct 2026, mixing errands with FieldNote milestones.
+    pages:
+      - page_index: 0
+        page_id: P20260120080000DLOG0001
+        text_content: |-
+          01.20 TUE
+          • Kickoff w/ Devon on FieldNote RDS setup ($420/mo budget approved)
+          • Pick up coffee beans + oat milk
+
+          01.22 THU
+          • Wired up Auth0 dev tenant for React Native login screen
+          • Dentist appointment 3pm
+      - page_index: 1
+        page_id: P20260512080000DLOG0002
+        text_content: |-
+          05.12 TUE
+          • 1:1 w/ Sora (new FieldNote tech lead after Devon moved to infra)
+          • Self-hosted Keycloak cutover finished — cancelled Auth0 subscription!
+          • Buy lawn fertilizer
+
+          05.15 FRI
+          • Reviewed Flutter offline sync demo w/ Sora — way cleaner than React Native
+      - page_index: 2
+        page_id: P20260914080000DLOG0003
+        text_content: |-
+          09.14 MON
+          • Celebrated FieldNote v1.0 launch (shipped Sep 12!) w/ Sora & Devon
+          • Decommissioned old AWS RDS instance — SQLite + Litestream on Fly.io is running at $18/mo
+          • Oil change + tire rotation
+      - page_index: 3
+        page_id: P20261015080000DLOG0004
+        text_content: |-
+          10.15 THU
+          • Hired Maya as FieldNote product designer (starts Nov 2) to lead Offline-first Plugin SDK UX w/ Sora!
+          • Weekly sync: Flutter app holding 99.95% offline sync reliability
+          • Groceries: pasta, spinach, apples
+
+tasks: []
+
+expectations:
+  concepts:
+    - name: Project FieldNote
+      kind: project
+      keywords: [fieldnote, litestream, plugin sdk]
+    - name: Sora
+      kind: entity
+      keywords: [sora]
+    - name: Devon
+      kind: entity
+      keywords: [devon]
+    - name: Maya
+      kind: entity
+      keywords: [maya]
+  facts:
+    - name: Database migrated to SQLite + Litestream on Fly.io ($18/mo)
+      keywords: ["litestream", "18/mo", "fly.io"]
+    - name: Auth switched to self-hosted Keycloak
+      keywords: ["keycloak"]
+    - name: Mobile client switched to Flutter
+      keywords: ["flutter"]
+    - name: Sora is current Tech Lead (Devon moved to infra)
+      keywords: ["sora"]
+    - name: v1.0 launched on September 12
+      keywords: ["sep 12", "september 12"]
+    - name: Next focus is Offline-first Plugin SDK
+      keywords: ["plugin sdk"]
+    - name: Hired Maya as product designer
+      keywords: ["maya"]

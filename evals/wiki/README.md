@@ -33,6 +33,10 @@ uv run --no-sync python script/eval_wiki.py \
   --export-dir /tmp/wiki_eval_daily_log
 ```
 
+## Chronological Drift Dataset (`chronological_drift_dataset.yaml`)
+
+Tests whether decisions that evolve across multiple sequential topic notebooks (`FieldNote_Architecture.note` -> `FieldNote_Migration.note` -> `FieldNote_Launch.note`) plus an overlapping long-running `Daily_Log.note` preserve the latest state without reverting to superseded earlier specs.
+
 ## Running the Eval
 
 ```bash
