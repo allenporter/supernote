@@ -1,4 +1,3 @@
-import dataclasses
 import io
 from pathlib import Path
 
@@ -6,14 +5,10 @@ import pytest
 from PIL import Image
 from sqlalchemy import select
 
-from supernote.models.base import TaskType
-from supernote.server.components.ai import OCR_MODEL_KEY
 from supernote.server.components.conversion.processor import (
     PngConversionModule,
-    async_setup_processor,
 )
-from supernote.server.components.fake_ai.ocr import FakeOcrModel
-from supernote.server.components.processor import ProcessorRegistrar
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
@@ -22,6 +17,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.utils.paths import get_page_png_path
+from tests.server.components.conftest import LoadComponents
 
 
 @pytest.fixture
@@ -119,7 +115,7 @@ async def test_process_png_conversion_success(
 
 
 @pytest.mark.parametrize(
-    ("web_enabled", "web_notebook_preview", "has_ocr", "expected_png_enabled"),
+    ("load_web_ui", "notebook_preview", "has_ocr", "expected_png_enabled"),
     [
         (True, True, False, True),
         (True, False, False, False),
@@ -129,26 +125,24 @@ async def test_process_png_conversion_success(
 )
 async def test_async_setup_processor_registers_png_conversion_stage(
     component_core: ServerCore,
-    web_enabled: bool,
-    web_notebook_preview: bool,
+    load_components: LoadComponents,
+    load_web_ui: bool,
+    notebook_preview: bool,
     has_ocr: bool,
     expected_png_enabled: bool,
 ) -> None:
-    """async_setup_processor registers PngConversionModule and toggles enabled by OCR/preview config."""
-    core = dataclasses.replace(
-        component_core,
-        config=dataclasses.replace(
-            component_core.config,
-            web_enabled=web_enabled,
-            web_notebook_preview=web_notebook_preview,
-        ),
-    )
-    core.app[OCR_MODEL_KEY] = FakeOcrModel() if has_ocr else None
+    """ConversionComponent registers PngConversionModule and toggles enabled by loaded web_ui/preview/OCR."""
+    domains = ("conversion", "web_ui") if load_web_ui else ("conversion",)
+    configs: dict[str, dict[str, object]] = {
+        "conversion": {"notebook_preview": notebook_preview},
+    }
+    if has_ocr:
+        component_core.config.gemini_api_key = "fake-key"
+        component_core.config._sync_legacy_gemini_config()
+        domains = (*domains, "gemini")
 
-    registrar = ProcessorRegistrar()
-    await async_setup_processor(core, registrar)
+    await load_components(*domains, configs=configs, start=False)
 
-    assert [m.task_type for m in registrar.modules] == [TaskType.PNG_CONVERSION]
-    png_mod = registrar.modules[0]
-    assert isinstance(png_mod, PngConversionModule)
+    page_modules = component_core.app[PROCESSOR_SERVICE_KEY].page_modules
+    png_mod = next(m for m in page_modules if isinstance(m, PngConversionModule))
     assert png_mod.enabled is expected_png_enabled

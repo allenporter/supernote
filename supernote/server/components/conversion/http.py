@@ -20,13 +20,12 @@ from supernote.models.base import create_error_response
 from supernote.models.extended import WebNoteCoverRequestDTO, WebNoteCoverVO
 from supernote.models.file_device import PdfDTO, PdfVO, PngDTO, PngPageVO, PngVO
 from supernote.server.components.http import HttpRegistrar, parse_json_dto
-from supernote.server.config import ServerConfig
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.exceptions import AccessDenied, InvalidInputError, SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
-    CONFIG_KEY,
+    COMPONENT_LOADER_KEY,
     REQUEST_USER_KEY,
     URL_SIGNER_KEY,
 )
@@ -55,11 +54,11 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
     except InvalidInputError as err:
         return web.json_response({"error": err.message}, status=err.status_code)
 
-    config: ServerConfig = request.app[CONFIG_KEY]
-    if not (config.web_enabled and config.web_notebook_preview):
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    web_ui_loaded = request.app[COMPONENT_LOADER_KEY].get("web_ui") is not None
+    if not (web_ui_loaded and conversion_service.notebook_preview):
         return web.json_response(WebNoteCoverVO(url=None).to_dict())
 
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
     try:
@@ -92,12 +91,12 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
         return err.to_response()
 
     user_email = request[REQUEST_USER_KEY]
-    config: ServerConfig = request.app[CONFIG_KEY]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    web_ui_loaded = request.app[COMPONENT_LOADER_KEY].get("web_ui") is not None
 
-    if not (config.web_enabled and config.web_notebook_preview):
+    if not (web_ui_loaded and conversion_service.notebook_preview):
         return web.json_response(PngVO(png_page_vo_list=[]).to_dict())
 
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
     try:

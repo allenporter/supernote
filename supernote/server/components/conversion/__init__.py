@@ -21,6 +21,7 @@ from typing import Any
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.core import ServerCore
 
+from .config import ConversionConfig
 from .service import CONVERSION_SERVICE_KEY, ConversionService, ConvertedBlob
 
 __all__ = [
@@ -40,11 +41,13 @@ class ConversionComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `ConversionService` and expose it via `CONVERSION_SERVICE_KEY`."""
+        cfg = ConversionConfig.from_dict(dict(config))
         core.app[CONVERSION_SERVICE_KEY] = ConversionService(
             session_manager=core.session_manager,
             blob_storage=core.blob_storage,
             user_service=core.user_service,
             processor_service=core.app[PROCESSOR_SERVICE_KEY],
+            notebook_preview=cfg.notebook_preview,
         )
 
     async def async_start(self, core: ServerCore) -> None:

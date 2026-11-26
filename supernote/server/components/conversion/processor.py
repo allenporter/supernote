@@ -28,6 +28,7 @@ from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.keys import COMPONENT_LOADER_KEY
 from supernote.server.services.file import FileService
 from supernote.server.utils.image import (
     MAX_ALLOWED_IMAGE_DIMENSION,
@@ -36,6 +37,8 @@ from supernote.server.utils.image import (
     normalize_image_to_png,
 )
 from supernote.server.utils.paths import get_page_png_path
+
+from .service import CONVERSION_SERVICE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +218,10 @@ async def async_setup_processor(
 ) -> None:
     """Register `PngConversionModule` with the `"processor"` platform."""
     ocr_model = core.app.get(OCR_MODEL_KEY)
+    conversion_service = core.app[CONVERSION_SERVICE_KEY]
+    web_ui_loaded = core.app[COMPONENT_LOADER_KEY].get("web_ui") is not None
     png_enabled = (ocr_model is not None) or (
-        core.config.web_enabled and core.config.web_notebook_preview
+        web_ui_loaded and conversion_service.notebook_preview
     )
     registrar.register_module(
         PngConversionModule(file_service=core.file_service, enabled=png_enabled)

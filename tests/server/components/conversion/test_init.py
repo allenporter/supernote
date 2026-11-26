@@ -15,13 +15,18 @@ async def test_conversion_component_lifecycle(
     load_components: LoadComponents,
 ) -> None:
     """Verify ConversionComponent registers ConversionService and supports idempotent lifecycle."""
-    loader = await load_components("conversion")
+    loader = await load_components(
+        "conversion",
+        configs={"conversion": {"notebook_preview": False}},
+    )
     component = loader.get("conversion")
     assert isinstance(component, Component)
     assert component.domain == "conversion"
     assert component.dependencies == ("ai", "processor")
     assert component.platforms == ("http", "processor")
-    assert isinstance(component_core.app[CONVERSION_SERVICE_KEY], ConversionService)
+    service = component_core.app[CONVERSION_SERVICE_KEY]
+    assert isinstance(service, ConversionService)
+    assert service.notebook_preview is False
 
     await loader.async_stop_all(component_core)
     await loader.async_stop_all(component_core)
