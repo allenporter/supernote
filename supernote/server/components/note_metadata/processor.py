@@ -189,10 +189,16 @@ class NoteMetadataModule(ProcessorModule):
         """Delete persisted notebook/page/title metadata rows and cached title crops."""
         async with session_manager.session() as session:
             await session.execute(
-                delete(NoteMetadataDO).where(NoteMetadataDO.file_id == file_id)
+                delete(NoteMetadataDO).where(
+                    NoteMetadataDO.user_id == user_id,
+                    NoteMetadataDO.file_id == file_id,
+                )
             )
             await session.execute(
-                delete(NotePageMetadataDO).where(NotePageMetadataDO.file_id == file_id)
+                delete(NotePageMetadataDO).where(
+                    NotePageMetadataDO.user_id == user_id,
+                    NotePageMetadataDO.file_id == file_id,
+                )
             )
             await session.execute(
                 delete(NoteTitleDO).where(

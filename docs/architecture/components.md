@@ -28,7 +28,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `note_metadata` | Yes | `processor` | `http`, `processor` | `.note` structure extraction (`NoteMetadataModule`), metadata API (`POST /api/extended/file/note/metadata`), and signed title crop previews (`GET /api/oss/title/*`). |
 | `oauth` | Yes | — | `http` | OAuth 2.1 Authorization Server (PKCE, CIMD, consent UI, token issuance/revocation). |
 | `openai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | OpenAI-compatible provider supporting OpenAI API, Ollama, vLLM, llama.cpp, and LM Studio. |
-| `processor` | Yes | — | `http`, `processor` | Incremental background note/image processing queue, page hashing, and notebook metadata extraction. |
+| `processor` | Yes | — | `http`, `processor` | Incremental background note/image processing queue and page hashing. |
 | `schedule` | Yes | — | `http`, `mcp` | Supernote Tasks & Schedule CRUD, RFC 5545 `.ics` feed export, and 4 MCP task tools. |
 | `search` | Yes | `ai` | `http`, `mcp`, `processor` | Lexical keyword search, vector embeddings, hybrid ranking, and `list_notebooks` / `search_notebook_chunks` MCP tools. |
 | `socketio` | Yes | — | `http` | Real-time Socket.IO sync notifications (`FILE-SYN`, `TASK-SYN`, `SUMMARY-SYN`). |

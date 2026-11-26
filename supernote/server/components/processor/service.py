@@ -1,10 +1,10 @@
-"""Asynchronous 5-stage `.note` processing pipeline orchestrator and recovery loop.
+"""Asynchronous `.note` processing pipeline orchestrator and recovery loop.
 
 `ProcessorService` subscribes to `NoteUpdatedEvent`, `SyncCompletedEvent`, and
 `VfsItemPurgedEvent` on `supernote.server.events.LocalEventBus` and runs registered
-`supernote.server.components.processor.ProcessorModule` stages in order:
-1. Global Pre-Stage: `PageHashingModule`
-2. Per-Page Stage (parallel): `PngConversionModule` -> `OcrModule` -> `EmbeddingModule`
+`supernote.server.components.processor.ProcessorModule` stages in DAG order:
+1. Global Pre-Stages: `PageHashingModule` -> `NoteMetadataModule`
+2. Per-Page Stages (parallel): `PngConversionModule` -> `OcrModule` -> `EmbeddingModule`
 3. Global Post-Stage: `SummaryModule`
 
 Includes startup recovery (`recover_tasks`), missing/version-outdated task discovery

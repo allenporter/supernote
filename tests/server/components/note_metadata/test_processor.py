@@ -75,7 +75,7 @@ async def test_note_metadata_persists_note_and_page_metadata(
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
 ) -> None:
-    """Verify PageHashingModule populates NoteMetadataDO and per-page NotePageMetadataDO."""
+    """Verify NoteMetadataModule populates NoteMetadataDO and per-page NotePageMetadataDO."""
     note_path = TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
     await _seed_user_note_file(
         session_manager, blob_storage, user_id=7, file_id=1010, note_path=note_path
@@ -272,7 +272,7 @@ async def test_note_metadata_cleanup_file_deletes_note_and_page_metadata(
     note_metadata_module: NoteMetadataModule,
     session_manager: DatabaseSessionManager,
 ) -> None:
-    """Verify cleanup_file removes NoteMetadataDO and NotePageMetadataDO only for target file_id."""
+    """Verify cleanup_file removes rows only for target (user_id, file_id)."""
     async with session_manager.session() as session:
         session.add_all(
             [
@@ -281,6 +281,13 @@ async def test_note_metadata_cleanup_file_deletes_note_and_page_metadata(
                 ),
                 NotePageMetadataDO(user_id=7, file_id=1020, page_index=0, page_id="p0"),
                 NoteTitleDO(user_id=7, file_id=1020, title_index=0, page_index=0),
+                # Same file_id owned by a different user must remain untouched.
+                NoteMetadataDO(
+                    user_id=8, file_id=1020, file_type="note", total_pages=1
+                ),
+                NotePageMetadataDO(user_id=8, file_id=1020, page_index=0, page_id="p0"),
+                NoteTitleDO(user_id=8, file_id=1020, title_index=0, page_index=0),
+                # Different file_id owned by the same user must remain untouched.
                 NoteMetadataDO(
                     user_id=7, file_id=1021, file_type="note", total_pages=1
                 ),
@@ -298,6 +305,9 @@ async def test_note_metadata_cleanup_file_deletes_note_and_page_metadata(
         assert await session.get(NoteMetadataDO, (7, 1020)) is None
         assert await session.get(NotePageMetadataDO, (7, 1020, 0)) is None
         assert await session.get(NoteTitleDO, (7, 1020, 0)) is None
+        assert await session.get(NoteMetadataDO, (8, 1020)) is not None
+        assert await session.get(NotePageMetadataDO, (8, 1020, 0)) is not None
+        assert await session.get(NoteTitleDO, (8, 1020, 0)) is not None
         assert await session.get(NoteMetadataDO, (7, 1021)) is not None
         assert await session.get(NotePageMetadataDO, (7, 1021, 0)) is not None
         assert await session.get(NoteTitleDO, (7, 1021, 0)) is not None
@@ -518,7 +528,7 @@ async def test_note_metadata_skips_unchanged_title_rows_on_rehash(
         assert refreshed.text_content == "Black"
 
 
-async def test_note_metadata_metadata_supports_sql_json_extract_queries(
+async def test_note_metadata_supports_sql_json_extract_queries(
     note_metadata_module: NoteMetadataModule,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,

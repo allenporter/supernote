@@ -36,8 +36,8 @@ from supernote.server.utils.unique_id import next_id
 class NoteMetadataDO(Base):
     """Notebook-level structural metadata parsed from `.note` files (`f_note_metadata`).
 
-    Keyed by `(user_id, file_id)` and populated by `PageHashingModule` on every
-    file hash pass. `header_json` and `footer_json` store native
+    Keyed by `(user_id, file_id)` and populated by `NoteMetadataModule` on every
+    metadata pass. `header_json` and `footer_json` store native
     `supernote.notebook.schema` `.to_wire_dict()` JSON so unrecognized firmware
     tags round-trip without coupling persistence to HTTP DTO schemas.
     """

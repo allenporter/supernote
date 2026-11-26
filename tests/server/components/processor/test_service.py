@@ -2423,3 +2423,135 @@ async def test_standalone_image_exclusions_for_mystyle_and_export(
 
     await processor.recover_missing_tasks(user_id=test_user_id)
     assert processor.processing_files == {(test_user_id, shot_id)}
+
+
+async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+) -> None:
+    """Verify recover_missing_tasks backfills missing NOTE_METADATA for .note files but skips images."""
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service=file_service),
+        metadata=NoteMetadataModule(file_service=file_service),
+        png=PngConversionModule(file_service=file_service),
+        ocr=OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
+    )
+
+    async with session_manager.session() as session:
+        # 9201: .note with HASHING/PNG/OCR completed but missing NOTE_METADATA -> backfill.
+        # 9202: standalone image with HASHING/PNG/OCR completed and no NOTE_METADATA -> skip.
+        for fid, fname, pid in [
+            (9201, "existing.note", "p0"),
+            (9202, "sketch.png", "img"),
+        ]:
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=1,
+                    file_name=fname,
+                    storage_key=f"k{fid}",
+                    md5="m",
+                    is_active="Y",
+                )
+            )
+            session.add(
+                NotePageContentDO(
+                    file_id=fid,
+                    page_index=0,
+                    page_id=pid,
+                    content_hash="h",
+                )
+            )
+            session.add_all(
+                [
+                    SystemTaskDO(
+                        user_id=1,
+                        file_id=fid,
+                        task_type="HASHING",
+                        key="global",
+                        status="COMPLETED",
+                        data="v3",
+                    ),
+                    SystemTaskDO(
+                        user_id=1,
+                        file_id=fid,
+                        task_type="PNG_CONVERSION",
+                        key=f"page_{pid}",
+                        status="COMPLETED",
+                        data="v2",
+                    ),
+                    SystemTaskDO(
+                        user_id=1,
+                        file_id=fid,
+                        task_type="OCR_EXTRACTION",
+                        key=f"page_{pid}",
+                        status="COMPLETED",
+                    ),
+                ]
+            )
+        await session.commit()
+
+    await processor_service.recover_missing_tasks(user_id=1)
+    assert processor_service.processing_files == {(1, 9201)}
+
+
+async def test_note_metadata_failure_isolates_ocr_while_allowing_png(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    file_service: FileService,
+) -> None:
+    """When NoteMetadataModule fails, PNG_CONVERSION still runs while OCR_EXTRACTION is skipped."""
+    note_path = (
+        Path(__file__).parents[3]
+        / "testdata"
+        / "nelinory"
+        / "A5X_TestNote_With_Pdf_Template.note"
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "k_meta_fail", note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=9210,
+                user_id=1,
+                file_name=note_path.name,
+                storage_key="k_meta_fail",
+                md5="m",
+                is_active="Y",
+            )
+        )
+        await session.commit()
+
+    class _FailingMetadataModule(NoteMetadataModule):
+        async def process(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            **kwargs: object,
+        ) -> None:
+            raise RuntimeError("simulated metadata failure")
+
+    fake_ocr = FakeOcrModel()
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service=file_service),
+        metadata=_FailingMetadataModule(file_service=file_service),
+        png=PngConversionModule(file_service=file_service),
+        ocr=OcrModule(file_service=file_service, ocr_model=fake_ocr),
+    )
+
+    ok = await processor_service.process_file(9210, user_id=1)
+    assert ok is False
+    assert fake_ocr.calls == []
+
+    tasks = await processor_service.list_system_tasks(user_id=1, file_id=9210)
+    statuses_by_type: dict[str, set[str]] = {}
+    for task in tasks:
+        statuses_by_type.setdefault(task.task_type, set()).add(task.status)
+
+    assert statuses_by_type[TaskType.PAGE_HASHING.value] == {"COMPLETED"}
+    assert statuses_by_type[TaskType.NOTE_METADATA.value] == {"FAILED"}
+    assert statuses_by_type[TaskType.PNG_CONVERSION.value] == {"COMPLETED"}
+    assert TaskType.OCR_EXTRACTION.value not in statuses_by_type
