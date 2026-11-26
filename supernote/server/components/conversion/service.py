@@ -31,6 +31,15 @@ from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.user import UserService
 from supernote.server.services.vfs import VirtualFileSystem
+from supernote.server.utils.image import (
+    DEFAULT_MAX_IMAGE_DIMENSION,
+    MAX_ALLOWED_IMAGE_DIMENSION,
+    MAX_SOURCE_IMAGE_BYTES,
+    MIN_ALLOWED_IMAGE_DIMENSION,
+    STANDALONE_IMAGE_PAGE_ID,
+    is_image_filename,
+    normalize_image_to_png,
+)
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_page_png_path,
@@ -44,6 +53,7 @@ __all__ = [
     "CONVERSION_SERVICE_KEY",
     "ConversionService",
     "ConvertedBlob",
+    "PageImage",
 ]
 
 
@@ -53,6 +63,24 @@ class ConvertedBlob:
 
     storage_key: str
     file_name: str
+
+
+@dataclass(frozen=True)
+class PageImage:
+    """Resolved and normalized PNG image for a notebook page or standalone image file."""
+
+    file_name: str
+    """Original VFS filename of the source file."""
+    page_index: int
+    """0-based page index (`0` for standalone image files)."""
+    page_id: str
+    """Stable page identifier (`'img'` for standalone image files)."""
+    png_bytes: bytes
+    """Normalized PNG image payload."""
+    width: int
+    """Normalized image width in pixels."""
+    height: int
+    """Normalized image height in pixels."""
 
 
 def _convert_note_to_pdf_sync(blob_content: bytes, page_no_list: list[int]) -> bytes:
@@ -187,13 +215,8 @@ class ConversionService:
         user_id, node = await self._get_required_note_node(user, file_id)
         assert node.storage_key is not None and node.md5 is not None
 
-        blob_content = b"".join(
-            [
-                chunk
-                async for chunk in self.blob_storage.get(
-                    USER_DATA_BUCKET, node.storage_key
-                )
-            ]
+        blob_content = await self.blob_storage.get_bytes(
+            USER_DATA_BUCKET, node.storage_key
         )
         pdf_bytes = await asyncio.to_thread(
             _convert_note_to_pdf_sync, blob_content, page_no_list
@@ -251,13 +274,8 @@ class ConversionService:
         """Read a summary's raw handwriting `.mark` blob from USER_DATA_BUCKET."""
         assert summary.handwrite_inner_name is not None
         try:
-            return b"".join(
-                [
-                    chunk
-                    async for chunk in self.blob_storage.get(
-                        USER_DATA_BUCKET, summary.handwrite_inner_name
-                    )
-                ]
+            return await self.blob_storage.get_bytes(
+                USER_DATA_BUCKET, summary.handwrite_inner_name
             )
         except FileNotFoundError as err:
             raise FileNotFound("Handwriting data not found") from err
@@ -315,6 +333,175 @@ class ConversionService:
         return ConvertedBlob(
             storage_key=storage_key,
             file_name=f"summary_{summary.id}_page_{page_no}.png",
+        )
+
+    async def _get_page_id(self, file_id: int, page_index: int) -> str | None:
+        """Look up the `NotePageContentDO.page_id` for `(file_id, page_index)`."""
+        async with self.session_manager.session() as session:
+            stmt = select(NotePageContentDO.page_id).where(
+                NotePageContentDO.file_id == file_id,
+                NotePageContentDO.page_index == page_index,
+            )
+            page_id = (await session.execute(stmt)).scalar_one_or_none()
+        return page_id or None
+
+    async def _load_note_page_png(
+        self,
+        *,
+        user_id: int,
+        file_id: int,
+        page_index: int,
+    ) -> tuple[str, bytes] | None:
+        """Resolve a `.note` page PNG from `CACHE_BUCKET`, rendering on demand on cache miss."""
+        page_id = await self._get_page_id(file_id, page_index)
+        if page_id is not None:
+            png_key = get_page_png_path(file_id, page_id)
+            try:
+                return page_id, await self.blob_storage.get_bytes(
+                    CACHE_BUCKET,
+                    png_key,
+                    max_bytes=MAX_SOURCE_IMAGE_BYTES,
+                )
+            except FileNotFoundError:
+                pass
+
+        rendered = await self.processor_service.process_file(
+            file_id,
+            user_id=user_id,
+            task_types={TaskType.PAGE_HASHING, TaskType.PNG_CONVERSION},
+            page_indices={page_index},
+        )
+        if not rendered:
+            return None
+
+        page_id = await self._get_page_id(file_id, page_index)
+        if page_id is None:
+            return None
+
+        png_key = get_page_png_path(file_id, page_id)
+        try:
+            return page_id, await self.blob_storage.get_bytes(
+                CACHE_BUCKET,
+                png_key,
+                max_bytes=MAX_SOURCE_IMAGE_BYTES,
+            )
+        except FileNotFoundError:
+            return None
+
+    async def _load_standalone_image_bytes(
+        self,
+        *,
+        file_id: int,
+        storage_key: str,
+    ) -> tuple[str, bytes] | None:
+        """Load cached PNG or raw standalone image bytes from blob storage."""
+        cached_key = get_page_png_path(file_id, STANDALONE_IMAGE_PAGE_ID)
+        try:
+            return (
+                STANDALONE_IMAGE_PAGE_ID,
+                await self.blob_storage.get_bytes(
+                    CACHE_BUCKET,
+                    cached_key,
+                    max_bytes=MAX_SOURCE_IMAGE_BYTES,
+                ),
+            )
+        except FileNotFoundError:
+            pass
+
+        try:
+            return (
+                STANDALONE_IMAGE_PAGE_ID,
+                await self.blob_storage.get_bytes(
+                    USER_DATA_BUCKET,
+                    storage_key,
+                    max_bytes=MAX_SOURCE_IMAGE_BYTES,
+                ),
+            )
+        except FileNotFoundError:
+            return None
+
+    async def get_page_image(
+        self,
+        *,
+        user_id: int,
+        file_id: int,
+        page_index: int = 0,
+        max_dimension: int = DEFAULT_MAX_IMAGE_DIMENSION,
+    ) -> PageImage | None:
+        """Return a normalized PNG `PageImage` for a `.note` page or standalone image.
+
+        Returns `None` when the file or page is not accessible or does not exist.
+
+        Raises:
+            ValueError: If `page_index`, `max_dimension`, file type, or image size is invalid.
+            FileError: If stored image bytes cannot be decoded.
+        """
+        if page_index < 0:
+            raise ValueError(f"Invalid page_index '{page_index}': must be >= 0.")
+
+        if (
+            max_dimension < MIN_ALLOWED_IMAGE_DIMENSION
+            or max_dimension > MAX_ALLOWED_IMAGE_DIMENSION
+        ):
+            raise ValueError(
+                f"Invalid max_dimension '{max_dimension}': must be between "
+                f"{MIN_ALLOWED_IMAGE_DIMENSION} and {MAX_ALLOWED_IMAGE_DIMENSION}."
+            )
+
+        async with self.session_manager.session() as session:
+            stmt = select(UserFileDO).where(
+                UserFileDO.id == file_id,
+                UserFileDO.user_id == user_id,
+                UserFileDO.is_active == "Y",
+                UserFileDO.is_folder == "N",
+            )
+            file_do = (await session.execute(stmt)).scalar_one_or_none()
+
+        if file_do is None or file_do.storage_key is None:
+            return None
+
+        is_note = file_do.file_name.lower().endswith(".note")
+        is_image = is_image_filename(file_do.file_name)
+        if not is_note and not is_image:
+            raise ValueError(
+                f"Unsupported file type for get_page_image: '{file_do.file_name}'."
+            )
+
+        if is_image and page_index != 0:
+            return None
+
+        if is_note:
+            loaded = await self._load_note_page_png(
+                user_id=user_id,
+                file_id=file_id,
+                page_index=page_index,
+            )
+        else:
+            loaded = await self._load_standalone_image_bytes(
+                file_id=file_id,
+                storage_key=file_do.storage_key,
+            )
+
+        if loaded is None:
+            return None
+
+        page_id, raw_bytes = loaded
+        try:
+            png_bytes, width, height = await asyncio.to_thread(
+                normalize_image_to_png,
+                raw_bytes,
+                max_dimension=max_dimension,
+            )
+        except ValueError as err:
+            raise FileError(str(err)) from err
+
+        return PageImage(
+            file_name=file_do.file_name,
+            page_index=page_index,
+            page_id=page_id,
+            png_bytes=png_bytes,
+            width=width,
+            height=height,
         )
 
 

@@ -2,7 +2,7 @@
 
 Registers `get_page_image` onto `McpRegistrar` via `async_setup_mcp`, delegating
 ownership checks, cache/on-demand rendering, and PNG normalization to
-`ProcessorService.get_page_image`.
+`ConversionService.get_page_image`.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from supernote.server.core import ServerCore
 from supernote.server.exceptions import FileError
 from supernote.server.utils.image import DEFAULT_MAX_IMAGE_DIMENSION
 
-from . import PROCESSOR_SERVICE_KEY
+from . import CONVERSION_SERVICE_KEY
 
 __all__ = ["async_setup_mcp"]
 
@@ -37,7 +37,7 @@ def _error_tool_result(message: str, code: ErrorCode) -> CallToolResult:
 
 async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     """Register `get_page_image` onto `registrar`."""
-    processor_service = core.app[PROCESSOR_SERVICE_KEY]
+    conversion_service = core.app[CONVERSION_SERVICE_KEY]
 
     async def get_page_image(
         ctx: Context,
@@ -65,7 +65,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             )
 
         try:
-            page_image = await processor_service.get_page_image(
+            page_image = await conversion_service.get_page_image(
                 user_id=user_id,
                 file_id=parsed_file_id,
                 page_index=page_index,

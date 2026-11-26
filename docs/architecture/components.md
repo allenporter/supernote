@@ -17,7 +17,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `ai` | Yes | — | `http` | AI provider registry (`ocr`, `summary`, `embedding`, `text`) and prompt/provider coordination. |
 | `apple` | No | `ai` | `ocr` | macOS Vision (`vision-accurate` / `vision-fast`) offline OCR provider. |
 | `config` | Yes | — | `http` | Server configuration normalization, runtime component reconfiguration, and admin config HTTP routes. |
-| `conversion` | Yes | `processor` | `http` | `.note` and digest handwriting conversion to PDF, PNG, and SVG (`/api/file/*/to/*`). |
+| `conversion` | Yes | `ai`, `processor` | `http`, `mcp`, `processor` | `.note` and digest handwriting conversion to PDF, PNG, and SVG (`/api/file/*/to/*`), PNG caching, and `get_page_image` MCP tool. |
 | `events` | Yes | — | `http`, `mcp` | Durable domain event log (`f_user_event`), retention pruning, and event inspection. |
 | `fake_ai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | Deterministic in-memory AI provider for tests and ephemeral local runs. |
 | `gemini` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | Google Gemini Vision, text, and embedding provider (auto-enabled when a Gemini key is configured). |
@@ -27,7 +27,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `metrics` | Yes | — | `http` | Prometheus `/metrics` endpoint and periodic storage metrics collector. |
 | `oauth` | Yes | — | `http` | OAuth 2.1 Authorization Server (PKCE, CIMD, consent UI, token issuance/revocation). |
 | `openai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | OpenAI-compatible provider supporting OpenAI API, Ollama, vLLM, llama.cpp, and LM Studio. |
-| `processor` | Yes | `ai` | `http`, `mcp`, `processor` | Incremental background note/image processing queue, page hashing, PNG caching, and `get_page_image` MCP tool. |
+| `processor` | Yes | — | `http`, `processor` | Incremental background note/image processing queue, page hashing, and notebook metadata extraction. |
 | `schedule` | Yes | — | `http`, `mcp` | Supernote Tasks & Schedule CRUD, RFC 5545 `.ics` feed export, and 4 MCP task tools. |
 | `search` | Yes | `ai` | `http`, `mcp`, `processor` | Lexical keyword search, vector embeddings, hybrid ranking, and `list_notebooks` / `search_notebook_chunks` MCP tools. |
 | `socketio` | Yes | — | `http` | Real-time Socket.IO sync notifications (`FILE-SYN`, `TASK-SYN`, `SUMMARY-SYN`). |

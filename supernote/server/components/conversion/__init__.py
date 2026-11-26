@@ -8,8 +8,8 @@ component provides the synchronous conversion and export layer used by devices
 and the Web UI—reusing `processor` for deduplicated PNG page rendering and
 `supernote.notebook.PdfConverter` for PDF generation.
 
-Provides `ConversionComponent`, `ConversionService`, `ConvertedBlob`, and
-`CONVERSION_SERVICE_KEY` (for sibling components declaring
+Provides `ConversionComponent`, `ConversionService`, `ConvertedBlob`, `PageImage`,
+and `CONVERSION_SERVICE_KEY` (for sibling components declaring
 ``dependencies = ("conversion",)``).
 """
 
@@ -22,13 +22,14 @@ from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.core import ServerCore
 
 from .config import ConversionConfig
-from .service import CONVERSION_SERVICE_KEY, ConversionService, ConvertedBlob
+from .service import CONVERSION_SERVICE_KEY, ConversionService, ConvertedBlob, PageImage
 
 __all__ = [
     "CONVERSION_SERVICE_KEY",
     "ConversionComponent",
     "ConversionService",
     "ConvertedBlob",
+    "PageImage",
 ]
 
 
@@ -37,7 +38,7 @@ class ConversionComponent:
 
     domain = "conversion"
     dependencies: tuple[str, ...] = ("ai", "processor")
-    platforms: tuple[str, ...] = ("http", "processor")
+    platforms: tuple[str, ...] = ("http", "mcp", "processor")
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `ConversionService` and expose it via `CONVERSION_SERVICE_KEY`."""

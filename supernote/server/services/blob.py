@@ -81,6 +81,25 @@ class BlobStorage(ABC):
             end: End byte position (inclusive).
         """
 
+    async def get_bytes(
+        self,
+        bucket: str,
+        key: str,
+        *,
+        max_bytes: int | None = None,
+    ) -> bytes:
+        """Read an entire blob into memory, enforcing an optional byte limit."""
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in self.get(bucket, key):
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                raise ValueError(
+                    f"Blob exceeds maximum allowed size of {max_bytes} bytes."
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
+
     @abstractmethod
     async def delete(self, bucket: str, key: str) -> None:
         """Delete blob."""

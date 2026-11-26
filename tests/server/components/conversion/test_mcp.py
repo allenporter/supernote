@@ -1,4 +1,4 @@
-"""MCP protocol tests for `supernote.server.components.processor.mcp`."""
+"""MCP protocol tests for `supernote.server.components.conversion.mcp`."""
 
 from __future__ import annotations
 

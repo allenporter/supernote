@@ -8,8 +8,8 @@ platform so other components can contribute `ProcessorModule` stages via
 ``<component>.processor:async_setup_processor(core, registrar)``, which are
 compiled into a dependency-ordered `TaskGraph` during startup.
 
-It also exposes user-facing processing status/metadata endpoints, admin queue
-controls and reprocessing endpoints, and the `get_page_image` MCP tool.
+It also exposes user-facing processing status/metadata endpoints and admin queue
+controls and reprocessing endpoints.
 
 Provides `ProcessorComponent`, `ProcessorService`, `ProcessorRegistrar`,
 `ProcessorModule`, `TaskGraph`, `TaskScope`, and `PROCESSOR_SERVICE_KEY`.
@@ -83,7 +83,7 @@ class ProcessorComponent:
 
     domain = "processor"
     dependencies: tuple[str, ...] = ()
-    platforms: tuple[str, ...] = ("http", "mcp", "processor")
+    platforms: tuple[str, ...] = ("http", "processor")
     hosted_platforms: tuple[str, ...] = ("processor",)
 
     def __init__(self) -> None:
