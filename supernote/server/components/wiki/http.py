@@ -288,7 +288,9 @@ async def handle_wiki_status(request: web.Request) -> web.Response:
         return web.json_response({"error": "User not found"}, status=404)
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
-    status = await service.get_status(user_id)
+    compiler: WikiCompilerWorker | None = request.app.get(WIKI_COMPILER_KEY)
+    in_flight = compiler.in_flight_backfill(user_id) if compiler is not None else None
+    status = await service.get_status(user_id, in_flight_backfill=in_flight)
     return web.json_response(WikiStatusResponseVO(status=status).to_dict())
 
 
