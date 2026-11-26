@@ -10,6 +10,7 @@ from aiohttp import web
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.models.wiki import (
+    WikiCompileMode,
     WikiCompileResponseVO,
     WikiDeleteResponseVO,
     WikiLintIssueResponseVO,
@@ -87,19 +88,10 @@ class WikiUpsertRequestDTO(DataClassJSONMixin):
 class WikiCompileRequestDTO(DataClassJSONMixin):
     """Optional request body for `POST /api/extended/wiki/compile`."""
 
-    mode: str = "incremental"
+    mode: WikiCompileMode = WikiCompileMode.INCREMENTAL
     max_files: int | None = None
 
     def __post_init__(self) -> None:
-        if self.mode not in (
-            "incremental",
-            "backfill",
-            "backfill_start",
-            "backfill_stop",
-            "backfill_reset",
-            "lint",
-        ):
-            raise ValueError(f"Unsupported compile mode: {self.mode!r}")
         if self.max_files is not None and (self.max_files < 1 or self.max_files > 20):
             raise ValueError("max_files must be between 1 and 20")
 
@@ -127,7 +119,9 @@ def _parse_int_param(
     return val
 
 
-def _compile_result_response(mode: str, res: WikiCompileResult) -> web.Response:
+def _compile_result_response(
+    mode: WikiCompileMode, res: WikiCompileResult
+) -> web.Response:
     return web.json_response(
         WikiCompileResponseVO(
             mode=mode,
@@ -312,10 +306,10 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
 
     compiler: WikiCompilerWorker = request.app[WIKI_COMPILER_KEY]
     try:
-        if req_dto.mode == "incremental":
+        if req_dto.mode is WikiCompileMode.INCREMENTAL:
             res = await compiler.compile_user_delta(user_id)
             return _compile_result_response(req_dto.mode, res)
-        if req_dto.mode == "backfill":
+        if req_dto.mode is WikiCompileMode.BACKFILL:
             if compiler.is_backfill_running(user_id):
                 return web.json_response(
                     {
@@ -328,7 +322,7 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
                 max_files=req_dto.max_files if req_dto.max_files is not None else 5,
             )
             return _compile_result_response(req_dto.mode, res)
-        if req_dto.mode == "backfill_start":
+        if req_dto.mode is WikiCompileMode.BACKFILL_START:
             res = await compiler.start_backfill_job(
                 user_id,
                 max_files_per_turn=(
@@ -336,10 +330,10 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
                 ),
             )
             return _compile_result_response(req_dto.mode, res)
-        if req_dto.mode == "backfill_stop":
+        if req_dto.mode is WikiCompileMode.BACKFILL_STOP:
             res = await compiler.stop_backfill_job(user_id)
             return _compile_result_response(req_dto.mode, res)
-        if req_dto.mode == "backfill_reset":
+        if req_dto.mode is WikiCompileMode.BACKFILL_RESET:
             try:
                 res = await compiler.reset_backfill(user_id)
             except ValueError as err:
