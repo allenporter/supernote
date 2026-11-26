@@ -483,11 +483,13 @@ export default {
         onMounted(() => {
             window.addEventListener('supernote:digest-sync', handleDigestSync);
             window.addEventListener('supernote:file-sync', handleFileSync);
-            fetchAiStatus()
-                .then((status) => {
-                    aiStatus.value = status;
-                })
-                .catch(() => {});
+            if (isComponentRunning('ai')) {
+                fetchAiStatus()
+                    .then((status) => {
+                        aiStatus.value = status;
+                    })
+                    .catch(() => {});
+            }
             loadFileContent();
         });
 

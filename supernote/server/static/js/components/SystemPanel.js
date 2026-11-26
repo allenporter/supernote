@@ -7,6 +7,7 @@ import {
     retryFailedSystemTasks,
     updateSystemComponent,
 } from '../api/client.js';
+import { isComponentRunning, loadServerFeatures } from '../composables/useServerFeatures.js';
 import { showToast } from '../composables/useToast.js';
 import { formatSize, formatSystemTimestamp, getErrorMessage } from '../utils/format.js';
 
@@ -154,7 +155,7 @@ export default {
             <!-- 3. Storage Quota & AI Pipeline Capabilities -->
             <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
                 <!-- Storage Quota -->
-                <div class="md:col-span-5 bg-stone-50/80 border border-stone-200/80 p-4 rounded-xl flex flex-col justify-between">
+                <div :class="aiEnabled ? 'md:col-span-5' : 'md:col-span-12'" class="bg-stone-50/80 border border-stone-200/80 p-4 rounded-xl flex flex-col justify-between">
                     <div class="flex items-center justify-between mb-3">
                         <span class="text-xs font-bold uppercase tracking-wider text-stone-500">Storage Usage</span>
                         <span v-if="capacity" class="text-xs font-mono font-semibold text-slate-700 tabular-nums">
@@ -174,7 +175,7 @@ export default {
                 </div>
 
                 <!-- AI Pipeline Status -->
-                <div class="md:col-span-7 bg-stone-50/80 border border-stone-200/80 p-4 rounded-xl flex flex-col justify-between">
+                <div v-if="aiEnabled" class="md:col-span-7 bg-stone-50/80 border border-stone-200/80 p-4 rounded-xl flex flex-col justify-between">
                     <div class="flex items-center justify-between mb-3">
                         <span class="text-xs font-bold uppercase tracking-wider text-stone-500">AI Processing Pipeline</span>
                         <span v-if="aiStatus"
@@ -272,7 +273,7 @@ export default {
             </section>
 
             <!-- 4. Recent Notebook Processing Activity (Notebook Rollup vs Stage Log) -->
-            <div>
+            <div v-if="processorEnabled">
                 <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
                     <h3 class="text-xs font-bold uppercase tracking-wider text-stone-500">
                         Recent Notebook Activity
@@ -592,7 +593,11 @@ export default {
             });
         });
 
+        const processorEnabled = computed(() => isComponentRunning('processor'));
+        const aiEnabled = computed(() => isComponentRunning('ai'));
+
         const queueHeadline = computed(() => {
+            if (!processorEnabled.value) return 'Background processing is disabled';
             if (loading.value) return 'Checking processing queue…';
             if (queuePaused.value) return 'Background processing is paused';
             if (isQueueWorking.value) {
@@ -610,6 +615,9 @@ export default {
         });
 
         const queueSubtext = computed(() => {
+            if (!processorEnabled.value) {
+                return 'The processor component is disabled on this server.';
+            }
             if (loading.value) return 'Loading worker status and recent notebook activity.';
             if (queuePaused.value) {
                 return queueSize.value > 0
@@ -634,6 +642,7 @@ export default {
         });
 
         const queueBadgeLabel = computed(() => {
+            if (!processorEnabled.value) return 'DISABLED';
             if (queuePaused.value) return 'PAUSED';
             if (isQueueWorking.value) return 'WORKING';
             if (failedTasks.value.length > 0) return 'FAILED';
@@ -641,6 +650,7 @@ export default {
         });
 
         const queueBannerClasses = computed(() => {
+            if (!processorEnabled.value) return 'bg-stone-50/80 border-stone-200/80';
             if (queuePaused.value) return 'bg-amber-50/70 border-amber-200';
             if (isQueueWorking.value) return 'bg-sky-50/70 border-sky-200';
             if (failedTasks.value.length > 0) return 'bg-rose-50/60 border-rose-200';
@@ -648,12 +658,14 @@ export default {
         });
 
         const queueDotClass = computed(() => {
+            if (!processorEnabled.value) return 'bg-stone-400';
             if (queuePaused.value) return 'bg-amber-500';
             if (failedTasks.value.length > 0) return 'bg-rose-500';
             return 'bg-emerald-500';
         });
 
         const queueBadgeClass = computed(() => {
+            if (!processorEnabled.value) return 'bg-stone-100 text-stone-600 border-stone-200';
             if (queuePaused.value) return 'bg-amber-100 text-amber-800 border-amber-200';
             if (isQueueWorking.value) return 'bg-sky-100 text-sky-800 border-sky-200';
             if (failedTasks.value.length > 0) return 'bg-rose-100 text-rose-800 border-rose-200';
@@ -669,9 +681,11 @@ export default {
             try {
                 const [overviewResult, capacityResult, aiStatusResult, componentsResult] =
                     await Promise.all([
-                        fetchSystemQueueOverview(),
+                        processorEnabled.value
+                            ? fetchSystemQueueOverview()
+                            : { tasks: [], paused: false, queueSize: 0, processingFileIds: [] },
                         fetchCapacity(),
-                        fetchAiStatus(),
+                        aiEnabled.value ? fetchAiStatus() : null,
                         fetchSystemComponents(),
                     ]);
                 if (seq !== loadSeq) return;
@@ -748,6 +762,9 @@ export default {
                 systemComponents.value = systemComponents.value.map((c) =>
                     c.domain === updated.domain ? updated : c,
                 );
+                if (!updated.restartRequired) {
+                    await loadServerFeatures();
+                }
                 showToast(
                     updated.restartRequired
                         ? `Saved '${updated.domain}' config (restart required to apply)`
@@ -837,6 +854,8 @@ export default {
         return {
             loading,
             error,
+            processorEnabled,
+            aiEnabled,
             tasks,
             failedTasks,
             notebookSummaries,

@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { fetchProcessingStatus } from '../api/client.js';
+import { isComponentRunning } from './useServerFeatures.js';
 
 const ACTIVE_PROCESSING_STATUSES = new Set(['PENDING', 'PROCESSING']);
 const STATUS_POLL_INTERVAL_MS = 3000;
@@ -46,7 +47,12 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
      * @param {string[]} noteIds
      */
     function shouldKeepPollingStatuses(noteIds) {
-        if (!isLoggedIn.value || activeTab.value !== 'files' || view.value !== 'grid') {
+        if (
+            !isLoggedIn.value ||
+            !isComponentRunning('processor') ||
+            activeTab.value !== 'files' ||
+            view.value !== 'grid'
+        ) {
             return false;
         }
         if (typeof document !== 'undefined' && document.hidden) {
@@ -60,7 +66,12 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
 
     async function refreshProcessingStatuses({ force = false } = {}) {
         stopStatusPoll();
-        if (!isLoggedIn.value || activeTab.value !== 'files' || view.value !== 'grid') {
+        if (
+            !isLoggedIn.value ||
+            !isComponentRunning('processor') ||
+            activeTab.value !== 'files' ||
+            view.value !== 'grid'
+        ) {
             return;
         }
         if (typeof document !== 'undefined' && document.hidden) {
