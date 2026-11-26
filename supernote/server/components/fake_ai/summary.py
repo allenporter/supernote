@@ -9,13 +9,11 @@ from supernote.server.ai.prompts import SummaryResponse, SummarySegment
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "FakeSummaryModel",
     "async_setup_summary",
-    "create_summary_model",
 ]
 
 
@@ -64,16 +62,9 @@ class FakeSummaryModel(SummaryModel):
         )
 
 
-def create_summary_model(config: ServerConfig) -> SummaryModel | None:
-    """Create a `FakeSummaryModel` from `ServerConfig`, or `None` if unconfigured."""
-    if config.ai.summary is None:
-        return None
-    return FakeSummaryModel(
-        model_id=config.ai.summary.model,
-        provider=config.ai.summary.provider,
-    )
-
-
 async def async_setup_summary(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``fake_ai`` summary provider with `AiRegistrar`."""
-    registrar.register_summary("fake_ai", create_summary_model)
+    registrar.register_summary(
+        "fake_ai",
+        lambda provider, model: FakeSummaryModel(model_id=model, provider=provider),
+    )

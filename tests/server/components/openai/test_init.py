@@ -11,9 +11,13 @@ from supernote.server.ai.models.embedding import (
     EmbeddingTaskType,
 )
 from supernote.server.ai.models.summary import ConcurrencyLimitedSummaryModel
-from supernote.server.components.ai import AiComponent
+from supernote.server.components.ai import (
+    EMBEDDING_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+    AiComponent,
+)
 from supernote.server.components.openai import OpenAIComponent
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
 from supernote.server.core import Component, ServerCore
 from tests.server.components.conftest import LoadComponents
 
@@ -94,30 +98,25 @@ async def test_openai_component_routes_named_providers_to_distinct_servers(
     llamacpp_app.router.add_post("/v1/embeddings", handle_llamacpp_embed)
     llamacpp_srv = await aiohttp_server(llamacpp_app)
 
-    loader = await load_components("openai", start=False)
-    ai_component = loader.get("ai")
-    assert isinstance(ai_component, AiComponent)
-    ai_registrar = ai_component.get_platform_registrar()
-
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={
-                "ollama": ProviderConfig(
-                    type="openai", base_url=str(ollama_srv.make_url("/v1"))
-                ),
-                "llamacpp": ProviderConfig(
-                    type="openai", base_url=str(llamacpp_srv.make_url("/v1"))
-                ),
-            },
-            summary=ModelConfig(provider="ollama", model="gemma3:27b"),
-            embedding=ModelConfig(provider="llamacpp", model="embeddinggemma"),
-        )
+    component_core.config.ai = AiConfig(
+        providers={
+            "ollama": ProviderConfig(
+                type="openai", base_url=str(ollama_srv.make_url("/v1"))
+            ),
+            "llamacpp": ProviderConfig(
+                type="openai", base_url=str(llamacpp_srv.make_url("/v1"))
+            ),
+        },
+        summary=ModelConfig(provider="ollama", model="gemma3:27b"),
+        embedding=ModelConfig(provider="llamacpp", model="embeddinggemma"),
     )
-    model = ai_registrar.create_summary_model(config)
+    loader = await load_components("openai", start=False)
+
+    model = component_core.app[SUMMARY_MODEL_KEY]
     assert isinstance(model, ConcurrencyLimitedSummaryModel)
     assert (model.provider, model.model_id) == ("ollama", "gemma3:27b")
 
-    embedding = ai_registrar.create_embedding_model(config)
+    embedding = component_core.app[EMBEDDING_MODEL_KEY]
     assert isinstance(embedding, ConcurrencyLimitedEmbeddingModel)
     assert (embedding.provider, embedding.model_id) == ("llamacpp", "embeddinggemma")
 

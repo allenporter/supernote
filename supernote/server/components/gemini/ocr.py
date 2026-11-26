@@ -8,17 +8,16 @@ from google.genai import types
 
 from supernote.server.ai.models.ocr import OcrModel
 
-from .backend import GeminiBackend, create_gemini_backend
+from . import resolve_gemini_backend
+from .backend import GeminiBackend
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "GeminiOcrModel",
     "async_setup_ocr",
-    "create_ocr_model",
 ]
 
 
@@ -56,17 +55,11 @@ class GeminiOcrModel(OcrModel):
         return response.text if response.text else ""
 
 
-def create_ocr_model(config: ServerConfig) -> OcrModel | None:
-    """Create a `GeminiOcrModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.ocr
-    if model_cfg is None:
-        return None
-    backend = create_gemini_backend(config.ai.providers, model_cfg.provider)
-    if backend is None:
-        return None
-    return GeminiOcrModel(backend, model_cfg.model)
-
-
 async def async_setup_ocr(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``gemini`` OCR provider with `AiRegistrar`."""
-    registrar.register_ocr("gemini", create_ocr_model)
+
+    def _create(provider: str, model: str) -> OcrModel | None:
+        backend = resolve_gemini_backend(core, provider)
+        return GeminiOcrModel(backend, model) if backend is not None else None
+
+    registrar.register_ocr("gemini", _create)

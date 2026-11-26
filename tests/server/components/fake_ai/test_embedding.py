@@ -8,11 +8,7 @@ import pytest
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingTaskType
-from supernote.server.components.fake_ai.embedding import (
-    FakeEmbeddingModel,
-    create_embedding_model,
-)
-from supernote.server.config import AiConfig, ModelConfig, ServerConfig
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -35,18 +31,6 @@ async def test_fake_embedding_model() -> None:
         ("hello", EmbeddingTaskType.RETRIEVAL_DOCUMENT),
         ("hello", EmbeddingTaskType.RETRIEVAL_QUERY),
     ]
-
-
-def test_create_fake_embedding_model_from_config() -> None:
-    assert create_embedding_model(ServerConfig()) is None
-
-    configured = ServerConfig(
-        ai=AiConfig(embedding=ModelConfig(provider="fake", model="fake-embedding-v1"))
-    )
-    model = create_embedding_model(configured)
-    assert isinstance(model, FakeEmbeddingModel)
-    assert model.provider == "fake"
-    assert model.model_id == "fake-embedding-v1"
 
 
 async def test_fake_embedding_model_blended_token_similarity() -> None:

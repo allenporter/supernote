@@ -10,13 +10,11 @@ from supernote.server.metrics import AIStage
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "FakeTextGenerationModel",
     "async_setup_text",
-    "create_text_model",
 ]
 
 
@@ -67,17 +65,11 @@ class FakeTextGenerationModel(TextGenerationModel):
         return {"page_ops": [], "log_entry": f"Compiled ({len(prompt)} chars)"}
 
 
-def create_text_model(config: ServerConfig) -> TextGenerationModel | None:
-    """Create a `FakeTextGenerationModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.effective_text
-    if model_cfg is None:
-        return None
-    return FakeTextGenerationModel(
-        model_id=model_cfg.model,
-        provider=model_cfg.provider,
-    )
-
-
 async def async_setup_text(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``fake_ai`` text generation provider with `AiRegistrar`."""
-    registrar.register_text("fake_ai", create_text_model)
+    registrar.register_text(
+        "fake_ai",
+        lambda provider, model: FakeTextGenerationModel(
+            model_id=model, provider=provider
+        ),
+    )

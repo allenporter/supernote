@@ -11,15 +11,12 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from supernote.server.ai.base import AIError
-
-if TYPE_CHECKING:
-    from supernote.server.config import ProviderConfig
 
 __all__ = [
     "AppleVisionBackend",
@@ -158,7 +155,6 @@ class AppleVisionBackend:
 
 
 def create_apple_backend(
-    providers: Mapping[str, ProviderConfig],
     provider: str,
 ) -> AppleVisionBackend:
     """Create an `AppleVisionBackend`, failing fast if Vision is unavailable."""

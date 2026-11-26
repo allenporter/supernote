@@ -7,17 +7,16 @@ from typing import TYPE_CHECKING
 
 from supernote.server.ai.models.ocr import OcrModel
 
-from .backend import OpenAIBackend, create_openai_backend
+from . import resolve_openai_backend
+from .backend import OpenAIBackend
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "OpenAIOcrModel",
     "async_setup_ocr",
-    "create_ocr_model",
 ]
 
 
@@ -57,17 +56,11 @@ class OpenAIOcrModel(OcrModel):
         )
 
 
-def create_ocr_model(config: ServerConfig) -> OcrModel | None:
-    """Create an `OpenAIOcrModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.ocr
-    if model_cfg is None:
-        return None
-    backend = create_openai_backend(config.ai.providers, model_cfg.provider)
-    if backend is None:
-        return None
-    return OpenAIOcrModel(backend, model_cfg.model)
-
-
 async def async_setup_ocr(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``openai`` OCR provider with `AiRegistrar`."""
-    registrar.register_ocr("openai", create_ocr_model)
+
+    def _create(provider: str, model: str) -> OcrModel | None:
+        backend = resolve_openai_backend(core, provider)
+        return OpenAIOcrModel(backend, model) if backend is not None else None
+
+    registrar.register_ocr("openai", _create)

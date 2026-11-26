@@ -13,17 +13,16 @@ from supernote.server.ai.models.embedding import (
     validate_embedding_vector,
 )
 
-from .backend import GeminiBackend, create_gemini_backend
+from . import resolve_gemini_backend
+from .backend import GeminiBackend
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "GeminiEmbeddingModel",
     "async_setup_embedding",
-    "create_embedding_model",
 ]
 
 
@@ -59,17 +58,11 @@ class GeminiEmbeddingModel(EmbeddingModel):
         )
 
 
-def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
-    """Create a `GeminiEmbeddingModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.embedding
-    if model_cfg is None:
-        return None
-    backend = create_gemini_backend(config.ai.providers, model_cfg.provider)
-    if backend is None:
-        return None
-    return GeminiEmbeddingModel(backend, model_cfg.model)
-
-
 async def async_setup_embedding(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``gemini`` embedding provider with `AiRegistrar`."""
-    registrar.register_embedding("gemini", create_embedding_model)
+
+    def _create(provider: str, model: str) -> EmbeddingModel | None:
+        backend = resolve_gemini_backend(core, provider)
+        return GeminiEmbeddingModel(backend, model) if backend is not None else None
+
+    registrar.register_embedding("gemini", _create)

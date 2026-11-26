@@ -47,7 +47,7 @@ from supernote.server.utils.prompt_loader import PROMPT_LOADER
 from .config import AiComponentConfig
 
 if TYPE_CHECKING:
-    from supernote.server.config import ModelConfig, ServerConfig
+    from supernote.server.config import ModelConfig
 
 __all__ = [
     "AI_PLATFORMS",
@@ -75,10 +75,10 @@ TEXT_MODEL_KEY: web.AppKey[TextGenerationModel | None] = web.AppKey("text_model"
 """Typed `AppKey` for the configured structured text-generation model; read by components declaring ``dependencies = ("ai",)``."""
 
 _ModelT = TypeVar("_ModelT")
-OcrModelFactory = Callable[["ServerConfig"], OcrModel | None]
-SummaryModelFactory = Callable[["ServerConfig"], SummaryModel | None]
-EmbeddingModelFactory = Callable[["ServerConfig"], EmbeddingModel | None]
-TextModelFactory = Callable[["ServerConfig"], TextGenerationModel | None]
+OcrModelFactory = Callable[[str, str], OcrModel | None]
+SummaryModelFactory = Callable[[str, str], SummaryModel | None]
+EmbeddingModelFactory = Callable[[str, str], EmbeddingModel | None]
+TextModelFactory = Callable[[str, str], TextGenerationModel | None]
 
 
 def _normalize_provider_type(provider_type: str) -> str:
@@ -89,10 +89,10 @@ def _normalize_provider_type(provider_type: str) -> str:
 
 
 def _register_factory(
-    registry: dict[str, Callable[[ServerConfig], _ModelT | None]],
+    registry: dict[str, Callable[[str, str], _ModelT | None]],
     capability: str,
     provider_type: str,
-    factory: Callable[[ServerConfig], _ModelT | None],
+    factory: Callable[[str, str], _ModelT | None],
 ) -> None:
     key = _normalize_provider_type(provider_type)
     if key in registry:
@@ -101,21 +101,21 @@ def _register_factory(
 
 
 def _instantiate_raw_model(
-    registry: Mapping[str, Callable[[ServerConfig], _ModelT | None]],
+    registry: Mapping[str, Callable[[str, str], _ModelT | None]],
     capability: str,
-    config: ServerConfig,
+    config: AiComponentConfig,
     model_cfg: ModelConfig | None,
 ) -> tuple[_ModelT, ModelConfig] | None:
     if model_cfg is None:
         return None
-    raw_provider_type = config.ai.provider_type(model_cfg.provider)
+    raw_provider_type = config.provider_type(model_cfg.provider)
     key = raw_provider_type.strip().lower()
     factory = registry.get(key)
     if factory is None:
         raise ValueError(
             f"Unsupported {capability} model provider type: {raw_provider_type!r}"
         )
-    model = factory(config)
+    model = factory(model_cfg.provider, model_cfg.model)
     if model is None:
         return None
     return model, model_cfg
@@ -177,10 +177,10 @@ class AiRegistrar:
         """Registered text generation provider types in registration order."""
         return tuple(self._text_factories)
 
-    def create_ocr_model(self, config: ServerConfig) -> OcrModel | None:
+    def create_ocr_model(self, config: AiComponentConfig) -> OcrModel | None:
         """Instantiate the configured OCR model wrapped with telemetry and concurrency limiting."""
         resolved = _instantiate_raw_model(
-            self._ocr_factories, "OCR", config, config.ai.ocr
+            self._ocr_factories, "OCR", config, config.ocr
         )
         if resolved is None:
             return None
@@ -192,10 +192,10 @@ class AiRegistrar:
             max_concurrency=model_cfg.max_concurrency,
         )
 
-    def create_summary_model(self, config: ServerConfig) -> SummaryModel | None:
+    def create_summary_model(self, config: AiComponentConfig) -> SummaryModel | None:
         """Instantiate the configured summary model wrapped with telemetry and concurrency limiting."""
         resolved = _instantiate_raw_model(
-            self._summary_factories, "summary", config, config.ai.summary
+            self._summary_factories, "summary", config, config.summary
         )
         if resolved is None:
             return None
@@ -205,10 +205,12 @@ class AiRegistrar:
             max_concurrency=model_cfg.max_concurrency,
         )
 
-    def create_embedding_model(self, config: ServerConfig) -> EmbeddingModel | None:
+    def create_embedding_model(
+        self, config: AiComponentConfig
+    ) -> EmbeddingModel | None:
         """Instantiate the configured embedding model with validation, telemetry, and concurrency limiting."""
         resolved = _instantiate_raw_model(
-            self._embedding_factories, "embedding", config, config.ai.embedding
+            self._embedding_factories, "embedding", config, config.embedding
         )
         if resolved is None:
             return None
@@ -218,22 +220,24 @@ class AiRegistrar:
             max_concurrency=model_cfg.max_concurrency,
         )
 
-    def create_text_model(self, config: ServerConfig) -> TextGenerationModel | None:
+    def create_text_model(
+        self, config: AiComponentConfig
+    ) -> TextGenerationModel | None:
         """Instantiate the configured text generation model wrapped with telemetry and concurrency limiting.
 
-        When ``config.ai.text`` is unset, falls back to ``config.ai.summary`` if its
+        When ``config.text`` is unset, falls back to ``config.summary`` if its
         provider supports structured text generation.
         """
-        if config.ai.text is not None:
+        if config.text is not None:
             resolved = _instantiate_raw_model(
-                self._text_factories, "text", config, config.ai.text
+                self._text_factories, "text", config, config.text
             )
-        elif config.ai.summary is not None:
-            key = config.ai.provider_type(config.ai.summary.provider).strip().lower()
+        elif config.summary is not None:
+            key = config.provider_type(config.summary.provider).strip().lower()
             if key not in self._text_factories:
                 return None
             resolved = _instantiate_raw_model(
-                self._text_factories, "text", config, config.ai.summary
+                self._text_factories, "text", config, config.summary
             )
         else:
             return None
@@ -248,7 +252,7 @@ class AiRegistrar:
     def apply_to_app(
         self,
         app: web.Application,
-        config: ServerConfig,
+        config: AiComponentConfig,
     ) -> tuple[OcrModel | None, SummaryModel | None, EmbeddingModel | None]:
         """Instantiate configured AI models and bind them onto ``app``."""
         ocr_model = self.create_ocr_model(config)
@@ -292,7 +296,7 @@ class AiComponent:
 
     async def async_finalize_platforms(self, core: ServerCore) -> None:
         """Instantiate configured AI models and bind them onto ``core.app``."""
-        self.get_platform_registrar().apply_to_app(core.app, core.config)
+        self.get_platform_registrar().apply_to_app(core.app, self._config)
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; AI model clients are invoked on demand by workers and services."""

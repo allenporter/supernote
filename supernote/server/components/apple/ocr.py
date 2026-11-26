@@ -15,14 +15,12 @@ from .backend import AppleVisionBackend, RecognitionLevel, create_apple_backend
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "SUPPORTED_APPLE_OCR_MODELS",
     "AppleOcrModel",
     "async_setup_ocr",
-    "create_ocr_model",
 ]
 
 SUPPORTED_APPLE_OCR_MODELS: tuple[str, ...] = tuple(
@@ -68,16 +66,12 @@ class AppleOcrModel(OcrModel):
         return await self._backend.recognize_text(png_data, level=self._level)
 
 
-def create_ocr_model(config: ServerConfig) -> OcrModel | None:
-    """Create an `AppleOcrModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.ocr
-    if model_cfg is None:
-        return None
-    _resolve_recognition_level(model_cfg.model)
-    backend = create_apple_backend(config.ai.providers, model_cfg.provider)
-    return AppleOcrModel(backend, model_cfg.model)
-
-
 async def async_setup_ocr(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``apple`` OCR provider with `AiRegistrar`."""
-    registrar.register_ocr("apple", create_ocr_model)
+
+    def _create(provider: str, model: str) -> OcrModel:
+        _resolve_recognition_level(model)
+        backend = create_apple_backend(provider)
+        return AppleOcrModel(backend, model)
+
+    registrar.register_ocr("apple", _create)

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.components.ai import AiComponent
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
+from supernote.server.components.ai.config import AiComponentConfig
+from supernote.server.config import ModelConfig, ProviderConfig
 from supernote.server.core import Component, ServerCore
 from tests.server.components.conftest import LoadComponents
 
@@ -29,13 +30,11 @@ async def test_fake_ai_component_registers_all_ai_platforms(
     assert ai_registrar.embedding_providers == ("fake_ai",)
     assert ai_registrar.text_providers == ("fake_ai",)
 
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={"fake_ai": ProviderConfig()},
-            ocr=ModelConfig(provider="fake_ai", model="fake-ocr"),
-            summary=ModelConfig(provider="fake_ai", model="fake-summary"),
-            embedding=ModelConfig(provider="fake_ai", model="fake-embed"),
-        )
+    config = AiComponentConfig(
+        providers={"fake_ai": ProviderConfig()},
+        ocr=ModelConfig(provider="fake_ai", model="fake-ocr"),
+        summary=ModelConfig(provider="fake_ai", model="fake-summary"),
+        embedding=ModelConfig(provider="fake_ai", model="fake-embed"),
     )
     ocr = ai_registrar.create_ocr_model(config)
     summary = ai_registrar.create_summary_model(config)
