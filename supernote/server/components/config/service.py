@@ -83,6 +83,53 @@ def _configured_ai_provider_domains(server_config: ServerConfig) -> set[str]:
     return server_config.ai.active_provider_types & _AI_PROVIDER_DOMAINS
 
 
+def _bridge_ai_provider_configs(
+    server_config: ServerConfig,
+    configs: dict[str, dict[str, Any]],
+) -> None:
+    """Synchronize legacy `ai.providers` entries with per-provider component configs (`apple`, `fake_ai`, `gemini`, `openai`).
+
+    Supports configuring AI providers either under legacy `ai.providers` or under
+    their own root `<provider>:` component section in `config.yaml`:
+    - Legacy `ai.providers` entries of type `<domain>` are copied into
+      `configs[domain]["providers"]` and implicitly enable `<domain>` unless
+      `configs[domain]["enabled"]` is explicitly set.
+    - Root `configs[domain]["providers"]` entries are registered back into
+      `configs["ai"]["providers"]` with `type: <domain>` so
+      `AiComponentConfig.provider_type()` can route named providers (such as
+      `ollama` -> `openai`) to the right platform.
+    """
+    ai_domains = _configured_ai_provider_domains(server_config)
+    for domain in _AI_PROVIDER_DOMAINS:
+        raw_domain_cfg = configs.get(domain, {})
+        domain_cfg: dict[str, Any] = {
+            **raw_domain_cfg,
+            "enabled": bool(raw_domain_cfg.get("enabled", domain in ai_domains)),
+        }
+        legacy_entries = {
+            name: p_cfg.to_dict()
+            for name, p_cfg in server_config.ai.providers.items()
+            if server_config.ai.provider_type(name).strip().lower() == domain
+        }
+        if legacy_entries:
+            domain_cfg["providers"] = {
+                **domain_cfg.get("providers", {}),
+                **legacy_entries,
+            }
+        raw_providers = domain_cfg.get("providers")
+        if isinstance(raw_providers, dict):
+            ai_providers = dict(configs["ai"].get("providers") or {})
+            for p_name, p_val in raw_providers.items():
+                if isinstance(p_val, dict):
+                    ai_providers.setdefault(
+                        p_name,
+                        {**p_val, "type": p_val.get("type") or domain},
+                    )
+            if ai_providers:
+                configs["ai"]["providers"] = ai_providers
+        configs[domain] = domain_cfg
+
+
 def _resolve_static_component_sources(
     server_config: ServerConfig,
 ) -> dict[str, ComponentConfigSource]:
@@ -117,7 +164,6 @@ def build_static_component_configs(
     `core.config` attributes, retire the legacy `metadata={"component": ...}`
     and `_AI_PROVIDER_DOMAINS` bridging below.
     """
-    ai_domains = _configured_ai_provider_domains(server_config)
     configs: dict[str, dict[str, Any]] = {
         domain: copy.deepcopy(cfg)
         for domain, cfg in server_config.root_component_configs.items()
@@ -126,26 +172,7 @@ def build_static_component_configs(
         **configs.get("ai", {}),
         **server_config.ai.to_dict(),
     }
-    for domain in _AI_PROVIDER_DOMAINS:
-        provider_entries = {
-            name: p_cfg.to_dict()
-            for name, p_cfg in server_config.ai.providers.items()
-            if server_config.ai.provider_type(name).strip().lower() == domain
-        }
-        domain_cfg: dict[str, Any] = {
-            **configs.get(domain, {}),
-            "enabled": domain in ai_domains,
-        }
-        if provider_entries:
-            domain_cfg["providers"] = {
-                **domain_cfg.get("providers", {}),
-                **provider_entries,
-            }
-            if domain in provider_entries:
-                for key in ("api_key", "base_url"):
-                    if key in provider_entries[domain]:
-                        domain_cfg.setdefault(key, provider_entries[domain][key])
-        configs[domain] = domain_cfg
+    _bridge_ai_provider_configs(server_config, configs)
     for f in fields(server_config):
         comp_meta = f.metadata.get("component")
         val = getattr(server_config, f.name)
@@ -159,6 +186,13 @@ def build_static_component_configs(
                 configs[comp_meta] = {}
         elif isinstance(comp_meta, tuple):
             domain, target_key = comp_meta
+            if (
+                target_key in server_config.root_component_configs.get(domain, {})
+                and val == f.default
+                and server_config.component_sources.get(domain)
+                != ComponentConfigSource.ENV
+            ):
+                continue
             configs[domain] = {
                 **configs.get(domain, {}),
                 target_key: copy.deepcopy(val),

@@ -25,6 +25,7 @@ from supernote.server.components.config.service import (
     extract_component_field_specs,
     load_component_config_schema,
 )
+from supernote.server.components.gemini.config import GeminiConfig
 from supernote.server.components.webhooks.config import WebhookConfig
 from supernote.server.components.wiki.config import WikiConfig
 from supernote.server.config import ServerConfig
@@ -306,3 +307,301 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
         match="Cannot enable component 'summary' while required dependency 'conversion' is disabled",
     ):
         await service.update_component_config("summary", {"enabled": True})
+
+
+@pytest.mark.parametrize(
+    ("domain", "legacy_yaml", "root_yaml"),
+    [
+        (
+            "events",
+            {"event_log_retention_days": 14},
+            {"events": {"retention_days": 14}},
+        ),
+        (
+            "metrics",
+            {"metrics_enabled": False, "metrics_path": "/custom-metrics"},
+            {"metrics": {"enabled": False, "path": "/custom-metrics"}},
+        ),
+        (
+            "mcp",
+            {
+                "mcp_enabled": False,
+                "mcp_port": 9091,
+                "mcp_base_url": "https://mcp.example.com",
+            },
+            {
+                "mcp": {
+                    "enabled": False,
+                    "port": 9091,
+                    "base_url": "https://mcp.example.com",
+                }
+            },
+        ),
+        (
+            "http",
+            {"proxy_mode": "strict", "trusted_proxies": ["10.0.0.0/8"]},
+            {"http": {"proxy_mode": "strict", "trusted_proxies": ["10.0.0.0/8"]}},
+        ),
+        (
+            "conversion",
+            {"web_notebook_preview": False},
+            {"conversion": {"notebook_preview": False}},
+        ),
+        (
+            "processor",
+            {
+                "enable_image_processing": False,
+                "image_include_patterns": ["Notes/**"],
+                "image_exclude_patterns": ["Archive/**"],
+            },
+            {
+                "processor": {
+                    "enable_image_processing": False,
+                    "image_include_patterns": ["Notes/**"],
+                    "image_exclude_patterns": ["Archive/**"],
+                }
+            },
+        ),
+        (
+            "web_ui",
+            {"web_enabled": False},
+            {"web_ui": {"enabled": False}},
+        ),
+        (
+            "ai",
+            {"prompts_dir": "/custom/prompts"},
+            {"ai": {"prompts_dir": "/custom/prompts"}},
+        ),
+    ],
+)
+async def test_legacy_and_root_yaml_resolve_identically(
+    tmp_path: Path,
+    coordination_service: CoordinationService,
+    domain: str,
+    legacy_yaml: dict[str, object],
+    root_yaml: dict[str, dict[str, object]],
+) -> None:
+    """Every migrated component resolves `DEFAULT -> DATABASE -> YAML` and matches across legacy and root YAML."""
+    empty_cfg = ServerConfig.load(tmp_path / "empty")
+    default_resolved = (
+        await async_resolve_component_configs(empty_cfg, coordination_service)
+    )[domain]
+    assert default_resolved.source == ComponentConfigSource.DEFAULT
+
+    toggled_enabled = not default_resolved.enabled
+    await async_save_component_config(
+        coordination_service, domain, {"enabled": toggled_enabled}
+    )
+    db_resolved = (
+        await async_resolve_component_configs(empty_cfg, coordination_service)
+    )[domain]
+    assert db_resolved.source == ComponentConfigSource.DATABASE
+    assert db_resolved.enabled is toggled_enabled
+
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+    (legacy_dir / "config.yaml").write_text(yaml.safe_dump(legacy_yaml))
+    legacy_resolved = (
+        await async_resolve_component_configs(
+            ServerConfig.load(legacy_dir), coordination_service
+        )
+    )[domain]
+
+    root_dir = tmp_path / "root"
+    root_dir.mkdir()
+    (root_dir / "config.yaml").write_text(yaml.safe_dump(root_yaml))
+    root_resolved = (
+        await async_resolve_component_configs(
+            ServerConfig.load(root_dir), coordination_service
+        )
+    )[domain]
+
+    assert legacy_resolved == root_resolved
+    assert root_resolved.source == ComponentConfigSource.YAML
+    for key, expected_val in root_yaml[domain].items():
+        assert root_resolved.config[key] == expected_val
+
+
+@pytest.mark.parametrize(
+    ("domain", "root_yaml", "env_vars", "expected_subset"),
+    [
+        (
+            "events",
+            {"events": {"retention_days": 14}},
+            {"SUPERNOTE_EVENT_LOG_RETENTION_DAYS": "30"},
+            {"retention_days": 30},
+        ),
+        (
+            "metrics",
+            {"metrics": {"enabled": False, "path": "/custom"}},
+            {
+                "SUPERNOTE_METRICS_ENABLED": "true",
+                "SUPERNOTE_METRICS_PATH": "/env-metrics",
+            },
+            {"enabled": True, "path": "/env-metrics"},
+        ),
+        (
+            "mcp",
+            {"mcp": {"enabled": False, "port": 9091}},
+            {
+                "SUPERNOTE_MCP_ENABLED": "true",
+                "SUPERNOTE_MCP_PORT": "9092",
+                "SUPERNOTE_MCP_BASE_URL": "https://env-mcp.example.com",
+            },
+            {
+                "enabled": True,
+                "port": 9092,
+                "base_url": "https://env-mcp.example.com",
+            },
+        ),
+        (
+            "http",
+            {"http": {"proxy_mode": "strict"}},
+            {
+                "SUPERNOTE_PROXY_MODE": "relaxed",
+                "SUPERNOTE_TRUSTED_PROXIES": "192.168.1.1,10.1.0.0/16",
+            },
+            {
+                "proxy_mode": "relaxed",
+                "trusted_proxies": ["192.168.1.1", "10.1.0.0/16"],
+            },
+        ),
+        (
+            "conversion",
+            {"conversion": {"notebook_preview": False}},
+            {"SUPERNOTE_WEB_NOTEBOOK_PREVIEW": "true"},
+            {"notebook_preview": True},
+        ),
+        (
+            "web_ui",
+            {"web_ui": {"enabled": False}},
+            {"SUPERNOTE_WEB_ENABLED": "true"},
+            {"enabled": True},
+        ),
+        (
+            "webhooks",
+            {"webhooks": {"enabled": False}},
+            {"SUPERNOTE_WEBHOOKS_ENABLED": "true"},
+            {"enabled": True},
+        ),
+        (
+            "wiki",
+            {"wiki": {"enabled": False, "debounce_seconds": 30.0}},
+            {"SUPERNOTE_WIKI_ENABLED": "true"},
+            {"enabled": True},
+        ),
+        (
+            "gemini",
+            {"gemini": {"enabled": True, "api_key": "yaml-gemini-key"}},
+            {"SUPERNOTE_GEMINI_API_KEY": "env-gemini-key"},
+            {"api_key": "env-gemini-key"},
+        ),
+        (
+            "ai",
+            {
+                "ai": {
+                    "prompts_dir": "/yaml/prompts",
+                    "ocr": {"provider": "gemini", "model": "gemini-2.5-flash"},
+                }
+            },
+            {
+                "SUPERNOTE_GEMINI_API_KEY": "env-gemini-key",
+                "SUPERNOTE_PROMPTS_DIR": "/env/prompts",
+                "SUPERNOTE_GEMINI_OCR_MODEL": "gemini-2.5-pro",
+                "SUPERNOTE_GEMINI_MAX_CONCURRENCY": "9",
+            },
+            {
+                "prompts_dir": "/env/prompts",
+                "ocr": {
+                    "provider": "gemini",
+                    "model": "gemini-2.5-pro",
+                    "max_concurrency": 9,
+                },
+            },
+        ),
+    ],
+)
+async def test_env_overrides_root_yaml_and_database_tiers(
+    tmp_path: Path,
+    coordination_service: CoordinationService,
+    domain: str,
+    root_yaml: dict[str, object],
+    env_vars: dict[str, str],
+    expected_subset: dict[str, object],
+) -> None:
+    """`SUPERNOTE_*` environment variables override both database and root `<domain>:` YAML tiers."""
+    await async_save_component_config(coordination_service, domain, {"enabled": False})
+
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    yaml_dir = tmp_path / "yaml"
+    yaml_dir.mkdir()
+    (yaml_dir / "config.yaml").write_text(yaml.safe_dump(root_yaml))
+
+    for cfg_dir in (empty_dir, yaml_dir):
+        with patch.dict(os.environ, env_vars):
+            server_cfg = ServerConfig.load(cfg_dir)
+        resolved = (
+            await async_resolve_component_configs(server_cfg, coordination_service)
+        )[domain]
+        assert resolved.source == ComponentConfigSource.ENV
+        for key, expected_val in expected_subset.items():
+            assert resolved.config[key] == expected_val
+
+
+async def test_ai_and_provider_root_yaml_compatibility(
+    tmp_path: Path,
+    coordination_service: CoordinationService,
+) -> None:
+    """Root `gemini:`, `openai:`, and `ai:` sections in `config.yaml` resolve cleanly alongside legacy `ai.providers`."""
+    root_dir = tmp_path / "ai_root_providers"
+    root_dir.mkdir()
+    (root_dir / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "gemini": {"enabled": True, "api_key": "root-gemini-key"},
+                "openai": {
+                    "enabled": True,
+                    "providers": {
+                        "ollama": {"base_url": "http://localhost:11434/v1"},
+                    },
+                },
+                "ai": {
+                    "enabled": False,
+                    "prompts_dir": "/root/prompts",
+                    "ocr": {"provider": "ollama", "model": "qwen2.5vl"},
+                },
+            }
+        )
+    )
+    resolved = await async_resolve_component_configs(
+        ServerConfig.load(root_dir), coordination_service
+    )
+
+    assert resolved["gemini"].enabled is True
+    assert resolved["gemini"].source == ComponentConfigSource.YAML
+    gemini_cfg = GeminiConfig.from_dict(resolved["gemini"].config)
+    assert gemini_cfg.api_key == "root-gemini-key"
+    assert gemini_cfg.providers["gemini"].api_key == "root-gemini-key"
+
+    assert resolved["openai"].enabled is True
+    assert resolved["openai"].source == ComponentConfigSource.YAML
+    assert (
+        resolved["openai"].config["providers"]["ollama"]["base_url"]
+        == "http://localhost:11434/v1"
+    )
+
+    assert resolved["ai"].enabled is False
+    assert resolved["ai"].source == ComponentConfigSource.YAML
+    assert resolved["ai"].config["prompts_dir"] == "/root/prompts"
+    assert resolved["ai"].config["providers"]["ollama"] == {
+        "base_url": "http://localhost:11434/v1",
+        "type": "openai",
+    }
+
+    with patch.dict(os.environ, {"SUPERNOTE_GEMINI_API_KEY": "env-gemini-key"}):
+        env_resolved = await async_resolve_component_configs(
+            ServerConfig.load(root_dir), coordination_service
+        )
+    assert env_resolved["gemini"].source == ComponentConfigSource.ENV
+    assert env_resolved["gemini"].config["api_key"] == "env-gemini-key"

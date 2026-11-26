@@ -53,7 +53,6 @@ from supernote.server.events import (
 )
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
-    CONFIG_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
     USER_SERVICE_KEY,
@@ -597,9 +596,7 @@ async def test_socketio_schedule_service_events_publish_task_syn(
     )
 
     # Standalone manager without event_bus initializes cleanly
-    standalone_manager = SocketIOServerManager(
-        socketio_server.app[CONFIG_KEY], user_service, event_bus=None
-    )
+    standalone_manager = SocketIOServerManager(user_service, event_bus=None)
     assert standalone_manager.event_bus is None
 
     await socket_client.disconnect()

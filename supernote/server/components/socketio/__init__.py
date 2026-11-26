@@ -28,7 +28,7 @@ class SocketIOComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `SocketIOServerManager` and expose it via `SOCKETIO_MANAGER_KEY`."""
-        manager = SocketIOServerManager(core.config, core.user_service, core.event_bus)
+        manager = SocketIOServerManager(core.user_service, core.event_bus)
         core.app[SOCKETIO_MANAGER_KEY] = manager
         self._manager = manager
 
