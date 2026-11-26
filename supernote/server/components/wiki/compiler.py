@@ -439,7 +439,6 @@ class WikiCompilerWorker:
             updated_slugs: list[str] = []
             skipped_policy = 0
             if synthetic_diffs:
-                all_pages = await self._wiki_service.list_pages(user_id, limit=500)
                 task_rows = await self._source_service.list_task_snapshots(
                     user_id, limit=50
                 )
@@ -460,34 +459,41 @@ class WikiCompilerWorker:
                 backfill_page_budget = max(
                     self._config.max_pages_per_batch, max_files * 2, 10
                 )
-                built = build_compile_prompt(
-                    all_pages,
-                    synthetic_diffs,
-                    linked_context=linked_context,
-                    max_pages_per_batch=backfill_page_budget,
-                )
-                try:
-                    raw_plan = await self._text_model.generate_json(
-                        built.prompt,
-                        response_schema=get_compile_json_schema(),
-                        schema_name="wiki_compile_plan",
-                        stage=AIStage.WIKI_COMPILE,
+                window_size = self._config.max_source_pages_per_turn
+                for start in range(0, len(synthetic_diffs), window_size):
+                    window_diffs = synthetic_diffs[start : start + window_size]
+                    all_pages = await self._wiki_service.list_pages(user_id, limit=500)
+                    built = build_compile_prompt(
+                        all_pages,
+                        window_diffs,
+                        linked_context=linked_context,
+                        max_pages_per_batch=backfill_page_budget,
                     )
-                    plan = parse_compile_plan(raw_plan)
-                except (AIError, ValueError, TypeError, LookupError) as err:
-                    await self._update_checkpoint(
-                        user_id, status="error", last_error=str(err)
+                    try:
+                        raw_plan = await self._text_model.generate_json(
+                            built.prompt,
+                            response_schema=get_compile_json_schema(),
+                            schema_name="wiki_compile_plan",
+                            stage=AIStage.WIKI_COMPILE,
+                        )
+                        plan = parse_compile_plan(raw_plan)
+                    except (AIError, ValueError, TypeError, LookupError) as err:
+                        await self._update_checkpoint(
+                            user_id, status="error", last_error=str(err)
+                        )
+                        raise
+                    window_slugs, window_skipped = await self._apply_compile_plan(
+                        user_id,
+                        plan,
+                        source_event_seq=None,
+                        max_pages=backfill_page_budget,
+                        source_handles=built.source_handles,
                     )
-                    raise
-                updated_slugs, skipped_policy = await self._apply_compile_plan(
-                    user_id,
-                    plan,
-                    source_event_seq=None,
-                    max_pages=backfill_page_budget,
-                    source_handles=built.source_handles,
-                )
-                if updated_slugs:
-                    await self._wiki_service.sync_index_page(user_id)
+                    updated_slugs.extend(window_slugs)
+                    skipped_policy += window_skipped
+                    if window_slugs:
+                        await self._wiki_service.sync_index_page(user_id)
+                updated_slugs = list(dict.fromkeys(updated_slugs))
 
             issues = await self._wiki_service.run_structural_lint(user_id)
             remaining_files, _ = await self._source_service.count_backfill_progress(
