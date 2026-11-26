@@ -455,10 +455,16 @@ class WebNoteMetadataRequestDTO(DataClassJSONMixin):
 
 @dataclass
 class NoteTitleVO(DataClassJSONMixin):
-    """Heading/outline entry anchored to a notebook page."""
+    """Heading/outline entry anchored to a notebook page, in reading order."""
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
     level: int = 1
+    text: str | None = None
+    """Transcribed heading text, or `None` until transcription is available."""
+    style: str | None = None
+    """Raw `<TITLESTYLE>` code for the background the user picked on the device."""
+    rect: list[int] | None = None
+    """Title bounding box `[left, top, width, height]` in page pixels."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

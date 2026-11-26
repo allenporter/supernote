@@ -24,6 +24,7 @@ from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
     NotePageMetadataDO,
+    NoteTitleDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -1004,6 +1005,120 @@ async def test_extended_note_metadata_returns_notebook_and_pages(
     assert len(raw_json["pages"]) == 2
 
 
+async def test_extended_note_metadata_returns_titles_in_reading_order(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    assert client.app is not None
+    blob_storage = client.app[BLOB_STORAGE_KEY]
+    file_service = client.app[FILE_SERVICE_KEY]
+    file_id = 772252421643567501
+    storage_key = "meta_titles_772252421643567501.note"
+    note_path = Path(
+        "tests/testdata/philips/heading-n5-20260016-backgrounds-marker.note"
+    )
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="Headings.note",
+                is_folder="N",
+                storage_key=storage_key,
+                md5="md5_meta_titles",
+            )
+        )
+        await session.commit()
+
+    hashing = PageHashingModule(file_service=file_service)
+    assert await hashing.run(file_id, session_manager, user_id=test_user_id) is True
+    async with session_manager.session() as session:
+        first = await session.get(NoteTitleDO, (test_user_id, file_id, 0))
+        assert first is not None
+        first.text_content = "Black"
+        await session.commit()
+
+    resp = await client.post(
+        "/api/extended/file/note/metadata",
+        json={"fileId": str(file_id)},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    assert (await resp.json())["titles"] == [
+        {
+            "pageIndex": 1,
+            "level": 1,
+            "text": "Black",
+            "style": "1000254",
+            "rect": [500, 329, 356, 148],
+        },
+        {
+            "pageIndex": 1,
+            "level": 2,
+            "text": None,
+            "style": "1157254",
+            "rect": [480, 691, 582, 178],
+        },
+        {
+            "pageIndex": 1,
+            "level": 3,
+            "text": None,
+            "style": "1201000",
+            "rect": [490, 1016, 284, 125],
+        },
+        {
+            "pageIndex": 1,
+            "level": 4,
+            "text": None,
+            "style": "1000000",
+            "rect": [508, 1295, 290, 118],
+        },
+    ]
+
+
+async def test_extended_note_metadata_titles_empty_until_rehashed(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Notes hashed before titles were persisted report no titles until re-hashed."""
+    file_id = 9212
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="PreV3.note",
+                    is_folder="N",
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    file_type="note",
+                    total_pages=1,
+                    header_json="{}",
+                    footer_json=json.dumps(
+                        {
+                            "TITLE_00010010": "100",
+                            "__titles__": [{"TITLESTYLE": "1000254"}],
+                        }
+                    ),
+                ),
+            ]
+        )
+        await session.commit()
+
+    meta_vo = await extended_client.get_note_metadata(file_id=file_id)
+    assert meta_vo.titles == []
+
+
 async def test_extended_note_metadata_not_found_for_unhashed_or_other_user_file(
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
@@ -1100,12 +1215,12 @@ async def test_extended_note_metadata_corrupt_header_raises_server_error(
         await extended_client.get_note_metadata(file_id=9203)
 
 
-async def test_extended_note_metadata_normalizes_titles_and_resolves_links(
+async def test_extended_note_metadata_resolves_links(
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
-    """Verify titles normalize TITLESTYLE levels and outgoing links resolve target file/page indices."""
+    """Verify outgoing links resolve target file/page indices."""
     src_file_id = 9210
     dst_file_id = 9211
     async with session_manager.session() as session:
@@ -1155,12 +1270,6 @@ async def test_extended_note_metadata_normalizes_titles_and_resolves_links(
                     ),
                     footer_json=json.dumps(
                         {
-                            "TITLE_00010010": "100",
-                            "TITLE_00020010": "200",
-                            "__titles__": [
-                                {"TITLELEVEL": "1", "TITLESTYLE": "1000254"},
-                                {"TITLELEVEL": "1", "TITLESTYLE": "1201000"},
-                            ],
                             "LINKO_00010010001000100010": "300",
                             "LINKO_00020010001000100010": "400",
                             "LINKI_00010010001000100010": "500",
@@ -1212,10 +1321,6 @@ async def test_extended_note_metadata_normalizes_titles_and_resolves_links(
         await session.commit()
 
     meta_vo = await extended_client.get_note_metadata(file_id=src_file_id)
-    assert [t.to_dict() for t in meta_vo.titles] == [
-        {"pageIndex": 0, "level": 1},
-        {"pageIndex": 1, "level": 3},
-    ]
     assert [lk.to_dict() for lk in meta_vo.links] == [
         {
             "pageIndex": 0,

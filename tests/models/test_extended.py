@@ -367,7 +367,15 @@ def test_web_note_metadata_models() -> None:
         equipment="N5",
         total_pages=2,
         keywords={"Sprint": [0, 1]},
-        titles=[NoteTitleVO(page_index=0, level=2)],
+        titles=[
+            NoteTitleVO(
+                page_index=0,
+                level=2,
+                text="Sprint goals",
+                style="1157254",
+                rect=[480, 691, 582, 178],
+            )
+        ],
         links=[
             NoteLinkVO(
                 page_index=1,
@@ -398,7 +406,15 @@ def test_web_note_metadata_models() -> None:
         "equipment": "N5",
         "totalPages": 2,
         "keywords": {"Sprint": [0, 1]},
-        "titles": [{"pageIndex": 0, "level": 2}],
+        "titles": [
+            {
+                "pageIndex": 0,
+                "level": 2,
+                "text": "Sprint goals",
+                "style": "1157254",
+                "rect": [480, 691, 582, 178],
+            }
+        ],
         "links": [
             {
                 "pageIndex": 1,

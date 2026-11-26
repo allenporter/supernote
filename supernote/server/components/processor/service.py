@@ -50,6 +50,7 @@ from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
     NotePageMetadataDO,
+    NoteTitleDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -1273,6 +1274,20 @@ class ProcessorService:
                 .scalars()
                 .all()
             )
+            title_rows = list(
+                (
+                    await session.execute(
+                        select(NoteTitleDO)
+                        .where(
+                            NoteTitleDO.user_id == user_id,
+                            NoteTitleDO.file_id == file_id,
+                        )
+                        .order_by(NoteTitleDO.title_index)
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
             header_dict = json.loads(meta_do.header_json)
             footer_dict = json.loads(meta_do.footer_json)
@@ -1428,10 +1443,13 @@ class ProcessorService:
             keywords=keywords_by_text,
             titles=[
                 NoteTitleVO(
-                    page_index=t.page_number,
-                    level=t.heading_level,
+                    page_index=t.page_index,
+                    level=t.level,
+                    text=t.text_content,
+                    style=t.style,
+                    rect=t.rect,
                 )
-                for t in notebook.titles
+                for t in title_rows
             ],
             links=link_vos,
             pages=page_vos,

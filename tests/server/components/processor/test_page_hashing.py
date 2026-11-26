@@ -7,14 +7,18 @@ from prometheus_client import REGISTRY
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import undefer
 
-from supernote.notebook import load
-from supernote.server.components.processor.page_hashing import PageHashingModule
+from supernote.notebook import Title, load
+from supernote.server.components.processor.page_hashing import (
+    PageHashingModule,
+    _title_reading_order,
+)
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
     NotePageMetadataDO,
+    NoteTitleDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -106,7 +110,7 @@ async def test_process_with_real_file(
 
         assert task is not None
         assert task.status == "COMPLETED"
-        assert task.data == "v2"
+        assert task.data == "v3"
 
     # Test Change Detection (Simulated)
     # Since we can't easily edit the binary .note file to change content,
@@ -731,10 +735,12 @@ async def test_page_hashing_cleanup_file_deletes_note_and_page_metadata(
                     user_id=7, file_id=1020, file_type="note", total_pages=1
                 ),
                 NotePageMetadataDO(user_id=7, file_id=1020, page_index=0, page_id="p0"),
+                NoteTitleDO(user_id=7, file_id=1020, title_index=0, page_index=0),
                 NoteMetadataDO(
                     user_id=7, file_id=1021, file_type="note", total_pages=1
                 ),
                 NotePageMetadataDO(user_id=7, file_id=1021, page_index=0, page_id="p0"),
+                NoteTitleDO(user_id=7, file_id=1021, title_index=0, page_index=0),
             ]
         )
         await session.commit()
@@ -746,8 +752,184 @@ async def test_page_hashing_cleanup_file_deletes_note_and_page_metadata(
     async with session_manager.session() as session:
         assert await session.get(NoteMetadataDO, (7, 1020)) is None
         assert await session.get(NotePageMetadataDO, (7, 1020, 0)) is None
+        assert await session.get(NoteTitleDO, (7, 1020, 0)) is None
         assert await session.get(NoteMetadataDO, (7, 1021)) is not None
         assert await session.get(NotePageMetadataDO, (7, 1021, 0)) is not None
+        assert await session.get(NoteTitleDO, (7, 1021, 0)) is not None
+
+
+HEADING_NOTE_PATH = (
+    TEST_DATA_DIR / "philips" / "heading-n5-20260016-backgrounds-marker.note"
+)
+HEADING_TITLE_MD5S = [
+    "4f60eac0ba701b4983269a55649430ad",
+    "b094a9f71c442cf2a0544d737603b0dc",
+    "f14caee340e90ceab17cad156682ca9c",
+    "63bcfe0053116378ededa5038ba7e389",
+]
+
+
+async def _title_rows(
+    session_manager: DatabaseSessionManager, file_id: int
+) -> list[NoteTitleDO]:
+    async with session_manager.session() as session:
+        return list(
+            (
+                await session.execute(
+                    select(NoteTitleDO)
+                    .where(NoteTitleDO.file_id == file_id)
+                    .order_by(NoteTitleDO.title_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+
+async def _hash_heading_note(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    file_id: int,
+) -> None:
+    await _seed_user_note_file(
+        session_manager,
+        blob_storage,
+        user_id=7,
+        file_id=file_id,
+        note_path=HEADING_NOTE_PATH,
+    )
+    assert await page_hashing_module.run(file_id, session_manager, user_id=7) is True
+
+
+def _title(page: int, left: int, top: int) -> Title:
+    return Title({"TITLERECT": f"{left},{top},10,10"}, page_number=page)
+
+
+def test_title_reading_order_sorts_by_page_then_top_then_left() -> None:
+    titles = [
+        _title(page=1, left=0, top=0),
+        _title(page=0, left=50, top=100),
+        _title(page=0, left=10, top=100),
+        _title(page=0, left=90, top=20),
+    ]
+    assert [
+        _title_reading_order(t) for t in sorted(titles, key=_title_reading_order)
+    ] == [(0, 20, 90), (0, 100, 10), (0, 100, 50), (1, 0, 0)]
+
+
+async def test_page_hashing_persists_titles_in_reading_order(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    await _hash_heading_note(page_hashing_module, session_manager, blob_storage, 1060)
+
+    rows = await _title_rows(session_manager, 1060)
+    assert [
+        (
+            r.title_index,
+            r.page_index,
+            r.rect,
+            r.level,
+            r.style,
+            r.bitmap_md5,
+            r.text_content,
+        )
+        for r in rows
+    ] == [
+        (0, 1, [500, 329, 356, 148], 1, "1000254", HEADING_TITLE_MD5S[0], None),
+        (1, 1, [480, 691, 582, 178], 2, "1157254", HEADING_TITLE_MD5S[1], None),
+        (2, 1, [490, 1016, 284, 125], 3, "1201000", HEADING_TITLE_MD5S[2], None),
+        (3, 1, [508, 1295, 290, 118], 4, "1000000", HEADING_TITLE_MD5S[3], None),
+    ]
+
+
+async def test_page_hashing_title_text_follows_bitmap_md5_across_slots(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    await _hash_heading_note(page_hashing_module, session_manager, blob_storage, 1061)
+    async with session_manager.session() as session:
+        # "Black" was transcribed while its handwriting sat in slot 3.
+        row_0 = await session.get(NoteTitleDO, (7, 1061, 0))
+        row_3 = await session.get(NoteTitleDO, (7, 1061, 3))
+        assert row_0 is not None and row_3 is not None
+        row_0.bitmap_md5 = HEADING_TITLE_MD5S[3]
+        row_3.bitmap_md5 = HEADING_TITLE_MD5S[0]
+        row_3.text_content = "Black"
+        await session.commit()
+
+    assert await page_hashing_module.run(1061, session_manager, user_id=7) is True
+
+    rows = await _title_rows(session_manager, 1061)
+    assert [(r.title_index, r.text_content) for r in rows] == [
+        (0, "Black"),
+        (1, None),
+        (2, None),
+        (3, None),
+    ]
+
+
+async def test_page_hashing_clears_text_for_redrawn_title(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    await _hash_heading_note(page_hashing_module, session_manager, blob_storage, 1063)
+    async with session_manager.session() as session:
+        row_1 = await session.get(NoteTitleDO, (7, 1063, 1))
+        assert row_1 is not None
+        row_1.bitmap_md5 = "previous_handwriting_md5"
+        row_1.text_content = "Stale"
+        await session.commit()
+
+    assert await page_hashing_module.run(1063, session_manager, user_id=7) is True
+
+    async with session_manager.session() as session:
+        refreshed = await session.get(NoteTitleDO, (7, 1063, 1))
+        assert refreshed is not None
+        assert refreshed.bitmap_md5 == HEADING_TITLE_MD5S[1]
+        assert refreshed.text_content is None
+
+
+async def test_page_hashing_deletes_stale_title_rows(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    await _hash_heading_note(page_hashing_module, session_manager, blob_storage, 1064)
+    async with session_manager.session() as session:
+        session.add(NoteTitleDO(user_id=7, file_id=1064, title_index=4, page_index=2))
+        await session.commit()
+
+    assert await page_hashing_module.run(1064, session_manager, user_id=7) is True
+
+    rows = await _title_rows(session_manager, 1064)
+    assert [r.title_index for r in rows] == [0, 1, 2, 3]
+
+
+async def test_page_hashing_skips_unchanged_title_rows_on_rehash(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    await _hash_heading_note(page_hashing_module, session_manager, blob_storage, 1062)
+    async with session_manager.session() as session:
+        row_0 = await session.get(NoteTitleDO, (7, 1062, 0))
+        assert row_0 is not None
+        row_0.update_time = 12345
+        row_0.text_content = "Black"
+        await session.commit()
+
+    assert await page_hashing_module.run(1062, session_manager, user_id=7) is True
+
+    async with session_manager.session() as session:
+        refreshed = await session.get(NoteTitleDO, (7, 1062, 0))
+        assert refreshed is not None
+        assert refreshed.update_time == 12345
+        assert refreshed.text_content == "Black"
 
 
 async def test_page_hashing_metadata_supports_sql_json_extract_queries(
