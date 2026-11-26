@@ -40,11 +40,12 @@ def extract_page_timestamp_ms(page_id: str, fallback_ms: int) -> int:
     match = _PAGE_ID_TS_RE.match(page_id.strip())
     if match is not None:
         year, month, day, hour, minute, second = (int(g) for g in match.groups())
-        try:
-            dt = datetime(year, month, day, hour, minute, second, tzinfo=UTC)
-            return int(dt.timestamp() * 1000)
-        except ValueError:
-            pass
+        if year >= 1970:
+            try:
+                dt = datetime(year, month, day, hour, minute, second, tzinfo=UTC)
+                return int(dt.timestamp() * 1000)
+            except ValueError:
+                pass
     return max(0, int(fallback_ms))
 
 
@@ -176,24 +177,6 @@ class WikiSourceService:
                 ]
             return {"tasks": tasks_ctx, "linked_note_pages": pages_ctx}
 
-    def _transcribed_files_stmt(self, user_id: int) -> Select[UserFileDO]:
-        """Return a tenant-scoped query for active files with at least one OCR'd page."""
-        has_transcribed_page = (
-            select(NotePageContentDO.id)
-            .where(
-                NotePageContentDO.file_id == UserFileDO.id,
-                NotePageContentDO.text_content.is_not(None),
-            )
-            .correlate(UserFileDO)
-            .exists()
-        )
-        return select(UserFileDO).where(
-            UserFileDO.user_id == user_id,
-            UserFileDO.is_active == "Y",
-            UserFileDO.is_folder == "N",
-            has_transcribed_page,
-        )
-
     def _untranscribed_note_files_stmt(self, user_id: int) -> Select[UserFileDO]:
         """Return a tenant-scoped query for active `.note` files without OCR text."""
         has_transcribed_page = (
@@ -263,7 +246,6 @@ class WikiSourceService:
         self,
         user_id: int,
         *,
-        before_file_id: int | None = None,
         after_page_cursor: str | None = None,
         preview_limit: int = 5,
     ) -> BackfillOverview:
@@ -279,96 +261,26 @@ class WikiSourceService:
                     )
                 ).scalar_one()
             )
-            if after_page_cursor is not None or before_file_id is None:
-                entries = await self._list_ordered_non_blank_pages(session, user_id)
-                total_pages = len(entries)
-                total_files = len({e.file_id for e in entries})
-                remaining_entries = (
-                    entries
-                    if after_page_cursor is None
-                    else [e for e in entries if e.cursor > after_page_cursor]
-                )
-                remaining_pages = len(remaining_entries)
-                remaining_files = len({e.file_id for e in remaining_entries})
-                next_files = (
-                    list(dict.fromkeys(e.file_name for e in remaining_entries))[
-                        :capped_preview
-                    ]
-                    if capped_preview > 0
-                    else []
-                )
-                return BackfillOverview(
-                    remaining_files=remaining_files,
-                    total_files=total_files,
-                    remaining_pages=remaining_pages,
-                    total_pages=total_pages,
-                    untranscribed_files=untranscribed,
-                    next_files=next_files,
-                )
-
-            # Legacy file-cursor path for callers passing only `before_file_id`.
-            base_stmt = self._transcribed_files_stmt(user_id)
-            remaining_stmt = base_stmt.where(UserFileDO.id < before_file_id)
-            total = int(
-                (
-                    await session.execute(
-                        select(func.count()).select_from(base_stmt.subquery())
-                    )
-                ).scalar_one()
+            entries = await self._list_ordered_non_blank_pages(session, user_id)
+            total_pages = len(entries)
+            total_files = len({e.file_id for e in entries})
+            remaining_entries = (
+                entries
+                if after_page_cursor is None
+                else [e for e in entries if e.cursor > after_page_cursor]
             )
-            non_blank_page_stmt = (
-                select(NotePageContentDO.id)
-                .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
-                .where(
-                    UserFileDO.user_id == user_id,
-                    UserFileDO.is_active == "Y",
-                    UserFileDO.is_folder == "N",
-                    NotePageContentDO.text_content.is_not(None),
-                    func.length(func.trim(NotePageContentDO.text_content, " \t\n\r"))
-                    > 0,
-                )
+            remaining_pages = len(remaining_entries)
+            remaining_files = len({e.file_id for e in remaining_entries})
+            next_files = (
+                list(dict.fromkeys(e.file_name for e in remaining_entries))[
+                    :capped_preview
+                ]
+                if capped_preview > 0
+                else []
             )
-            total_pages = int(
-                (
-                    await session.execute(
-                        select(func.count()).select_from(non_blank_page_stmt.subquery())
-                    )
-                ).scalar_one()
-            )
-            remaining = int(
-                (
-                    await session.execute(
-                        select(func.count()).select_from(remaining_stmt.subquery())
-                    )
-                ).scalar_one()
-            )
-            remaining_pages = int(
-                (
-                    await session.execute(
-                        select(func.count()).select_from(
-                            non_blank_page_stmt.where(
-                                UserFileDO.id < before_file_id
-                            ).subquery()
-                        )
-                    )
-                ).scalar_one()
-            )
-            next_files: list[str] = []
-            if remaining > 0 and capped_preview > 0:
-                next_files = list(
-                    (
-                        await session.execute(
-                            remaining_stmt.with_only_columns(UserFileDO.file_name)
-                            .order_by(UserFileDO.id.desc())
-                            .limit(capped_preview)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
         return BackfillOverview(
-            remaining_files=remaining,
-            total_files=total,
+            remaining_files=remaining_files,
+            total_files=total_files,
             remaining_pages=remaining_pages,
             total_pages=total_pages,
             untranscribed_files=untranscribed,
@@ -379,13 +291,11 @@ class WikiSourceService:
         self,
         user_id: int,
         *,
-        before_file_id: int | None = None,
         after_page_cursor: str | None = None,
     ) -> tuple[int, int]:
         """Return `(remaining_files, total_files)` eligible for wiki backfill."""
         overview = await self.get_backfill_overview(
             user_id,
-            before_file_id=before_file_id,
             after_page_cursor=after_page_cursor,
             preview_limit=0,
         )
@@ -415,10 +325,15 @@ class WikiSourceService:
             if not window:
                 return [], None
             row_ids = [e.row_id for e in window]
+            # Strict tenant join: NotePageContentDO has no user_id column.
             text_rows = (
                 await session.execute(
-                    select(NotePageContentDO.id, NotePageContentDO.text_content).where(
-                        NotePageContentDO.id.in_(row_ids)
+                    select(NotePageContentDO.id, NotePageContentDO.text_content)
+                    .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
+                    .where(
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.is_active == "Y",
+                        NotePageContentDO.id.in_(row_ids),
                     )
                 )
             ).all()
@@ -440,77 +355,6 @@ class WikiSourceService:
             for e in window
         ]
         return synthetic_diffs, window[-1].cursor
-
-    async def list_backfill_batch(
-        self,
-        user_id: int,
-        *,
-        before_file_id: int | None,
-        max_files: int = 5,
-    ) -> tuple[list[dict[str, Any]], int | None]:
-        """Load the next newest-first batch of `.note` OCR pages for wiki backfill.
-
-        Returns `(synthetic_diffs, next_cursor_file_id)`. `next_cursor_file_id`
-        is `None` when no more active `.note` files remain.
-        """
-        async with self._session_manager.session() as session:
-            stmt = self._transcribed_files_stmt(user_id)
-            if before_file_id is not None:
-                stmt = stmt.where(UserFileDO.id < before_file_id)
-            files = (
-                (
-                    await session.execute(
-                        stmt.order_by(UserFileDO.id.desc()).limit(
-                            max(1, min(max_files, 20))
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            if not files:
-                return [], None
-
-            file_ids = [f.id for f in files]
-            page_rows = (
-                (
-                    await session.execute(
-                        select(NotePageContentDO)
-                        .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
-                        .where(
-                            UserFileDO.user_id == user_id,
-                            UserFileDO.is_active == "Y",
-                            NotePageContentDO.file_id.in_(file_ids),
-                            NotePageContentDO.text_content.is_not(None),
-                        )
-                        .order_by(
-                            NotePageContentDO.file_id.desc(),
-                            NotePageContentDO.page_index.asc(),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-
-        file_name_map = {f.id: f.file_name for f in files}
-        synthetic_diffs = [
-            {
-                "event_type": "backfill.note_page",
-                "entity_id": f"{p.file_id}:{p.page_id}",
-                "related_file_id": p.file_id,
-                "payload": {
-                    "file_id": str(p.file_id),
-                    "file_path": file_name_map.get(p.file_id, ""),
-                    "page_id": p.page_id,
-                    "page_index": p.page_index,
-                    "text_content": p.text_content or "",
-                },
-            }
-            for p in page_rows
-            if not p.is_blank
-        ]
-        return synthetic_diffs, files[-1].id
 
     async def resolve_source_metadata(
         self, user_id: int, refs: Sequence[WikiSourceRefDTO]

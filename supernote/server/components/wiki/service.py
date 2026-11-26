@@ -686,7 +686,6 @@ class WikiService:
             ).scalar_one_or_none()
         overview = await self._source_service.get_backfill_overview(
             user_id,
-            before_file_id=cp.backfill_file_cursor if cp else None,
             after_page_cursor=cp.backfill_page_cursor if cp else None,
         )
         return WikiStatusDTO(

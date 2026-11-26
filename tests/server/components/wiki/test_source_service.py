@@ -112,7 +112,7 @@ async def test_load_linked_context_enforces_tenant_and_active_file_isolation(
     assert [p["file_id"] for p in ctx["linked_note_pages"]] == [101]
 
 
-async def test_list_backfill_batch_paginates_newest_first_until_exhausted(
+async def test_list_backfill_page_window_paginates_chronologically_until_exhausted(
     session_manager: DatabaseSessionManager,
 ) -> None:
     async with session_manager.session() as session:
@@ -124,6 +124,7 @@ async def test_list_backfill_batch_paginates_newest_first_until_exhausted(
                     file_name=f"Note{fid}.note",
                     is_folder="N",
                     is_active="Y",
+                    update_time=1700000000000 + fid * 1000,
                 )
             )
             session.add(
@@ -137,18 +138,20 @@ async def test_list_backfill_batch_paginates_newest_first_until_exhausted(
         await session.commit()
 
     svc = WikiSourceService(session_manager)
-    batch1, cursor1 = await svc.list_backfill_batch(1, before_file_id=None, max_files=2)
-    assert [d["related_file_id"] for d in batch1] == [30, 20]
-    assert cursor1 == 20
-
-    batch2, cursor2 = await svc.list_backfill_batch(
-        1, before_file_id=cursor1, max_files=2
+    batch1, cursor1 = await svc.list_backfill_page_window(
+        1, after_page_cursor=None, max_pages=2
     )
-    assert [d["related_file_id"] for d in batch2] == [10]
-    assert cursor2 == 10
+    assert [d["related_file_id"] for d in batch1] == [10, 20]
+    assert cursor1 is not None
 
-    batch3, cursor3 = await svc.list_backfill_batch(
-        1, before_file_id=cursor2, max_files=2
+    batch2, cursor2 = await svc.list_backfill_page_window(
+        1, after_page_cursor=cursor1, max_pages=2
+    )
+    assert [d["related_file_id"] for d in batch2] == [30]
+    assert cursor2 is not None
+
+    batch3, cursor3 = await svc.list_backfill_page_window(
+        1, after_page_cursor=cursor2, max_pages=2
     )
     assert batch3 == []
     assert cursor3 is None
@@ -214,10 +217,16 @@ async def test_count_backfill_progress_tracks_remaining_and_total_per_user(
         await session.commit()
 
     svc = WikiSourceService(session_manager)
-    assert await svc.count_backfill_progress(1, before_file_id=None) == (3, 3)
-    assert await svc.count_backfill_progress(1, before_file_id=20) == (1, 3)
-    assert await svc.count_backfill_progress(1, before_file_id=10) == (0, 3)
-    assert await svc.count_backfill_progress(2, before_file_id=None) == (1, 1)
+    assert await svc.count_backfill_progress(1, after_page_cursor=None) == (3, 3)
+    _, cur1 = await svc.list_backfill_page_window(
+        1, after_page_cursor=None, max_pages=2
+    )
+    assert await svc.count_backfill_progress(1, after_page_cursor=cur1) == (1, 3)
+    _, cur2 = await svc.list_backfill_page_window(
+        1, after_page_cursor=cur1, max_pages=2
+    )
+    assert await svc.count_backfill_progress(1, after_page_cursor=cur2) == (0, 3)
+    assert await svc.count_backfill_progress(2, after_page_cursor=None) == (1, 1)
 
 
 async def test_get_backfill_overview_lists_next_files_and_untranscribed_notes(
@@ -281,7 +290,9 @@ async def test_get_backfill_overview_lists_next_files_and_untranscribed_notes(
         await session.commit()
 
     svc = WikiSourceService(session_manager)
-    initial = await svc.get_backfill_overview(1, before_file_id=None, preview_limit=2)
+    initial = await svc.get_backfill_overview(
+        1, after_page_cursor=None, preview_limit=2
+    )
     assert initial.total_files == 3
     assert initial.remaining_files == 3
     assert initial.total_pages == 4
@@ -289,12 +300,20 @@ async def test_get_backfill_overview_lists_next_files_and_untranscribed_notes(
     assert initial.untranscribed_files == 1
     assert initial.next_files == ["Note10.note", "Note20.note"]
 
-    after_first = await svc.get_backfill_overview(1, before_file_id=20, preview_limit=5)
+    _, cur1 = await svc.list_backfill_page_window(
+        1, after_page_cursor=None, max_pages=2
+    )
+    after_first = await svc.get_backfill_overview(
+        1, after_page_cursor=cur1, preview_limit=5
+    )
     assert after_first.remaining_files == 1
-    assert after_first.remaining_pages == 1
-    assert after_first.next_files == ["Note10.note"]
+    assert after_first.remaining_pages == 2
+    assert after_first.next_files == ["Note30.note"]
 
-    done = await svc.get_backfill_overview(1, before_file_id=10, preview_limit=5)
+    _, cur2 = await svc.list_backfill_page_window(
+        1, after_page_cursor=cur1, max_pages=5
+    )
+    done = await svc.get_backfill_overview(1, after_page_cursor=cur2, preview_limit=5)
     assert done.remaining_files == 0
     assert done.remaining_pages == 0
     assert done.next_files == []

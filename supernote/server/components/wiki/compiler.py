@@ -415,24 +415,7 @@ class WikiCompilerWorker:
                 self._config.max_pages_per_batch, max_files * 2, 10
             )
 
-            task_rows = await self._source_service.list_task_snapshots(
-                user_id, limit=50
-            )
-            linked_context: dict[str, object] = {}
-            if task_rows:
-                linked_context["tasks"] = [
-                    {
-                        "task_id": t.task_id,
-                        "title": t.title,
-                        "detail": t.detail,
-                        "status": t.status,
-                        "importance": t.importance,
-                        "due_time": t.due_time,
-                        "completed_time": t.completed_time,
-                    }
-                    for t in task_rows
-                ]
-
+            linked_context: dict[str, object] | None = None
             files_processed: list[str] = []
             updated_slugs: list[str] = []
             skipped_policy = 0
@@ -453,6 +436,24 @@ class WikiCompilerWorker:
                 )
                 if next_cursor is None:
                     break
+                if linked_context is None:
+                    task_rows = await self._source_service.list_task_snapshots(
+                        user_id, limit=50
+                    )
+                    linked_context = {}
+                    if task_rows:
+                        linked_context["tasks"] = [
+                            {
+                                "task_id": t.task_id,
+                                "title": t.title,
+                                "detail": t.detail,
+                                "status": t.status,
+                                "importance": t.importance,
+                                "due_time": t.due_time,
+                                "completed_time": t.completed_time,
+                            }
+                            for t in task_rows
+                        ]
                 files_processed.extend(
                     str(diff["payload"]["file_path"])
                     for diff in window_diffs
@@ -496,6 +497,20 @@ class WikiCompilerWorker:
                     backfill_page_cursor=current_cursor,
                     status=_final_status,
                     last_error=None,
+                )
+
+            if processed_events == 0:
+                issues = await self._wiki_service.list_lint_issues(
+                    user_id, status="open"
+                )
+                await self._update_checkpoint(user_id, status="idle", last_error=None)
+                return WikiCompileResult(
+                    events_processed=0,
+                    pages_updated=0,
+                    skipped_policy_pages=0,
+                    lint_issues_open=len(issues),
+                    status="idle",
+                    remaining_files=0,
                 )
 
             files_processed = list(dict.fromkeys(files_processed))
@@ -683,7 +698,7 @@ class WikiCompilerWorker:
                 last_error=None,
             )
             remaining, _ = await self._source_service.count_backfill_progress(
-                user_id, before_file_id=None
+                user_id, after_page_cursor=None
             )
             issues = await self._wiki_service.list_lint_issues(user_id, status="open")
             return WikiCompileResult(
