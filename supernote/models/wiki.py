@@ -27,16 +27,24 @@ __all__ = [
     "WikiSearchHitDTO",
     "WikiSearchResponseVO",
     "WikiSourceRefDTO",
+    "WikiSourceType",
     "WikiStatusDTO",
     "WikiStatusResponseVO",
 ]
+
+
+class WikiSourceType(StrEnum):
+    """Supported provenance source kinds for `WikiSourceRefDTO`."""
+
+    NOTE_PAGE = "note_page"
+    SCHEDULE_TASK = "schedule_task"
 
 
 @dataclass
 class WikiSourceRefDTO(DataClassJSONMixin):
     """Provenance reference linking a wiki page to a note page or schedule task."""
 
-    source_type: str
+    source_type: WikiSourceType
     """Source kind (`note_page` or `schedule_task`)."""
     source_key: str
     """Stable identifier (`{file_id}:{page_id}` or `{task_id}`)."""
@@ -54,8 +62,8 @@ class WikiSourceRefDTO(DataClassJSONMixin):
     """Resolved schedule task title for `schedule_task` citations, when active."""
 
     def __post_init__(self) -> None:
-        if not self.source_type.strip():
-            raise ValueError("source_type must be non-empty")
+        if not isinstance(self.source_type, WikiSourceType):
+            self.source_type = WikiSourceType(self.source_type)
         if not self.source_key.strip():
             raise ValueError("source_key must be non-empty")
 

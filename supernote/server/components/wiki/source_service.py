@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Select, func, select
 
-from supernote.models.wiki import WikiSourceRefDTO
+from supernote.models.wiki import WikiSourceRefDTO, WikiSourceType
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.schedule import ScheduleTaskDO
@@ -313,7 +313,7 @@ class WikiSourceService:
 
     async def resolve_source_metadata(
         self, user_id: int, refs: Sequence[WikiSourceRefDTO]
-    ) -> dict[tuple[str, str], SourceMetadata]:
+    ) -> dict[tuple[WikiSourceType, str], SourceMetadata]:
         """Resolve display names and 0-based page indices for `refs` (tenant-scoped)."""
         if not refs:
             return {}
@@ -323,7 +323,7 @@ class WikiSourceService:
         task_ids: set[str] = set()
 
         for ref in refs:
-            if ref.source_type == "note_page":
+            if ref.source_type is WikiSourceType.NOTE_PAGE:
                 fid = ref.file_id
                 page_id = ""
                 if ":" in ref.source_key:
@@ -333,7 +333,7 @@ class WikiSourceService:
                 if fid is not None:
                     file_ids.add(fid)
                     note_pairs.append((fid, page_id, ref.source_key))
-            elif ref.source_type == "schedule_task":
+            elif ref.source_type is WikiSourceType.SCHEDULE_TASK:
                 task_ids.add(ref.source_key)
 
         file_names: dict[int, str] = {}
@@ -385,18 +385,20 @@ class WikiSourceService:
                 ).all()
                 task_titles = {str(tid): str(title) for tid, title in task_rows}
 
-        resolved: dict[tuple[str, str], SourceMetadata] = {}
+        resolved: dict[tuple[WikiSourceType, str], SourceMetadata] = {}
         for fid, page_id, source_key in note_pairs:
             fname = file_names.get(fid)
             pidx = page_indices.get((fid, page_id)) if page_id else None
             if fname is not None or pidx is not None:
-                resolved[("note_page", source_key)] = SourceMetadata(
+                resolved[(WikiSourceType.NOTE_PAGE, source_key)] = SourceMetadata(
                     file_name=fname,
                     page_index=pidx,
                 )
         for tid in task_ids:
             if title := task_titles.get(tid):
-                resolved[("schedule_task", tid)] = SourceMetadata(task_title=title)
+                resolved[(WikiSourceType.SCHEDULE_TASK, tid)] = SourceMetadata(
+                    task_title=title
+                )
         return resolved
 
     async def list_task_snapshots(

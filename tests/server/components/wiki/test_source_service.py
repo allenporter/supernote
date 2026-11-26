@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from supernote.models.events import DomainEventType
-from supernote.models.wiki import WikiSourceRefDTO
+from supernote.models.wiki import WikiSourceRefDTO, WikiSourceType
 from supernote.server.components.wiki.source_service import WikiSourceService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
@@ -341,22 +341,34 @@ async def test_resolve_source_metadata_returns_names_and_enforces_tenant_isolati
         1,
         [
             WikiSourceRefDTO(
-                source_type="note_page", source_key="501:P501_2", file_id=501
+                source_type=WikiSourceType.NOTE_PAGE,
+                source_key="501:P501_2",
+                file_id=501,
             ),
             WikiSourceRefDTO(
-                source_type="note_page", source_key="502:P502_0", file_id=502
+                source_type=WikiSourceType.NOTE_PAGE,
+                source_key="502:P502_0",
+                file_id=502,
             ),
             WikiSourceRefDTO(
-                source_type="note_page", source_key="503:P503_0", file_id=503
+                source_type=WikiSourceType.NOTE_PAGE,
+                source_key="503:P503_0",
+                file_id=503,
             ),
-            WikiSourceRefDTO(source_type="schedule_task", source_key="t-aurora"),
-            WikiSourceRefDTO(source_type="schedule_task", source_key="t-secret"),
+            WikiSourceRefDTO(
+                source_type=WikiSourceType.SCHEDULE_TASK, source_key="t-aurora"
+            ),
+            WikiSourceRefDTO(
+                source_type=WikiSourceType.SCHEDULE_TASK, source_key="t-secret"
+            ),
         ],
     )
-    assert meta[("note_page", "501:P501_2")].file_name == "Aurora_Spec.note"
-    assert meta[("note_page", "501:P501_2")].page_index == 2
-    assert meta[("schedule_task", "t-aurora")].task_title == "Install UPS"
+    assert (
+        meta[(WikiSourceType.NOTE_PAGE, "501:P501_2")].file_name == "Aurora_Spec.note"
+    )
+    assert meta[(WikiSourceType.NOTE_PAGE, "501:P501_2")].page_index == 2
+    assert meta[(WikiSourceType.SCHEDULE_TASK, "t-aurora")].task_title == "Install UPS"
     # Tenant isolation and soft-deleted (recycled) file exclusion.
-    assert ("note_page", "502:P502_0") not in meta
-    assert ("note_page", "503:P503_0") not in meta
-    assert ("schedule_task", "t-secret") not in meta
+    assert (WikiSourceType.NOTE_PAGE, "502:P502_0") not in meta
+    assert (WikiSourceType.NOTE_PAGE, "503:P503_0") not in meta
+    assert (WikiSourceType.SCHEDULE_TASK, "t-secret") not in meta

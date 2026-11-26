@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from supernote.models.wiki import WikiPageDTO, WikiSourceRefDTO
+from supernote.models.wiki import WikiPageDTO, WikiSourceRefDTO, WikiSourceType
 from supernote.server.components.wiki.prompts import (
     build_compile_prompt,
     get_compile_json_schema,
@@ -170,7 +170,7 @@ def test_build_compile_prompt_prioritizes_synthesized_candidates_and_injects_bud
             30,
             source_refs=[
                 WikiSourceRefDTO(
-                    source_type="note_page", source_key="77:p1", file_id=77
+                    source_type=WikiSourceType.NOTE_PAGE, source_key="77:p1", file_id=77
                 )
             ],
         ),

@@ -8,6 +8,7 @@ import zipfile
 import pytest
 import yaml
 
+from supernote.models.wiki import WikiSourceType
 from supernote.server.components.wiki.export import WikiExportService
 from supernote.server.components.wiki.models import (
     WikiNotFoundError,
@@ -42,7 +43,9 @@ async def test_export_page_and_vault_zip_round_trip(
             body_md="# Alpha\n\nLinked to [[entities/alice]].",
             aliases=["Proj Alpha"],
             source_refs=[
-                WikiSourceRefDTO(source_type="note_page", source_key="7:p1", file_id=7)
+                WikiSourceRefDTO(
+                    source_type=WikiSourceType.NOTE_PAGE, source_key="7:p1", file_id=7
+                )
             ],
             author_kind="compiler",
         ),

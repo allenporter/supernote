@@ -10,6 +10,7 @@ from aiohttp import web
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from supernote.models.wiki import WikiSourceType
 from supernote.server.db.models.wiki import (
     WikiAliasDO,
     WikiCheckpointDO,
@@ -425,7 +426,7 @@ class WikiService:
             for ref in refs:
                 refs_by_page.setdefault(ref.page_id, []).append(
                     WikiSourceRefDTO(
-                        source_type=ref.source_type,
+                        source_type=WikiSourceType(ref.source_type),
                         source_key=ref.source_key,
                         file_id=ref.file_id,
                         last_event_seq=ref.last_event_seq,
@@ -1018,7 +1019,7 @@ class WikiService:
         ):
             refs_by_page.setdefault(ref_row.page_id, []).append(
                 WikiSourceRefDTO(
-                    source_type=ref_row.source_type,
+                    source_type=WikiSourceType(ref_row.source_type),
                     source_key=ref_row.source_key,
                     file_id=ref_row.file_id,
                     last_event_seq=ref_row.last_event_seq,

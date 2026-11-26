@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from supernote.models.wiki import WikiSourceType
 from supernote.server.components.wiki.models import (
     WikiConflictError,
     WikiNotFoundError,
@@ -31,7 +32,7 @@ async def test_upsert_get_list_revisions_and_backlinks(
             aliases=["Q3 Plan", "q3  plan"],
             source_refs=[
                 WikiSourceRefDTO(
-                    source_type="note_page",
+                    source_type=WikiSourceType.NOTE_PAGE,
                     source_key="42:p1",
                     file_id=42,
                     last_event_seq=10,
@@ -137,7 +138,9 @@ async def test_tombstone_revival_resets_policy_and_clears_stale_source_refs(
             body_md="Initial",
             edit_policy="locked",
             source_refs=[
-                WikiSourceRefDTO(source_type="note_page", source_key="1:p1", file_id=1)
+                WikiSourceRefDTO(
+                    source_type=WikiSourceType.NOTE_PAGE, source_key="1:p1", file_id=1
+                )
             ],
             author_kind="user",
         ),
@@ -215,7 +218,7 @@ async def test_search_structural_lint_self_links_and_cleanup(
             aliases=["Project A"],
             source_refs=[
                 WikiSourceRefDTO(
-                    source_type="schedule_task",
+                    source_type=WikiSourceType.SCHEDULE_TASK,
                     source_key="task-1",
                     is_source_deleted=True,
                 )
