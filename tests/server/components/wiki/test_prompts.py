@@ -9,6 +9,7 @@ import pytest
 from supernote.models.wiki import WikiPageDTO, WikiSourceRefDTO, WikiSourceType
 from supernote.server.components.wiki.prompts import (
     build_compile_prompt,
+    build_compile_prompt_bundle,
     get_compile_json_schema,
     get_lint_json_schema,
     parse_compile_plan,
@@ -241,3 +242,55 @@ def test_select_candidate_pages_uses_word_boundaries_for_short_names() -> None:
         p.slug for p in select_candidate_pages(pages, diff_true, {}, limit=2)
     ]
     assert ranked_true[0] == "entities/al"
+
+
+def test_build_compile_prompt_bundle_assigns_short_handles_and_hides_raw_ids() -> None:
+    diff = [
+        {
+            "event_type": "backfill.note_page",
+            "entity_id": "769734329608700452:P20250826075655209501EC105Re539dD",
+            "related_file_id": 769734329608700452,
+            "payload": {
+                "file_id": "769734329608700452",
+                "file_path": "Daily.note",
+                "page_id": "P20250826075655209501EC105Re539dD",
+                "page_index": 0,
+                "text_content": "Benchmarked photo search embeddings.",
+            },
+        }
+    ]
+    linked = {
+        "tasks": [
+            {
+                "task_id": "task-uuid-9999",
+                "title": "Run embedding eval",
+                "status": "needsAction",
+            }
+        ],
+        "linked_note_pages": [
+            {
+                "file_id": 769734329608700452,
+                "page_id": "P20250826075655209501EC105Re539dD",
+                "page_index": 0,
+                "text_content": "Duplicate ref reuses page01.",
+            }
+        ],
+    }
+    built = build_compile_prompt_bundle([], diff, linked, max_pages_per_batch=10)
+    assert "page01" in built.source_handles
+    assert "task01" in built.source_handles
+    assert len(built.source_handles) == 2
+    assert (
+        built.source_handles["page01"].source_key
+        == "769734329608700452:P20250826075655209501EC105Re539dD"
+    )
+    assert built.source_handles["page01"].file_id == 769734329608700452
+    assert built.source_handles["task01"].source_type is WikiSourceType.SCHEDULE_TASK
+    assert built.source_handles["task01"].source_key == "task-uuid-9999"
+
+    # Raw snowflake IDs, page IDs, and task UUIDs must not leak into prompt XML.
+    assert "769734329608700452" not in built.prompt
+    assert "P20250826075655209501EC105Re539dD" not in built.prompt
+    assert "task-uuid-9999" not in built.prompt
+    assert '"source_id": "page01"' in built.prompt
+    assert '"source_id": "task01"' in built.prompt

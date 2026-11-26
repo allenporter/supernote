@@ -158,6 +158,7 @@ class WikiEvalMetrics:
     fact_recall: float
     matched_facts: list[str]
     missed_facts: list[str]
+    prose_source_leaks: int = 0
 
 
 @dataclass
@@ -264,16 +265,32 @@ class DeterministicFakeWikiModel(TextGenerationModel):
         if schema_name == "wiki_lint_report":
             return {"issues": []}
 
-        # Extract notebook file paths and IDs from <source_diff> JSON in the prompt.
-        file_paths = list(
-            dict.fromkeys(re.findall(r'"file_path":\s*"([^"]+)"', prompt))
-        )
-        file_ids = re.findall(r'"file_id":\s*"(\d+)"', prompt)
+        # Extract notebook file paths and short source_id handles from <source_diff>.
+        diff_block = prompt.rsplit("<source_diff>", maxsplit=1)[-1].split(
+            "</source_diff>", maxsplit=1
+        )[0]
+        file_handles: dict[str, str] = {}
+        try:
+            diff_events = json.loads(diff_block.strip())
+        except json.JSONDecodeError:
+            diff_events = []
+        for ev in diff_events if isinstance(diff_events, list) else []:
+            if not isinstance(ev, Mapping):
+                continue
+            payload = ev.get("payload")
+            fp = (
+                str(payload.get("file_path") or "")
+                if isinstance(payload, Mapping)
+                else ""
+            )
+            sid = str(ev.get("source_id") or "")
+            if fp and fp not in file_handles:
+                file_handles[fp] = sid or "page01"
+
         page_ops: list[dict[str, Any]] = []
-        for idx, fp in enumerate(file_paths[:5]):
+        for fp, handle in list(file_handles.items())[:5]:
             stem = Path(fp).stem
             slug_name = re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
-            fid = int(file_ids[idx]) if idx < len(file_ids) else idx + 1
             page_ops.append(
                 {
                     "slug": f"sources/{slug_name}",
@@ -284,8 +301,7 @@ class DeterministicFakeWikiModel(TextGenerationModel):
                     "source_refs": [
                         {
                             "source_type": "note_page",
-                            "source_key": f"{fid}:p0",
-                            "file_id": fid,
+                            "source_key": handle,
                         }
                     ],
                 }
@@ -400,6 +416,18 @@ def _compute_metrics(
     n_facts = len(dataset.expected_facts)
     fact_recall = (len(matched_facts) / n_facts) if n_facts else 1.0
 
+    prose_leak_re = re.compile(
+        r"\b(?:note_page|source_notes|schedule_task):\S+"
+        r"|\bP20\d{12}[A-Za-z0-9]*\b"
+        r"|\[\[(?:page|task)\d{2,}\]\]"
+        r"|\((?:page|task)\d{2,}\)"
+    )
+    prose_source_leaks = sum(
+        1
+        for p in pages
+        if prose_leak_re.search(f"{p.summary}\n{p.body_md}") is not None
+    )
+
     transcribed = sum(1 for nb in dataset.notebooks if nb.pages)
     return WikiEvalMetrics(
         total_notebooks=len(dataset.notebooks),
@@ -422,6 +450,7 @@ def _compute_metrics(
         fact_recall=round(fact_recall, 3),
         matched_facts=matched_facts,
         missed_facts=missed_facts,
+        prose_source_leaks=prose_source_leaks,
     )
 
 
@@ -586,6 +615,7 @@ def format_markdown_report(report: WikiEvalReport) -> str:
         f"| Avg outbound `[[wikilinks]]` / page | {m.avg_outbound_links:.2f} |",
         f"| Avg body length (chars) | {m.avg_body_chars:.1f} |",
         f"| Open lint issues | {m.open_lint_total} ({m.open_lint_by_type or 'none'}) |",
+        f"| Prose source-ID leaks | {m.prose_source_leaks} |",
         f"| Concept recall (synthesized pages) | {m.concept_recall_synthesized * 100:.1f}% ({len(m.matched_concepts_synthesized)}/{len(m.matched_concepts_synthesized) + len(m.missed_concepts_synthesized)}) |",
         f"| Concept recall (all pages) | {m.concept_recall_all * 100:.1f}% |",
         f"| Evolved fact recall | {m.fact_recall * 100:.1f}% ({len(m.matched_facts)}/{len(m.matched_facts) + len(m.missed_facts)}) |",
