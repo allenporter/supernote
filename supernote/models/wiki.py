@@ -14,11 +14,16 @@ __all__ = [
     "WikiCompileMode",
     "WikiCompileResponseVO",
     "WikiDeleteResponseVO",
+    "WikiDiagnosticsResponseVO",
+    "WikiDryRunOpDTO",
+    "WikiDryRunPageDTO",
+    "WikiDryRunResponseVO",
     "WikiIndexEntryVO",
     "WikiIndexResponseVO",
     "WikiLintIssueDTO",
     "WikiLintIssueResponseVO",
     "WikiLintListVO",
+    "WikiNotebookCoverageDTO",
     "WikiPageDTO",
     "WikiPageListVO",
     "WikiPageResponseVO",
@@ -269,3 +274,60 @@ class WikiDeleteResponseVO(BaseResponse):
     """Response VO for soft-deleting a wiki page."""
 
     deleted: bool = True
+
+
+@dataclass
+class WikiNotebookCoverageDTO(DataClassJSONMixin):
+    """Per-notebook OCR vs. wiki citation coverage for live quality debugging."""
+
+    file_id: str
+    file_name: str
+    ocr_pages: int
+    cited_pages: int
+    avg_chars_per_page: int
+    cited_slugs: list[str] = field(default_factory=list)
+
+
+@dataclass
+class WikiDiagnosticsResponseVO(BaseResponse):
+    """Response VO for `GET /api/extended/wiki/diagnostics`."""
+
+    notebooks: list[WikiNotebookCoverageDTO] = field(default_factory=list)
+
+
+@dataclass
+class WikiDryRunPageDTO(DataClassJSONMixin):
+    """Summary of one source page fed into a dry-run compile turn."""
+
+    source_id: str
+    file_id: str
+    file_path: str
+    page_index: int
+    page_date: str
+    chars: int
+    snippet: str
+
+
+@dataclass
+class WikiDryRunOpDTO(DataClassJSONMixin):
+    """Dry-run evaluation of one `WikiPageOp` returned by the LLM."""
+
+    slug: str
+    title: str
+    page_kind: str
+    summary: str
+    body_chars: int
+    resolved_source_keys: list[str] = field(default_factory=list)
+    dropped_source_keys: list[str] = field(default_factory=list)
+    drop_reason: str | None = None
+
+
+@dataclass
+class WikiDryRunResponseVO(BaseResponse):
+    """Response VO for `POST /api/extended/wiki/diagnostics/dry-run`."""
+
+    pages_sent: list[WikiDryRunPageDTO] = field(default_factory=list)
+    candidate_slugs: list[str] = field(default_factory=list)
+    ops: list[WikiDryRunOpDTO] = field(default_factory=list)
+    lint_proposals_count: int = 0
+    elapsed_ms: int = 0

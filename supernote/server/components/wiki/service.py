@@ -10,7 +10,7 @@ from aiohttp import web
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from supernote.models.wiki import WikiSourceType
+from supernote.models.wiki import WikiNotebookCoverageDTO, WikiSourceType
 from supernote.server.db.models.wiki import (
     WikiAliasDO,
     WikiCheckpointDO,
@@ -704,6 +704,12 @@ class WikiService:
             backfill_untranscribed_files=overview.untranscribed_files,
             backfill_next_files=overview.next_files,
         )
+
+    async def get_notebook_coverage(
+        self, user_id: int
+    ) -> list[WikiNotebookCoverageDTO]:
+        """Return per-notebook OCR vs. wiki citation coverage for live debugging."""
+        return await self._source_service.get_notebook_coverage(user_id)
 
     async def sync_index_page(self, user_id: int) -> WikiPageDTO | None:
         """Deterministically maintain the root `index` hub page from active wiki pages.

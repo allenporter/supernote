@@ -8,9 +8,12 @@ from urllib.parse import quote
 from supernote.models.wiki import (
     WikiCompileResponseVO,
     WikiDeleteResponseVO,
+    WikiDiagnosticsResponseVO,
+    WikiDryRunResponseVO,
     WikiLintIssueDTO,
     WikiLintIssueResponseVO,
     WikiLintListVO,
+    WikiNotebookCoverageDTO,
     WikiPageDTO,
     WikiPageListVO,
     WikiPageResponseVO,
@@ -146,6 +149,36 @@ class WikiClient:
         if vo.status is None:
             raise ApiException("Server returned empty wiki status payload")
         return vo.status
+
+    async def get_diagnostics(self) -> list[WikiNotebookCoverageDTO]:
+        """Fetch per-notebook OCR vs. wiki citation coverage (`GET /api/extended/wiki/diagnostics`)."""
+        vo = await self._client.get_json(
+            "/api/extended/wiki/diagnostics", WikiDiagnosticsResponseVO
+        )
+        return vo.notebooks
+
+    async def dry_run_compile(
+        self,
+        *,
+        file_id: int | str | None = None,
+        start_date: str | None = None,
+        offset_pages: int = 0,
+        max_pages: int = 8,
+    ) -> WikiDryRunResponseVO:
+        """Run a read-only compile dry-run (`POST /api/extended/wiki/diagnostics/dry-run`)."""
+        payload: dict[str, Any] = {
+            "offset_pages": offset_pages,
+            "max_pages": max_pages,
+        }
+        if file_id is not None:
+            payload["file_id"] = str(file_id)
+        if start_date is not None:
+            payload["start_date"] = start_date
+        return await self._client.post_json(
+            "/api/extended/wiki/diagnostics/dry-run",
+            WikiDryRunResponseVO,
+            json=payload,
+        )
 
     async def compile(
         self,

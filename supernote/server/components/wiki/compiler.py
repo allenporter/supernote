@@ -43,6 +43,11 @@ from aiohttp import web
 from sqlalchemy import select, update
 
 from supernote.models.events import DomainEventType
+from supernote.models.wiki import (
+    WikiDryRunOpDTO,
+    WikiDryRunPageDTO,
+    WikiDryRunResponseVO,
+)
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.text import TextGenerationModel
 from supernote.server.components.events.service import EventLogService
@@ -75,6 +80,7 @@ from .prompts import (
     get_lint_json_schema,
     parse_compile_plan,
     parse_lint_report,
+    select_candidate_pages,
 )
 from .service import WikiService, _make_dedup_key
 from .source_service import WikiSourceService
@@ -544,6 +550,142 @@ class WikiCompilerWorker:
         task = self._backfill_tasks.get(user_id)
         return user_id in self._backfill_starting or (
             task is not None and not task.done()
+        )
+
+    async def dry_run_compile(
+        self,
+        user_id: int,
+        *,
+        file_id: int | None = None,
+        start_date: str | None = None,
+        offset_pages: int = 0,
+        max_pages: int = 8,
+    ) -> WikiDryRunResponseVO:
+        """Run the production compile pipeline read-only on a page slice for live debugging."""
+        if self._text_model is None:
+            raise AIError("Text generation model not configured")
+
+        t0 = time.monotonic()
+        window_diffs = await self._source_service.list_dry_run_pages(
+            user_id,
+            file_id=file_id,
+            start_date=start_date,
+            offset_pages=offset_pages,
+            max_pages=max_pages,
+        )
+        if not window_diffs:
+            return WikiDryRunResponseVO(elapsed_ms=int((time.monotonic() - t0) * 1000))
+
+        all_pages = await self._wiki_service.list_pages(user_id, limit=500)
+        task_rows = await self._source_service.list_task_snapshots(user_id, limit=50)
+        linked_context: dict[str, object] = {}
+        if task_rows:
+            linked_context["tasks"] = [
+                {
+                    "task_id": t.task_id,
+                    "title": t.title,
+                    "detail": t.detail,
+                    "status": t.status,
+                    "importance": t.importance,
+                    "due_time": t.due_time,
+                    "completed_time": t.completed_time,
+                }
+                for t in task_rows
+            ]
+
+        page_budget = max(self._config.max_pages_per_batch, 10)
+        candidates = select_candidate_pages(
+            all_pages, window_diffs, linked_context, limit=20
+        )
+        built = build_compile_prompt(
+            all_pages,
+            window_diffs,
+            linked_context=linked_context,
+            max_pages_per_batch=page_budget,
+        )
+        raw_plan = await self._text_model.generate_json(
+            built.prompt,
+            response_schema=get_compile_json_schema(),
+            schema_name="wiki_compile_plan",
+            stage=AIStage.WIKI_COMPILE,
+        )
+        plan = parse_compile_plan(raw_plan)
+
+        # Build reverse handle map for reporting the exact pages sent.
+        handle_by_key = {
+            target.source_key: handle for handle, target in built.source_handles.items()
+        }
+        pages_sent = [
+            WikiDryRunPageDTO(
+                source_id=handle_by_key.get(str(diff["entity_id"]), ""),
+                file_id=str(diff["payload"]["file_id"]),
+                file_path=str(diff["payload"]["file_path"]),
+                page_index=int(diff["payload"]["page_index"]),
+                page_date=str(diff["payload"].get("page_date") or ""),
+                chars=len(str(diff["payload"].get("text_content") or "")),
+                snippet=str(diff["payload"].get("text_content") or "")[:160].strip(),
+            )
+            for diff in window_diffs
+        ]
+
+        existing_policy = {p.slug: p.edit_policy for p in all_pages}
+        normalized_handles = {k.lower(): v for k, v in built.source_handles.items()}
+        known_raw = {
+            (str(v.source_type), v.source_key): v for v in built.source_handles.values()
+        }
+        ops_report: list[WikiDryRunOpDTO] = []
+        applied_non_index = 0
+        for op in plan.page_ops:
+            slug = op.slug.strip()
+            title = op.title.strip()
+            drop_reason: str | None = None
+            if slug.lower() == "index" or op.page_kind == "index":
+                drop_reason = "index_auto_maintained"
+            elif not slug or not title:
+                drop_reason = "missing_slug_or_title"
+            elif applied_non_index >= page_budget:
+                drop_reason = "page_cap_exceeded"
+            elif existing_policy.get(slug) in ("protected_prose", "locked"):
+                drop_reason = f"edit_policy:{existing_policy[slug]}"
+            else:
+                applied_non_index += 1
+
+            resolved_keys: list[str] = []
+            dropped_keys: list[str] = []
+            for ref in op.source_refs:
+                clean_key = (ref.source_key or "").strip()
+                prefix = f"{ref.source_type}:"
+                if clean_key.startswith(prefix):
+                    clean_key = clean_key[len(prefix) :]
+                target = normalized_handles.get(clean_key.lower()) or known_raw.get(
+                    (str(ref.source_type), clean_key)
+                )
+                if target is None:
+                    dropped_keys.append(ref.source_key)
+                elif target.source_key not in resolved_keys:
+                    resolved_keys.append(target.source_key)
+
+            ops_report.append(
+                WikiDryRunOpDTO(
+                    slug=slug,
+                    title=title,
+                    page_kind=op.page_kind
+                    if op.page_kind in VALID_PAGE_KINDS
+                    else "topic",
+                    summary=op.summary,
+                    body_chars=len(op.body_md),
+                    resolved_source_keys=resolved_keys,
+                    dropped_source_keys=dropped_keys,
+                    drop_reason=drop_reason,
+                )
+            )
+
+        return WikiDryRunResponseVO(
+            pages_sent=pages_sent,
+            candidate_slugs=[p.slug for p in candidates],
+            ops=ops_report,
+            lint_proposals_count=len(plan.lint_proposals),
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
         )
 
     async def start_backfill_job(
