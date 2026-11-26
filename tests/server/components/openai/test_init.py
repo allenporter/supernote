@@ -13,7 +13,9 @@ from supernote.server.ai.models.embedding import (
 from supernote.server.ai.models.summary import ConcurrencyLimitedSummaryModel
 from supernote.server.components.ai import (
     EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
     SUMMARY_MODEL_KEY,
+    TEXT_MODEL_KEY,
     AiComponent,
 )
 from supernote.server.components.openai import OpenAIComponent
@@ -130,3 +132,50 @@ async def test_openai_component_routes_named_providers_to_distinct_servers(
     assert llamacpp_hits == ["embeddinggemma"]
 
     await loader.async_stop_all(component_core)
+
+
+async def test_openai_component_shares_session_across_four_roles_and_closes_on_unload(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    openai_base_url: str,
+) -> None:
+    """All four AI roles share `OpenAIComponent.session` and close it on component unload."""
+    component_core.config.ai = AiConfig(
+        providers={
+            "openai": ProviderConfig(base_url=openai_base_url, api_key="sk-secret")
+        },
+        ocr=ModelConfig(provider="openai", model="gemma-vision"),
+        summary=ModelConfig(provider="openai", model="gemma"),
+        embedding=ModelConfig(provider="openai", model="nomic-embed-text"),
+        text=ModelConfig(provider="openai", model="gemma-text"),
+    )
+    loader = await load_components("openai")
+
+    ocr_model = component_core.app[OCR_MODEL_KEY]
+    summary_model = component_core.app[SUMMARY_MODEL_KEY]
+    embedding_model = component_core.app[EMBEDDING_MODEL_KEY]
+    text_model = component_core.app[TEXT_MODEL_KEY]
+    assert ocr_model is not None
+    assert summary_model is not None
+    assert embedding_model is not None
+    assert text_model is not None
+
+    comp = loader.get("openai")
+    assert isinstance(comp, OpenAIComponent)
+    session = comp.session
+    assert session is not None
+    assert not session.closed
+
+    assert await ocr_model.extract_text(b"png", "hi") == "transcribed text"
+    assert await embedding_model.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY) == [
+        0.1,
+        0.2,
+        0.3,
+    ]
+    assert not session.closed
+
+    await loader.async_reconfigure(
+        component_core, OpenAIComponent(), {"enabled": False}
+    )
+    assert session.closed
+    assert comp.session is None

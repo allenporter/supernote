@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import aiohttp
 import pytest
 from prometheus_client import REGISTRY
 
@@ -12,6 +13,7 @@ from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.components.openai.backend import (
     REQUEST_TIMEOUT,
+    OpenAIBackend,
     _record_usage,
 )
 from supernote.server.config import ModelConfig, ProviderConfig
@@ -238,3 +240,38 @@ def test_record_usage_ignores_invalid_shapes() -> None:
         REGISTRY.get_sample_value("supernote_ai_tokens_total", think_labels)
         == before_think + 35.0
     )
+
+
+async def test_openai_backend_reuses_injected_client_session_across_calls(
+    openai_base_url: str,
+    fake_openai: FakeOpenAIServer,
+) -> None:
+    """Back-to-back calls reuse the constructor-injected `aiohttp.ClientSession`."""
+    async with aiohttp.ClientSession() as session:
+        backend = OpenAIBackend(openai_base_url, provider="openai", session=session)
+
+        reply = await backend.chat_completion(
+            model="gemma", content=[{"type": "text", "text": "hi"}]
+        )
+        assert reply == "transcribed text"
+        assert not session.closed
+
+        vec = await backend.embeddings(model="embed", text="hello")
+        assert vec == [0.1, 0.2, 0.3]
+        assert not session.closed
+        assert len(fake_openai.requests) == 2
+        assert backend._session is session
+
+
+async def test_openai_backend_standalone_fallback_without_injected_session(
+    openai_base_url: str,
+    fake_openai: FakeOpenAIServer,
+) -> None:
+    """Standalone callers with `session=None` use a request-scoped session without leaking."""
+    backend = OpenAIBackend(openai_base_url, provider="openai")
+    reply = await backend.chat_completion(
+        model="gemma", content=[{"type": "text", "text": "standalone"}]
+    )
+    assert reply == "transcribed text"
+    assert backend._session is None
+    assert len(fake_openai.requests) == 1

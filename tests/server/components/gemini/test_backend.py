@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import aiohttp
 import pytest
 from aiohttp import web
 from prometheus_client import REGISTRY
@@ -229,3 +230,58 @@ async def test_gemini_generate_content_sums_only_positive_prompt_tokens(
         REGISTRY.get_sample_value("supernote_ai_tokens_total", think_labels)
         == before_think + 7.0
     )
+
+
+async def test_gemini_backend_uses_injected_session_and_closes_client_idempotently(
+    gemini_base_url: str,
+) -> None:
+    """`GeminiBackend` uses the injected `aiohttp.ClientSession` and closes `genai.Client` without closing caller session."""
+    async with aiohttp.ClientSession() as session:
+        backend = GeminiBackend(
+            api_key="test-key",
+            base_url=gemini_base_url,
+            provider="gemini",
+            session=session,
+        )
+        assert backend._client is None
+
+        # Closing before first use does not instantiate `genai.Client`.
+        await backend.close()
+        assert backend._client is None
+
+        response = await backend.generate_content(
+            model="gemini-2.0-flash", contents="hi"
+        )
+        assert response.text == "Handwritten text content"
+        client = backend._client
+        assert client is not None
+        assert client._api_client._http_options.aiohttp_client is session
+
+        aclose_calls = 0
+        close_calls = 0
+        orig_aclose = client.aio.aclose
+        orig_close = client.close
+
+        async def tracked_aclose() -> None:
+            nonlocal aclose_calls
+            aclose_calls += 1
+            await orig_aclose()
+
+        def tracked_close() -> None:
+            nonlocal close_calls
+            close_calls += 1
+            orig_close()
+
+        client.aio.aclose = tracked_aclose  # type: ignore[method-assign]
+        client.close = tracked_close  # type: ignore[method-assign]
+
+        await backend.close()
+        assert aclose_calls == 1
+        assert close_calls == 1
+        assert backend._client is None
+        assert not session.closed
+
+        # Second close is idempotent.
+        await backend.close()
+        assert aclose_calls == 1
+        assert close_calls == 1
