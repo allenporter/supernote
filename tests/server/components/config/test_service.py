@@ -24,6 +24,7 @@ from supernote.server.components.config.service import (
     extract_component_field_specs,
     load_component_config_schema,
 )
+from supernote.server.components.gemini.config import GeminiConfig
 from supernote.server.components.webhooks.config import WebhookConfig
 from supernote.server.components.wiki.config import WikiConfig
 from supernote.server.config import ComponentConfigSource, ServerConfig
@@ -595,10 +596,9 @@ async def test_ai_and_provider_root_yaml_compatibility(
 
     assert resolved["gemini"].enabled is True
     assert resolved["gemini"].source == ComponentConfigSource.YAML
-    assert resolved["gemini"].config["api_key"] == "root-gemini-key"
-    assert (
-        resolved["gemini"].config["providers"]["gemini"]["api_key"] == "root-gemini-key"
-    )
+    gemini_cfg = GeminiConfig.from_dict(resolved["gemini"].config)
+    assert gemini_cfg.api_key == "root-gemini-key"
+    assert gemini_cfg.providers["gemini"].api_key == "root-gemini-key"
 
     assert resolved["openai"].enabled is True
     assert resolved["openai"].source == ComponentConfigSource.YAML
