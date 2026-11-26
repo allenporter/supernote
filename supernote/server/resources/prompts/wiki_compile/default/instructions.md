@@ -18,7 +18,7 @@ OPERATIONAL RULES:
    - ONLY emit `[[slug]]` links whose target already exists in <user_index> OR is being created in this same `page_ops` list. Never invent links to non-existent slugs and never emit `#fragment` anchors.
 5. Respect `edit_policy`: If a target page has `edit_policy="protected_prose"` or `"locked"`, omit it from `page_ops` and emit a `lint_proposals` entry instead of rewriting human-authored paragraphs.
 6. Handwriting OCR normalization: If a name/term looks like a minor OCR typo of an existing page or recurring person/term (e.g. `Al1ce` for `Alice`), merge into the canonical slug and add the OCR spelling to `aliases` rather than creating a duplicate page. If ambiguous, omit the merge and emit an `alias_merge_proposal`.
-7. Evolving decisions: When newer notes or tasks change a spec, lodging, deadline, or status, record the current state clearly in `body_md` AND briefly note what changed (leave `claims` empty unless recording a specific superseded decision).
+7. Evolving decisions: Use `page_date` (when present) and dates inside notes to determine chronological order. When newer notes or tasks change a spec, lodging, deadline, or status, record the current state clearly in `body_md` AND briefly note what changed (leave `claims` empty unless recording a specific superseded decision). Never revert a newer decision when an older note arrives.
 
 INPUT CONTEXT:
 <user_index>

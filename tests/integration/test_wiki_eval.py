@@ -50,9 +50,9 @@ async def test_run_wiki_eval_end_to_end_with_fake_model_and_vault_export(
         export_dir=export_dir,
     )
 
-    # 17 transcribed notebooks in batches of 5 -> 4 batches, plus deterministic `index` page.
+    # 56 transcribed pages in 8-page chronological windows (5 windows/batch) -> 2 batches.
     assert report.metrics.transcribed_notebooks == 17
-    assert report.metrics.batches_run == 4
+    assert report.metrics.batches_run == 2
     assert report.metrics.total_pages == 18
     assert report.metrics.has_index_page is True
     assert report.metrics.pages_by_kind == {"index": 1, "source_digest": 17}
@@ -108,8 +108,9 @@ async def test_run_daily_log_eval_with_fake_model(tmp_path: Path) -> None:
         run_semantic_lint=False,
         export_dir=export_dir,
     )
+    # 17 transcribed pages in 8-page chronological windows (1 window/batch) -> 3 batches.
     assert report.metrics.transcribed_notebooks == len(dataset.notebooks)
-    assert report.metrics.batches_run == len(dataset.notebooks)
+    assert report.metrics.batches_run == 3
     assert report.metrics.has_index_page is True
     assert (export_dir / "report.md").is_file()
 

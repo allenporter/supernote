@@ -656,12 +656,7 @@ class WikiService:
                 )
             await session.commit()
 
-    async def get_status(
-        self,
-        user_id: int,
-        *,
-        in_flight_backfill: tuple[int | None, int] | None = None,
-    ) -> WikiStatusDTO:
+    async def get_status(self, user_id: int) -> WikiStatusDTO:
         """Return inventory counts and durable checkpoint state for a user."""
         async with self._session_manager.session() as session:
             page_count = (
@@ -689,16 +684,10 @@ class WikiService:
                     select(WikiCheckpointDO).where(WikiCheckpointDO.user_id == user_id)
                 )
             ).scalar_one_or_none()
-        cursor = cp.backfill_file_cursor if cp else None
         overview = await self._source_service.get_backfill_overview(
             user_id,
-            before_file_id=cursor,
+            after_page_cursor=cp.backfill_page_cursor if cp else None,
         )
-        remaining_pages = overview.remaining_pages
-        if in_flight_backfill is not None:
-            in_flight_cursor, pages_done = in_flight_backfill
-            if in_flight_cursor == cursor and pages_done > 0:
-                remaining_pages = max(0, remaining_pages - pages_done)
         return WikiStatusDTO(
             page_count=int(page_count),
             open_lint_count=int(open_lint_count),
@@ -710,7 +699,7 @@ class WikiService:
             last_error=cp.last_error if cp else None,
             backfill_remaining_files=overview.remaining_files,
             backfill_total_files=overview.total_files,
-            backfill_remaining_pages=remaining_pages,
+            backfill_remaining_pages=overview.remaining_pages,
             backfill_total_pages=overview.total_pages,
             backfill_untranscribed_files=overview.untranscribed_files,
             backfill_next_files=overview.next_files,

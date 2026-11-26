@@ -667,7 +667,9 @@ async def test_background_backfill_runs_all_notebooks_stops_cleanly_and_resets(
             }
 
     worker = WikiCompilerWorker(
-        config=WikiConfig(enabled=True, auto_compile=False),
+        config=WikiConfig(
+            enabled=True, auto_compile=False, max_source_pages_per_turn=1
+        ),
         session_manager=session_manager,
         wiki_service=wiki_service,
         event_log_service=event_log,
@@ -977,7 +979,7 @@ async def test_run_backfill_chunks_large_notebook_into_sequential_windows(
         event_bus=event_bus,
         text_model=fake_llm,
     )
-    res = await worker.run_backfill(1, max_files=1)
+    res = await worker.run_backfill(1, max_files=3)
     # 10 pages / 4 per turn -> 3 sequential LLM calls; window 2 sees window 1's page.
     assert len(fake_llm.calls) == 3
     assert "projects/solar" not in fake_llm.calls[0]["prompt"]
@@ -1066,14 +1068,13 @@ async def test_run_backfill_stops_cooperatively_between_windows_without_advancin
         text_model=fake_llm,
     )
     res = await worker.run_backfill(
-        1, max_files=1, _final_status="backfilling", _stop_event=stop_event
+        1, max_files=2, _final_status="backfilling", _stop_event=stop_event
     )
-    # Stopped after window 1 (4 pages), did NOT advance cursor past BigDaily.note.
+    # Stopped after window 1 (4 pages), durably advancing page cursor so only 4 pages remain.
     assert len(fake_llm.calls) == 1
     assert res.status == "idle"
     assert res.events_processed == 4
     assert res.remaining_files == 1
     status = await wiki_service.get_status(1)
     assert status.backfill_remaining_files == 1
-    assert status.backfill_remaining_pages == 8
-    assert worker.in_flight_backfill(1) is None
+    assert status.backfill_remaining_pages == 4

@@ -304,12 +304,11 @@ async def test_wiki_http_upstream_compile_errors_return_502(
         assert resp.status == 502
 
 
-async def test_wiki_http_status_subtracts_in_flight_backfill_pages(
+async def test_wiki_http_status_reports_backfill_page_counts(
     client: TestClient,
     wiki_client: WikiClient,
 ) -> None:
     assert client.app is not None
-    compiler = client.app[WIKI_COMPILER_KEY]
     service = client.app[WIKI_SERVICE_KEY]
 
     base_status = await wiki_client.get_status()
@@ -319,30 +318,14 @@ async def test_wiki_http_status_subtracts_in_flight_backfill_pages(
     overview = BackfillOverview(
         remaining_files=2,
         total_files=2,
-        remaining_pages=50,
+        remaining_pages=34,
         total_pages=50,
     )
-    with (
-        patch.object(
-            service._source_service,
-            "get_backfill_overview",
-            return_value=overview,
-        ),
-        patch.object(compiler, "in_flight_backfill", return_value=(None, 16)),
+    with patch.object(
+        service._source_service,
+        "get_backfill_overview",
+        return_value=overview,
     ):
         live = await wiki_client.get_status()
         assert live.backfill_total_pages == 50
         assert live.backfill_remaining_pages == 34
-
-    # Stale in-flight cursor (after DB cursor already advanced) must NOT double-subtract.
-    with (
-        patch.object(
-            service._source_service,
-            "get_backfill_overview",
-            return_value=overview,
-        ),
-        patch.object(compiler, "in_flight_backfill", return_value=(999, 16)),
-    ):
-        stale = await wiki_client.get_status()
-        assert stale.backfill_total_pages == 50
-        assert stale.backfill_remaining_pages == 50
