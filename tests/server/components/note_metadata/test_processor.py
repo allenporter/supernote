@@ -389,64 +389,14 @@ async def test_note_metadata_persists_titles_in_reading_order(
             r.level,
             r.style,
             r.bitmap_md5,
-            r.text_content,
         )
         for r in rows
     ] == [
-        (0, 1, [500, 329, 356, 148], 1, "1000254", HEADING_TITLE_MD5S[0], None),
-        (1, 1, [480, 691, 582, 178], 2, "1157254", HEADING_TITLE_MD5S[1], None),
-        (2, 1, [490, 1016, 284, 125], 3, "1201000", HEADING_TITLE_MD5S[2], None),
-        (3, 1, [508, 1295, 290, 118], 4, "1000000", HEADING_TITLE_MD5S[3], None),
+        (0, 1, [500, 329, 356, 148], 1, "1000254", HEADING_TITLE_MD5S[0]),
+        (1, 1, [480, 691, 582, 178], 2, "1157254", HEADING_TITLE_MD5S[1]),
+        (2, 1, [490, 1016, 284, 125], 3, "1201000", HEADING_TITLE_MD5S[2]),
+        (3, 1, [508, 1295, 290, 118], 4, "1000000", HEADING_TITLE_MD5S[3]),
     ]
-
-
-async def test_note_metadata_title_text_follows_bitmap_md5_across_slots(
-    note_metadata_module: NoteMetadataModule,
-    session_manager: DatabaseSessionManager,
-    blob_storage: BlobStorage,
-) -> None:
-    await _hash_heading_note(note_metadata_module, session_manager, blob_storage, 1061)
-    async with session_manager.session() as session:
-        # "Black" was transcribed while its handwriting sat in slot 3.
-        row_0 = await session.get(NoteTitleDO, (7, 1061, 0))
-        row_3 = await session.get(NoteTitleDO, (7, 1061, 3))
-        assert row_0 is not None and row_3 is not None
-        row_0.bitmap_md5 = HEADING_TITLE_MD5S[3]
-        row_3.bitmap_md5 = HEADING_TITLE_MD5S[0]
-        row_3.text_content = "Black"
-        await session.commit()
-
-    assert await note_metadata_module.run(1061, session_manager, user_id=7) is True
-
-    rows = await _title_rows(session_manager, 1061)
-    assert [(r.title_index, r.text_content) for r in rows] == [
-        (0, "Black"),
-        (1, None),
-        (2, None),
-        (3, None),
-    ]
-
-
-async def test_note_metadata_clears_text_for_redrawn_title(
-    note_metadata_module: NoteMetadataModule,
-    session_manager: DatabaseSessionManager,
-    blob_storage: BlobStorage,
-) -> None:
-    await _hash_heading_note(note_metadata_module, session_manager, blob_storage, 1063)
-    async with session_manager.session() as session:
-        row_1 = await session.get(NoteTitleDO, (7, 1063, 1))
-        assert row_1 is not None
-        row_1.bitmap_md5 = "previous_handwriting_md5"
-        row_1.text_content = "Stale"
-        await session.commit()
-
-    assert await note_metadata_module.run(1063, session_manager, user_id=7) is True
-
-    async with session_manager.session() as session:
-        refreshed = await session.get(NoteTitleDO, (7, 1063, 1))
-        assert refreshed is not None
-        assert refreshed.bitmap_md5 == HEADING_TITLE_MD5S[1]
-        assert refreshed.text_content is None
 
 
 async def test_note_metadata_deletes_stale_title_rows(
@@ -516,7 +466,6 @@ async def test_note_metadata_skips_unchanged_title_rows_on_rehash(
         row_0 = await session.get(NoteTitleDO, (7, 1062, 0))
         assert row_0 is not None
         row_0.update_time = 12345
-        row_0.text_content = "Black"
         await session.commit()
 
     assert await note_metadata_module.run(1062, session_manager, user_id=7) is True
@@ -525,7 +474,6 @@ async def test_note_metadata_skips_unchanged_title_rows_on_rehash(
         refreshed = await session.get(NoteTitleDO, (7, 1062, 0))
         assert refreshed is not None
         assert refreshed.update_time == 12345
-        assert refreshed.text_content == "Black"
 
 
 async def test_note_metadata_supports_sql_json_extract_queries(

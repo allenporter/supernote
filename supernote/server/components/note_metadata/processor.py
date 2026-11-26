@@ -423,11 +423,6 @@ class NoteMetadataModule(ProcessorModule):
                 )
             ).scalars()
         }
-        text_by_md5 = {
-            row.bitmap_md5: row.text_content
-            for row in existing.values()
-            if row.bitmap_md5 and row.text_content is not None
-        }
         previous_md5s = {row.bitmap_md5 for row in existing.values() if row.bitmap_md5}
         current_md5s: set[str] = set()
 
@@ -448,7 +443,6 @@ class NoteMetadataModule(ProcessorModule):
             row.level = title.heading_level
             row.style = title.style
             row.bitmap_md5 = bitmap_md5
-            row.text_content = text_by_md5.get(bitmap_md5) if bitmap_md5 else None
             if bitmap_md5:
                 current_md5s.add(bitmap_md5)
 

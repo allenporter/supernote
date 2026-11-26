@@ -1,8 +1,9 @@
-"""ORM models (`NoteMetadataDO`, `NotePageMetadataDO`, `NoteTitleDO`, `NotePageContentDO`, and `SystemTaskDO`) for the `.note` processing pipeline.
+"""ORM models (`NoteMetadataDO`, `NotePageMetadataDO`, `NoteTitleDO`, `NoteTitleTranscriptDO`, `NotePageContentDO`, and `SystemTaskDO`) for the `.note` processing pipeline.
 
 - `NoteMetadataDO` (`f_note_metadata`) & `NotePageMetadataDO` (`f_note_page_metadata`): Persist structural
-  `.note` header, footer, and per-page metadata parsed during `PageHashingModule`.
-- `NoteTitleDO` (`f_note_title`): Native notebook titles in reading order with transcribed heading text.
+  `.note` header, footer, and per-page metadata parsed during `NoteMetadataModule`.
+- `NoteTitleDO` (`f_note_title`): Native notebook titles in reading order with bounding boxes, visual styles, and `<TITLEBITMAP>` MD5s.
+- `NoteTitleTranscriptDO` (`f_note_title_transcript`): Transcribed heading text keyed by `(user_id, file_id, bitmap_md5)`.
 - `NotePageContentDO` (`f_note_page_content`): Stores per-page layer MD5 hashes (`content_hash`),
   OCR transcripts (`text_content`), and JSON-serialized vector embeddings (`embedding`, `embedding_model`)
   queried by `supernote.server.components.search.service.SearchService`.
@@ -236,9 +237,6 @@ class NoteTitleDO(Base):
     bitmap_md5: Mapped[str | None] = mapped_column(String, nullable=True)
     """MD5 of the raw `<TITLEBITMAP>` bytes, or `None` when the title has no bitmap."""
 
-    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
-    """Transcribed heading text, or `None` until a transcription is available."""
-
     create_time: Mapped[int] = mapped_column(
         BigInteger, default=lambda: int(time.time() * 1000)
     )
@@ -262,6 +260,43 @@ class NoteTitleDO(Base):
         ):
             return None
         return [self.rect_left, self.rect_top, self.rect_width, self.rect_height]
+
+
+class NoteTitleTranscriptDO(Base):
+    """Transcribed text for a notebook title bitmap (`f_note_title_transcript`).
+
+    Keyed by `(user_id, file_id, bitmap_md5)` so transcriptions follow identical
+    handwriting across page reorders and edits without coupling `note_metadata`
+    to OCR.
+    """
+
+    __tablename__ = "f_note_title_transcript"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
+    """Owner user ID."""
+
+    file_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True, nullable=False
+    )
+    """The numeric ID of the source file."""
+
+    bitmap_md5: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+    """MD5 of the raw `<TITLEBITMAP>` bytes."""
+
+    text_content: Mapped[str] = mapped_column(Text, nullable=False)
+    """Transcribed single-line heading text (empty string if illegible/blank)."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp."""
 
 
 class NotePageContentDO(Base):

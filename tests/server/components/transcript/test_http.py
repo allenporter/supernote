@@ -12,7 +12,10 @@ from supernote.client.extended import ExtendedClient
 from supernote.models.user import UserRegisterDTO
 from supernote.server.components.transcript import TRANSCRIPT_SERVICE_KEY
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NoteTitleTranscriptDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.user import UserService
 
@@ -164,3 +167,50 @@ async def test_transcript_route_invalid_dto_and_errors(
         pytest.raises(ApiException),
     ):
         await extended_client.get_transcript(file_id=101)
+
+
+async def test_transcript_route_includes_title_transcripts(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify POST /api/extended/transcript returns title transcripts keyed by bitmapMd5."""
+    async with session_manager.session() as db:
+        note = UserFileDO(
+            user_id=test_user_id,
+            directory_id=0,
+            file_name="Outline.note",
+            storage_key="outline_transcript_key",
+            is_active="Y",
+        )
+        db.add(note)
+        await db.flush()
+        file_id = int(note.id)
+        db.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="P20261126090000aaa",
+                    text_content="Body text",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    bitmap_md5="4f60eac0ba701b4983269a55649430ad",
+                    text_content="Architecture Overview",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    bitmap_md5="b094a9f71c442cf2a0544d737603b0dc",
+                    text_content="",
+                ),
+            ]
+        )
+        await db.commit()
+
+    vo = await extended_client.get_transcript(file_id=file_id)
+    assert vo.success is True
+    assert len(vo.pages) == 1
+    assert vo.titles == {"4f60eac0ba701b4983269a55649430ad": "Architecture Overview"}
