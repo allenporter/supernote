@@ -292,6 +292,7 @@ async def test_search_component_registers_embedding_stage_via_processor_platform
     assert [m.task_type for m in service.task_graph.modules] == [
         TaskType.PAGE_HASHING,
         TaskType.PNG_CONVERSION,
+        TaskType.NOTE_METADATA,
         TaskType.OCR_EXTRACTION,
         TaskType.EMBEDDING_GENERATION,
     ]

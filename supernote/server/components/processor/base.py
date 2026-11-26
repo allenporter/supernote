@@ -5,6 +5,7 @@ processing pipeline orchestrated by `supernote.server.components.processor.servi
 and checkpointed in `supernote.server.db.models.note_processing.SystemTaskDO`:
 
 - `supernote.server.components.processor.page_hashing.PageHashingModule` (`TaskType.PAGE_HASHING`)
+- `supernote.server.components.note_metadata.processor.NoteMetadataModule` (`TaskType.NOTE_METADATA`)
 - `supernote.server.components.conversion.processor.PngConversionModule` (`TaskType.PNG_CONVERSION`)
 - `supernote.server.components.transcript.processor.OcrModule` (`TaskType.OCR_EXTRACTION`)
 - `supernote.server.components.search.processor.EmbeddingModule` (`TaskType.EMBEDDING_GENERATION`)

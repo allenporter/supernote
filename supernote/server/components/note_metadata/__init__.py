@@ -30,7 +30,7 @@ class NoteMetadataComponent:
 
     domain = "note_metadata"
     dependencies: tuple[str, ...] = ("processor",)
-    platforms: tuple[str, ...] = ("http",)
+    platforms: tuple[str, ...] = ("http", "processor")
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `NoteMetadataService` and expose it via `NOTE_METADATA_SERVICE_KEY`."""

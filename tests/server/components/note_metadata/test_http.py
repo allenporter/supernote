@@ -11,7 +11,7 @@ from sqlalchemy import delete
 from yarl import URL
 
 from supernote.client.extended import ExtendedClient
-from supernote.server.components.processor.page_hashing import PageHashingModule
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
@@ -50,8 +50,8 @@ async def _hash_heading_note(
             )
         )
         await session.commit()
-    hashing = PageHashingModule(file_service=client.app[FILE_SERVICE_KEY])
-    assert await hashing.run(file_id, session_manager, user_id=user_id) is True
+    metadata_mod = NoteMetadataModule(file_service=client.app[FILE_SERVICE_KEY])
+    assert await metadata_mod.run(file_id, session_manager, user_id=user_id) is True
     return file_id
 
 

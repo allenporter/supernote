@@ -12,6 +12,7 @@ from sqlalchemy import select
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.components.search import (
     NotebookInfo,
@@ -634,6 +635,7 @@ async def test_hybrid_search_end_to_end_with_synthetic_notebooks_and_noise_floor
     """End-to-end hybrid search ranks hybrid > tag-only > semantic and drops unrelated noise."""
     user_id = 1
     hashing_module = PageHashingModule(file_service=file_service)
+    metadata_module = NoteMetadataModule(file_service=file_service)
     token_model = FakeEmbeddingModel(dimensions=128, blended=True)
     service = SearchService(
         session_manager=session_manager, embedding_model=token_model
@@ -676,6 +678,7 @@ async def test_hybrid_search_end_to_end_with_synthetic_notebooks_and_noise_floor
             )
             await session.commit()
         await hashing_module.process(fid, session_manager)
+        await metadata_module.process(fid, session_manager)
 
     async with session_manager.session() as session:
         for page in processed_nb.pages:

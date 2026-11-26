@@ -20,6 +20,7 @@ from supernote.server.components.conversion.processor import (
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorService,
@@ -328,6 +329,7 @@ async def test_handle_note_deleted_cleanup(
     # Trigger deletion event across registered modules
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
+        metadata=NoteMetadataModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
         ocr=OcrModule(file_service=file_service, ocr_model=None),
         summary=SummaryModule(
@@ -843,6 +845,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
     """Verify recover_missing_tasks enqueues files needing OCR, embedding, or summary backfill."""
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
+        metadata=NoteMetadataModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
         ocr=OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
         embedding=EmbeddingModule(
@@ -888,6 +891,16 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     key="global",
                     status="COMPLETED",
                     data="v3",
+                )
+            )
+            session.add(
+                SystemTaskDO(
+                    user_id=1,
+                    file_id=fid,
+                    task_type="NOTE_METADATA",
+                    key="global",
+                    status="COMPLETED",
+                    data="v1",
                 )
             )
             session.add(
@@ -1259,6 +1272,7 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
     )
     processor.register_modules(
         hashing=PageHashingModule(file_service),
+        metadata=NoteMetadataModule(file_service),
         png=PngConversionModule(file_service),
         ocr=OcrModule(file_service, ocr_model),
         embedding=EmbeddingModule(file_service, embedding_model),
@@ -1443,8 +1457,11 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
     file_service: FileService,
     test_user_id: int,
 ) -> None:
-    """Verify VfsItemPurgedEvent purges note, page, and title metadata via PageHashingModule.cleanup_file."""
-    processor_service.register_modules(hashing=PageHashingModule(file_service))
+    """Verify VfsItemPurgedEvent purges note, page, and title metadata via NoteMetadataModule.cleanup_file."""
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service),
+        metadata=NoteMetadataModule(file_service),
+    )
 
     async with session_manager.session() as session:
         session.add_all(
@@ -2277,6 +2294,7 @@ async def test_standalone_image_pipeline_end_to_end_and_search(
     processor.set_modules(
         [
             PageHashingModule(file_service),
+            NoteMetadataModule(file_service),
             PngConversionModule(file_service),
             OcrModule(file_service, _CapturingOcr()),
             EmbeddingModule(file_service, FakeEmbeddingModel()),
@@ -2296,6 +2314,7 @@ async def test_standalone_image_pipeline_end_to_end_and_search(
     tasks = await processor.list_system_tasks(user_id=test_user_id, file_id=file_id)
     task_types = {t.task_type for t in tasks}
     assert TaskType.PAGE_HASHING.value in task_types
+    assert TaskType.NOTE_METADATA.value not in task_types
     assert TaskType.PNG_CONVERSION.value in task_types
     assert TaskType.OCR_EXTRACTION.value in task_types
     assert TaskType.EMBEDDING_GENERATION.value in task_types
@@ -2404,3 +2423,135 @@ async def test_standalone_image_exclusions_for_mystyle_and_export(
 
     await processor.recover_missing_tasks(user_id=test_user_id)
     assert processor.processing_files == {(test_user_id, shot_id)}
+
+
+async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+) -> None:
+    """Verify recover_missing_tasks backfills missing NOTE_METADATA for .note files but skips images."""
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service=file_service),
+        metadata=NoteMetadataModule(file_service=file_service),
+        png=PngConversionModule(file_service=file_service),
+        ocr=OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
+    )
+
+    async with session_manager.session() as session:
+        # 9201: .note with HASHING/PNG/OCR completed but missing NOTE_METADATA -> backfill.
+        # 9202: standalone image with HASHING/PNG/OCR completed and no NOTE_METADATA -> skip.
+        for fid, fname, pid in [
+            (9201, "existing.note", "p0"),
+            (9202, "sketch.png", "img"),
+        ]:
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=1,
+                    file_name=fname,
+                    storage_key=f"k{fid}",
+                    md5="m",
+                    is_active="Y",
+                )
+            )
+            session.add(
+                NotePageContentDO(
+                    file_id=fid,
+                    page_index=0,
+                    page_id=pid,
+                    content_hash="h",
+                )
+            )
+            session.add_all(
+                [
+                    SystemTaskDO(
+                        user_id=1,
+                        file_id=fid,
+                        task_type="HASHING",
+                        key="global",
+                        status="COMPLETED",
+                        data="v3",
+                    ),
+                    SystemTaskDO(
+                        user_id=1,
+                        file_id=fid,
+                        task_type="PNG_CONVERSION",
+                        key=f"page_{pid}",
+                        status="COMPLETED",
+                        data="v2",
+                    ),
+                    SystemTaskDO(
+                        user_id=1,
+                        file_id=fid,
+                        task_type="OCR_EXTRACTION",
+                        key=f"page_{pid}",
+                        status="COMPLETED",
+                    ),
+                ]
+            )
+        await session.commit()
+
+    await processor_service.recover_missing_tasks(user_id=1)
+    assert processor_service.processing_files == {(1, 9201)}
+
+
+async def test_note_metadata_failure_isolates_ocr_while_allowing_png(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    file_service: FileService,
+) -> None:
+    """When NoteMetadataModule fails, PNG_CONVERSION still runs while OCR_EXTRACTION is skipped."""
+    note_path = (
+        Path(__file__).parents[3]
+        / "testdata"
+        / "nelinory"
+        / "A5X_TestNote_With_Pdf_Template.note"
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "k_meta_fail", note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=9210,
+                user_id=1,
+                file_name=note_path.name,
+                storage_key="k_meta_fail",
+                md5="m",
+                is_active="Y",
+            )
+        )
+        await session.commit()
+
+    class _FailingMetadataModule(NoteMetadataModule):
+        async def process(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            **kwargs: object,
+        ) -> None:
+            raise RuntimeError("simulated metadata failure")
+
+    fake_ocr = FakeOcrModel()
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service=file_service),
+        metadata=_FailingMetadataModule(file_service=file_service),
+        png=PngConversionModule(file_service=file_service),
+        ocr=OcrModule(file_service=file_service, ocr_model=fake_ocr),
+    )
+
+    ok = await processor_service.process_file(9210, user_id=1)
+    assert ok is False
+    assert fake_ocr.calls == []
+
+    tasks = await processor_service.list_system_tasks(user_id=1, file_id=9210)
+    statuses_by_type: dict[str, set[str]] = {}
+    for task in tasks:
+        statuses_by_type.setdefault(task.task_type, set()).add(task.status)
+
+    assert statuses_by_type[TaskType.PAGE_HASHING.value] == {"COMPLETED"}
+    assert statuses_by_type[TaskType.NOTE_METADATA.value] == {"FAILED"}
+    assert statuses_by_type[TaskType.PNG_CONVERSION.value] == {"COMPLETED"}
+    assert TaskType.OCR_EXTRACTION.value not in statuses_by_type

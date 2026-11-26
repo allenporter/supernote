@@ -4,14 +4,12 @@
 computes an MD5 digest per page (`PAGEID`), and reconciles
 `supernote.server.db.models.note_processing.NotePageContentDO` rows. When a page is
 added, modified, moved, or deleted, downstream per-page task checkpoints (`SystemTaskDO`)
-and the file-level `SUMMARY_GENERATION` checkpoint are selectively invalidated so
-unchanged pages are never re-rendered or re-transcribed.
+and file-level post-processing checkpoints are selectively invalidated so unchanged pages
+are never re-rendered or re-transcribed.
 See `supernote.guides.note_processing_design`.
 """
 
 import asyncio
-import hashlib
-import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -22,15 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from supernote.models.base import TaskType
-from supernote.notebook import Notebook, Page, Title, load, parse_metadata
-from supernote.notebook.parser import load_title_bitmaps
+from supernote.notebook import parse_metadata
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
-    NoteMetadataDO,
     NotePageContentDO,
-    NotePageMetadataDO,
-    NoteTitleDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -39,12 +33,7 @@ from supernote.server.metrics import record_note_page_diff
 from supernote.server.services.file import FileService
 from supernote.server.utils.hashing import get_md5_hash
 from supernote.server.utils.image import STANDALONE_IMAGE_PAGE_ID, is_image_filename
-from supernote.server.utils.paths import (
-    get_page_png_path,
-    get_title_png_path,
-    get_title_png_prefix,
-    is_valid_page_id,
-)
+from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 
 from .base import ProcessorModule, TaskScope
 
@@ -67,47 +56,12 @@ class _PageDiffCounts:
     deleted_page_texts: tuple[tuple[str, str], ...] = ()
 
 
-def _serialize_page_annotations(page_obj: Page) -> tuple[str, str, str]:
-    """Serialize footer-anchored keywords, titles, and links for a page."""
-    keywords_json = json.dumps(
-        [kw.metadata.to_wire_dict() for kw in page_obj.keywords],
-        ensure_ascii=False,
-    )
-    titles_json = json.dumps(
-        [t.metadata.to_wire_dict() for t in page_obj.titles],
-        ensure_ascii=False,
-    )
-    links_json = json.dumps(
-        [lk.metadata.to_wire_dict() for lk in page_obj.links],
-        ensure_ascii=False,
-    )
-    return keywords_json, titles_json, links_json
-
-
-def _title_reading_order(title: Title) -> tuple[int, int, int]:
-    """Sort key placing titles by page, then top-to-bottom, then left-to-right."""
-    rect = title.metadata.rect
-    if rect is None:
-        return (title.page_number, 0, 0)
-    return (title.page_number, rect.top, rect.left)
-
-
-def _load_incremental_notebook(
-    path: str,
-    cached_ink: dict[str, bool],
-) -> tuple[Notebook, list[tuple[str, str]], list[bool]]:
-    """Parse `.note` metadata once and call `load(stream, ..., page_number=i)` only for uncached page hashes."""
+def _extract_page_identities(path: str) -> list[tuple[str, str]]:
+    """Parse `.note` metadata once and return `(page_id, content_hash)` per page."""
     page_identities: list[tuple[str, str]] = []
-    page_has_ink: list[bool] = []
-
     with open(path, "rb") as stream:
         metadata = parse_metadata(stream, policy="loose")
-        notebook = Notebook(metadata)
-        # Title bitmaps are a few KB each; hashing them lets transcribed title
-        # text be matched to its handwriting across passes (see `_sync_titles`).
-        load_title_bitmaps(stream, notebook.titles)
-
-        for i, page_info in enumerate(metadata.pages):
+        for page_info in metadata.pages:
             raw_pid = page_info.page_id
             page_id = (
                 raw_pid
@@ -116,28 +70,17 @@ def _load_incremental_notebook(
             )
             content_hash = get_md5_hash(str(page_info.to_wire_dict()))
             page_identities.append((page_id, content_hash))
-
-            if content_hash in cached_ink:
-                page_has_ink.append(cached_ink[content_hash])
-            else:
-                loaded_nb = load(
-                    stream, metadata=metadata, policy="loose", page_number=i
-                )
-                page_has_ink.append(loaded_nb.page(i).has_ink)
-
-    return notebook, page_identities, page_has_ink
+    return page_identities
 
 
 class PageHashingModule(ProcessorModule):
-    """Global pre-processor that extracts `.note` metadata and reconciles page hashes.
+    """Global pre-processor that extracts page identities and reconciles page hashes.
 
     Responsibilities:
-    - Parses `.note` metadata via `parse_metadata()` and calls
-      `load(stream, metadata=metadata, page_number=i)` only for pages whose
-      `content_hash` is not already cached.
-    - Persists `NoteMetadataDO` and changed `NotePageMetadataDO` rows (`0..total_pages - 1`).
+    - Parses `.note` metadata via `parse_metadata()` without loading bitmaps.
     - Reconciles `NotePageContentDO` rows by `<PAGEID>` and invalidates downstream
       `SystemTaskDO` checkpoints for modified or deleted pages.
+    - Publishes `NotePagesDeltaEvent` when pages are added, modified, moved, or deleted.
     """
 
     def __init__(self, file_service: FileService) -> None:
@@ -161,13 +104,7 @@ class PageHashingModule(ProcessorModule):
 
     @property
     def version(self) -> str:
-        """Module schema version recorded in `SystemTaskDO.data`.
-
-        Bumping it causes `ProcessorService.recover_missing_tasks()` to re-run
-        `PageHashingModule` on previously hashed `.note` files so newly persisted
-        tables are backfilled automatically (`v2`: `f_note_metadata` and
-        `f_note_page_metadata`; `v3`: `f_note_title`).
-        """
+        """Module schema version recorded in `SystemTaskDO.data`."""
         return "v3"
 
     async def run_if_needed(
@@ -197,32 +134,6 @@ class PageHashingModule(ProcessorModule):
             return False
         return True
 
-    async def cleanup_file(
-        self,
-        file_id: int,
-        user_id: int,
-        session_manager: DatabaseSessionManager,
-    ) -> None:
-        """Delete persisted notebook and page metadata rows for a deleted note."""
-        async with session_manager.session() as session:
-            await session.execute(
-                delete(NoteMetadataDO).where(NoteMetadataDO.file_id == file_id)
-            )
-            await session.execute(
-                delete(NotePageMetadataDO).where(NotePageMetadataDO.file_id == file_id)
-            )
-            await session.execute(
-                delete(NoteTitleDO).where(
-                    NoteTitleDO.user_id == user_id, NoteTitleDO.file_id == file_id
-                )
-            )
-            await session.commit()
-        blob_storage = self.file_service.blob_storage
-        for key in await blob_storage.list_blobs(
-            CACHE_BUCKET, get_title_png_prefix(file_id)
-        ):
-            await self._delete_cache_blob(key)
-
     async def _delete_cache_blob(self, key: str) -> None:
         try:
             await self.file_service.blob_storage.delete(CACHE_BUCKET, key)
@@ -237,7 +148,7 @@ class PageHashingModule(ProcessorModule):
         page_id: str | None = None,
         **kwargs: object,
     ) -> None:
-        """Parse `.note` metadata, scan uncached page ink, and reconcile DB checkpoints."""
+        """Parse `.note` page identities and reconcile `NotePageContentDO` checkpoints."""
         logger.info(f"Starting PageHashingModule for file_id={file_id}")
 
         async with session_manager.session() as session:
@@ -278,21 +189,6 @@ class PageHashingModule(ProcessorModule):
                 )
                 return
 
-            cached_rows = (
-                await session.execute(
-                    select(
-                        NotePageMetadataDO.content_hash,
-                        NotePageMetadataDO.has_ink,
-                    ).where(
-                        NotePageMetadataDO.user_id == user_id,
-                        NotePageMetadataDO.file_id == file_id,
-                    )
-                )
-            ).all()
-            cached_ink = {
-                row.content_hash: row.has_ink for row in cached_rows if row.content_hash
-            }
-
         abs_path = self.file_service.blob_storage.get_blob_path(
             USER_DATA_BUCKET, storage_key
         )
@@ -301,23 +197,12 @@ class PageHashingModule(ProcessorModule):
             raise FileNotFoundError(f"File {abs_path} does not exist on disk")
 
         loop = asyncio.get_running_loop()
-        notebook, page_identities, page_has_ink = await loop.run_in_executor(
+        page_identities = await loop.run_in_executor(
             None,
-            partial(_load_incremental_notebook, str(abs_path), cached_ink),
+            partial(_extract_page_identities, str(abs_path)),
         )
 
         async with session_manager.session() as session:
-            legacy_diff = await self._sync_note_and_page_metadata(
-                session,
-                user_id=user_id,
-                file_id=file_id,
-                notebook=notebook,
-                page_identities=page_identities,
-                page_has_ink=page_has_ink,
-            )
-            await self._sync_titles(
-                session, user_id=user_id, file_id=file_id, notebook=notebook
-            )
             content_diff = await self._sync_page_content_hashes(
                 session,
                 user_id=user_id,
@@ -327,11 +212,11 @@ class PageHashingModule(ProcessorModule):
             await session.commit()
 
         record_note_page_diff(
-            added=legacy_diff.added + content_diff.added,
-            modified=legacy_diff.modified + content_diff.modified,
-            moved=legacy_diff.moved + content_diff.moved,
-            unchanged=legacy_diff.unchanged + content_diff.unchanged,
-            deleted=legacy_diff.deleted + content_diff.deleted,
+            added=content_diff.added,
+            modified=content_diff.modified,
+            moved=content_diff.moved,
+            unchanged=content_diff.unchanged,
+            deleted=content_diff.deleted,
         )
 
         if self.file_service.event_bus and (
@@ -353,191 +238,6 @@ class PageHashingModule(ProcessorModule):
                     deleted_page_texts=dict(content_diff.deleted_page_texts),
                 )
             )
-
-    async def _sync_note_and_page_metadata(
-        self,
-        session: AsyncSession,
-        *,
-        user_id: int,
-        file_id: int,
-        notebook: Notebook,
-        page_identities: Sequence[tuple[str, str]],
-        page_has_ink: Sequence[bool],
-    ) -> _PageDiffCounts:
-        """Synchronize notebook-level and per-page metadata rows with the parsed `.note` file.
-
-        `NoteMetadataDO` is upserted once per file with container fields and lossless
-        header/footer wire JSON. `NotePageMetadataDO` is reconciled by 0-based `page_index`
-        (rather than `page_id`, unlike `NotePageContentDO`) so every page—including legacy
-        notes lacking `<PAGEID>`—has an ordered row, unchanged pages avoid redundant SQL
-        `UPDATE`s, and trailing rows left over when a notebook shrinks are deleted.
-        """
-        metadata = notebook.metadata
-        legacy_added = 0
-        legacy_modified = 0
-        legacy_unchanged = 0
-        legacy_deleted = 0
-
-        # Upsert notebook-level container fields and raw header/footer wire dicts.
-        meta_do = await session.get(NoteMetadataDO, (user_id, file_id))
-        if meta_do is None:
-            meta_do = NoteMetadataDO(user_id=user_id, file_id=file_id)
-            session.add(meta_do)
-
-        meta_do.native_file_id = notebook.file_id
-        meta_do.file_type = notebook.type
-        meta_do.signature = notebook.signature
-        meta_do.total_pages = notebook.total_pages
-        meta_do.header_json = json.dumps(
-            metadata.header.to_wire_dict(), ensure_ascii=False
-        )
-        meta_do.footer_json = json.dumps(
-            metadata.footer.to_wire_dict(), ensure_ascii=False
-        )
-
-        # Index existing page metadata by 0-based slot; popping each current index
-        # leaves any truncated tail pages (>= total_pages) behind for deletion.
-        existing_page_meta_res = await session.execute(
-            select(NotePageMetadataDO).where(
-                NotePageMetadataDO.user_id == user_id,
-                NotePageMetadataDO.file_id == file_id,
-            )
-        )
-        existing_page_meta = {
-            pm.page_index: pm for pm in existing_page_meta_res.scalars().all()
-        }
-
-        for i, (page_id, content_hash) in enumerate(page_identities):
-            pm = existing_page_meta.pop(i, None)
-            if not page_id:
-                if pm is None:
-                    legacy_added += 1
-                elif pm.content_hash != content_hash:
-                    legacy_modified += 1
-                else:
-                    legacy_unchanged += 1
-
-            page_obj = notebook.pages[i]
-            keywords_json, titles_json, links_json = _serialize_page_annotations(
-                page_obj
-            )
-            # Keywords, titles, and links live in the notebook footer rather than the
-            # page's own metadata block, so check both content_hash and serialized
-            # annotations before skipping to avoid mutating clean ORM rows (and bumping update_time).
-            if (
-                pm is not None
-                and pm.page_id == page_id
-                and pm.content_hash == content_hash
-                and pm.keywords_json == keywords_json
-                and pm.titles_json == titles_json
-                and pm.links_json == links_json
-            ):
-                continue
-
-            if pm is None:
-                pm = NotePageMetadataDO(
-                    user_id=user_id,
-                    file_id=file_id,
-                    page_index=i,
-                )
-                session.add(pm)
-
-            # `notebook` was constructed from metadata without loading bitmaps, so combine
-            # the cached/scanned `page_has_ink[i]` flag with metadata-level drawable flags.
-            has_ink = page_has_ink[i]
-            pm.page_id = page_id
-            pm.content_hash = content_hash
-            pm.page_style = page_obj.style
-            pm.has_ink = has_ink
-            pm.has_drawables = (
-                has_ink or page_obj.has_textbox or page_obj.has_vector_graph
-            )
-            pm.page_json = json.dumps(
-                page_obj.metadata.to_wire_dict(), ensure_ascii=False
-            )
-            pm.keywords_json = keywords_json
-            pm.titles_json = titles_json
-            pm.links_json = links_json
-
-        for stale_pm in existing_page_meta.values():
-            if not stale_pm.page_id:
-                legacy_deleted += 1
-            await session.delete(stale_pm)
-
-        return _PageDiffCounts(
-            added=legacy_added,
-            modified=legacy_modified,
-            unchanged=legacy_unchanged,
-            deleted=legacy_deleted,
-        )
-
-    async def _sync_titles(
-        self,
-        session: AsyncSession,
-        *,
-        user_id: int,
-        file_id: int,
-        notebook: Notebook,
-    ) -> None:
-        """Reconcile `NoteTitleDO` rows with the notebook's titles in reading order.
-
-        Rows are updated in place by `title_index` so unchanged titles emit no SQL
-        `UPDATE`. `text_content` is matched by `bitmap_md5` rather than position,
-        so transcriptions follow their handwriting when titles shift between slots.
-        """
-        existing = {
-            row.title_index: row
-            for row in (
-                await session.execute(
-                    select(NoteTitleDO)
-                    .where(
-                        NoteTitleDO.user_id == user_id,
-                        NoteTitleDO.file_id == file_id,
-                    )
-                    .order_by(NoteTitleDO.title_index)
-                )
-            ).scalars()
-        }
-        # Built before any row is mutated; with duplicate digests (copy-pasted
-        # titles) the highest `title_index` wins deterministically.
-        text_by_md5 = {
-            row.bitmap_md5: row.text_content
-            for row in existing.values()
-            if row.bitmap_md5 and row.text_content is not None
-        }
-        previous_md5s = {row.bitmap_md5 for row in existing.values() if row.bitmap_md5}
-        current_md5s: set[str] = set()
-
-        for idx, title in enumerate(sorted(notebook.titles, key=_title_reading_order)):
-            row = existing.pop(idx, None)
-            if row is None:
-                row = NoteTitleDO(user_id=user_id, file_id=file_id, title_index=idx)
-                session.add(row)
-            rect = title.metadata.rect
-            bitmap_md5 = (
-                hashlib.md5(title.content).hexdigest() if title.content else None
-            )
-            row.page_index = title.page_number
-            row.rect_left = rect.left if rect else None
-            row.rect_top = rect.top if rect else None
-            row.rect_width = rect.width if rect else None
-            row.rect_height = rect.height if rect else None
-            row.level = title.heading_level
-            row.style = title.style
-            row.bitmap_md5 = bitmap_md5
-            row.text_content = text_by_md5.get(bitmap_md5) if bitmap_md5 else None
-            if bitmap_md5:
-                current_md5s.add(bitmap_md5)
-
-        for stale in existing.values():
-            await session.delete(stale)
-
-        # Title crops are cached by bitmap MD5; drop crops for handwriting that
-        # no longer appears in the note (redrawn or deleted titles). Deleting
-        # before the caller commits is safe: a rollback keeps the rows and the
-        # crop is simply re-rendered on its next request.
-        for stale_md5 in previous_md5s - current_md5s:
-            await self._delete_cache_blob(get_title_png_path(file_id, stale_md5))
 
     async def _sync_page_content_hashes(
         self,
@@ -599,10 +299,6 @@ class PageHashingModule(ProcessorModule):
                     modified += 1
                     modified_pages.append(page_id)
 
-                    # SystemTaskDO rows act as completion checkpoints; deleting
-                    # the page's task rows causes downstream page modules (PNG,
-                    # OCR, Embedding) to see no COMPLETED record in run_if_needed()
-                    # and re-process this page.
                     page_task_key = f"page_{page_id}"
                     await session.execute(
                         delete(SystemTaskDO)
@@ -657,10 +353,6 @@ class PageHashingModule(ProcessorModule):
                 )
 
         if any_page_changed:
-            # Delete COMPLETED global post-processing checkpoints so file-level
-            # modules re-run during the global post-processing stage (and during
-            # missing-task recovery if interrupted) without PageHashingModule
-            # knowing which downstream modules exist.
             await session.execute(
                 delete(SystemTaskDO)
                 .where(SystemTaskDO.user_id == user_id)

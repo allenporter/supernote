@@ -90,6 +90,7 @@ class TaskType(str, BaseEnum):
         return obj
 
     PAGE_HASHING = ("HASHING", "hashing")
+    NOTE_METADATA = ("NOTE_METADATA", "metadata")
     PNG_CONVERSION = ("PNG_CONVERSION", "png")
     OCR_EXTRACTION = ("OCR_EXTRACTION", "ocr")
     EMBEDDING_GENERATION = ("EMBEDDING_GENERATION", "embedding")
