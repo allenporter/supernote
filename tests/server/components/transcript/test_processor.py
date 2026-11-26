@@ -1,4 +1,6 @@
+import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -19,6 +21,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
     NotePageMetadataDO,
+    NoteTitleDO,
     NoteTitleTranscriptDO,
     SystemTaskDO,
 )
@@ -806,7 +809,9 @@ async def test_ocr_module_transcribes_title_crops_skips_cached_and_prunes_stale(
         is False
     )
 
-    # Simulate deleting one title transcript (e.g. a newly added title on an already-OCR'd page).
+    # Simulate deleting one title transcript AND evicting the cached page PNG:
+    # title-only backfill should skip full-page OCR and succeed without the page PNG.
+    await blob_storage.delete(CACHE_BUCKET, get_page_png_path(file_id, page_1_id))
     async with session_manager.session() as session:
         row = await session.get(
             NoteTitleTranscriptDO,
@@ -829,8 +834,138 @@ async def test_ocr_module_transcribes_title_crops_skips_cached_and_prunes_stale(
         )
         is True
     )
-    # Only 1 page call + 1 missing title crop call (3 cached titles were skipped).
-    assert len(model.calls) == 2
+    # Only 1 missing title crop call — 0 full-page OCR calls, 3 cached titles skipped.
+    assert len(model.calls) == 1
+    assert "Notebook Heading Transcription Instruction" in model.calls[0][1]
+
+
+async def test_ocr_module_concurrent_duplicate_title_md5_and_unrenderable_crop(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Concurrent pages sharing a title bitmap_md5 upsert cleanly, and unrenderable crops settle to empty string."""
+    user_id = 43
+    file_id = 2051
+    shared_md5 = "1" * 32
+    corrupt_md5 = "2" * 32
+
+    await blob_storage.put(
+        CACHE_BUCKET, f"{file_id}/titles/{shared_md5}.png", b"\x89PNG\r\n\x1a\n"
+    )
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="dup_titles_key",
+                file_name="Dup.note",
+                directory_id=0,
+                is_active="Y",
+            )
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    text_content="Already OCRd",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    content_hash="h1",
+                    text_content="Already OCRd",
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    bitmap_md5=shared_md5,
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=1,
+                    page_index=1,
+                    bitmap_md5=shared_md5,
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=2,
+                    page_index=1,
+                    bitmap_md5=corrupt_md5,
+                ),
+                SystemTaskDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    task_type=TaskType.OCR_EXTRACTION,
+                    key="page_p0",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    task_type=TaskType.OCR_EXTRACTION,
+                    key="page_p1",
+                    status="COMPLETED",
+                ),
+            ]
+        )
+        await session.commit()
+
+    note_metadata_service = NoteMetadataService(
+        session_manager=session_manager, blob_storage=blob_storage
+    )
+
+    async def _fake_get_title_png_key(
+        *, user_id: int, file_id: int, bitmap_md5: str
+    ) -> str | None:
+        if bitmap_md5 == shared_md5:
+            return f"{file_id}/titles/{shared_md5}.png"
+        return None
+
+    ocr = OcrModule(
+        file_service=file_service,
+        ocr_model=FakeOcrModel(),
+        note_metadata_service=note_metadata_service,
+    )
+    with patch.object(
+        note_metadata_service,
+        "get_title_png_key",
+        new=AsyncMock(side_effect=_fake_get_title_png_key),
+    ):
+        r0, r1 = await asyncio.gather(
+            ocr.run(
+                file_id, session_manager, page_index=0, page_id="p0", user_id=user_id
+            ),
+            ocr.run(
+                file_id, session_manager, page_index=1, page_id="p1", user_id=user_id
+            ),
+        )
+    assert r0 is True and r1 is True
+
+    async with session_manager.session() as session:
+        shared_row = await session.get(
+            NoteTitleTranscriptDO, (user_id, file_id, shared_md5)
+        )
+        corrupt_row = await session.get(
+            NoteTitleTranscriptDO, (user_id, file_id, corrupt_md5)
+        )
+    assert shared_row is not None and shared_row.text_content.startswith("Transcribed")
+    assert corrupt_row is not None and corrupt_row.text_content == ""
+    # Corrupt title recorded as "" so run_if_needed settles instead of looping.
+    assert (
+        await ocr.run_if_needed(
+            file_id, session_manager, page_index=1, page_id="p1", user_id=user_id
+        )
+        is False
+    )
 
 
 async def test_ocr_module_cleanup_file_deletes_title_transcripts_for_owner_only(

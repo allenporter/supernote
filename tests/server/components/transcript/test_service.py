@@ -7,6 +7,7 @@ from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
+    NoteTitleDO,
     NoteTitleTranscriptDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -80,6 +81,20 @@ async def test_get_title_transcripts_scoped_to_active_owner_and_omits_empty(
         inactive_id = int(inactive_file.id)
         session.add_all(
             [
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=active_id,
+                    title_index=0,
+                    page_index=0,
+                    bitmap_md5="md5_a",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=active_id,
+                    title_index=1,
+                    page_index=0,
+                    bitmap_md5="md5_blank",
+                ),
                 NoteTitleTranscriptDO(
                     user_id=test_user_id,
                     file_id=active_id,
@@ -93,10 +108,23 @@ async def test_get_title_transcripts_scoped_to_active_owner_and_omits_empty(
                     text_content="",
                 ),
                 NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=active_id,
+                    bitmap_md5="md5_stale_unreferenced",
+                    text_content="Stale Heading",
+                ),
+                NoteTitleTranscriptDO(
                     user_id=test_user_id + 1,
                     file_id=active_id,
                     bitmap_md5="md5_other_user",
                     text_content="Private Heading",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=inactive_id,
+                    title_index=0,
+                    page_index=0,
+                    bitmap_md5="md5_deleted",
                 ),
                 NoteTitleTranscriptDO(
                     user_id=test_user_id,

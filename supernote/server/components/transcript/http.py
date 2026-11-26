@@ -58,7 +58,10 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
             file_id=req_dto.file_id,
         )
 
-        if not page_transcripts and not title_transcripts:
+        has_page_range = (
+            req_dto.start_index is not None or req_dto.end_index is not None
+        )
+        if not page_transcripts and (has_page_range or not title_transcripts):
             return web.json_response(
                 {"error": f"No transcript found for notebook {req_dto.file_id}"},
                 status=404,

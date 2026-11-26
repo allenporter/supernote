@@ -14,6 +14,7 @@ from supernote.server.components.transcript import TRANSCRIPT_SERVICE_KEY
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
+    NoteTitleDO,
     NoteTitleTranscriptDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -194,6 +195,20 @@ async def test_transcript_route_includes_title_transcripts(
                     page_id="P20261126090000aaa",
                     text_content="Body text",
                 ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    bitmap_md5="4f60eac0ba701b4983269a55649430ad",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=1,
+                    page_index=0,
+                    bitmap_md5="b094a9f71c442cf2a0544d737603b0dc",
+                ),
                 NoteTitleTranscriptDO(
                     user_id=test_user_id,
                     file_id=file_id,
@@ -214,3 +229,9 @@ async def test_transcript_route_includes_title_transcripts(
     assert vo.success is True
     assert len(vo.pages) == 1
     assert vo.titles == {"4f60eac0ba701b4983269a55649430ad": "Architecture Overview"}
+
+    # Page range with no matching pages still returns 404 even when notebook has titles.
+    with pytest.raises(NotFoundException):
+        await extended_client.get_transcript(
+            file_id=file_id, start_index=5, end_index=6
+        )

@@ -1322,3 +1322,39 @@ def test_add_user_id_to_system_task_migration(
     }
     assert uq_cols_down == {("file_id", "task_type", "key")}
     engine.dispose()
+
+
+def test_note_title_transcript_migration_upgrade_and_downgrade(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration d0e1f2a3b4c5 creates f_note_title_transcript and drops/restores f_note_title.text_content."""
+    db_path = tmp_path / "title_transcript_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "c9d0e1f2a3b4")
+    engine = create_engine(url)
+    reflected_before = MetaData()
+    reflected_before.reflect(bind=engine)
+    assert "f_note_title_transcript" not in reflected_before.tables
+    assert "text_content" in reflected_before.tables["f_note_title"].c
+
+    command.upgrade(alembic_config, "d0e1f2a3b4c5")
+    reflected_up = MetaData()
+    reflected_up.reflect(bind=engine)
+    assert "text_content" not in reflected_up.tables["f_note_title"].c
+    tbl = reflected_up.tables["f_note_title_transcript"]
+    assert {c.name for c in tbl.primary_key.columns} == {
+        "user_id",
+        "file_id",
+        "bitmap_md5",
+    }
+    assert any(idx.name == "ix_f_note_title_transcript_file_id" for idx in tbl.indexes)
+
+    command.downgrade(alembic_config, "c9d0e1f2a3b4")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_note_title_transcript" not in reflected_down.tables
+    assert "text_content" in reflected_down.tables["f_note_title"].c
+    engine.dispose()

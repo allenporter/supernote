@@ -26,6 +26,7 @@ from sqlalchemy.exc import OperationalError
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
+    NoteTitleDO,
     NoteTitleTranscriptDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -221,13 +222,25 @@ class TranscriptService:
                         select(
                             NoteTitleTranscriptDO.bitmap_md5,
                             NoteTitleTranscriptDO.text_content,
-                        ).where(
+                        )
+                        .join(
+                            NoteTitleDO,
+                            (NoteTitleDO.user_id == NoteTitleTranscriptDO.user_id)
+                            & (NoteTitleDO.file_id == NoteTitleTranscriptDO.file_id)
+                            & (
+                                NoteTitleDO.bitmap_md5
+                                == NoteTitleTranscriptDO.bitmap_md5
+                            ),
+                        )
+                        .where(
                             NoteTitleTranscriptDO.user_id == user_id,
                             NoteTitleTranscriptDO.file_id == file_id,
                         )
                     )
                 ).all()
             except OperationalError as err:
+                # Preserve read compatibility with unmigrated legacy databases
+                # opened before `d0e1f2a3b4c5` (see legacy DB integration tests).
                 if "no such table" in str(err).lower():
                     return {}
                 raise

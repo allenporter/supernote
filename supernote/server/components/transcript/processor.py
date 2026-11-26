@@ -1,15 +1,17 @@
-"""Stage 3 of the `.note` processing pipeline: vision-model OCR extraction (`TaskType.OCR_EXTRACTION`).
+"""OCR transcription stage (`TaskType.OCR_EXTRACTION`) for `.note` pages and title crops.
 
-`OcrModule` loads the cached page PNG from `CACHE_BUCKET`, formats a notebook-aware
-transcription prompt via `supernote.server.ai.prompts.format_ocr_prompt` (routing custom
-prompts through `supernote.server.utils.prompt_loader.PROMPT_LOADER`), and invokes
-`supernote.server.ai.models.ocr.OcrModel.extract_text`. The resulting Markdown transcript
-is saved to `NotePageContentDO.text_content`. See `supernote.guides.mcp`.
+`OcrModule` loads cached page PNGs from `CACHE_BUCKET`, formats a notebook-aware
+transcription prompt via `supernote.server.ai.prompts.format_ocr_prompt`, and saves
+the Markdown transcript to `NotePageContentDO.text_content`. For pages with native
+Supernote headings (`NoteTitleDO`), it also transcribes uncached `<TITLEBITMAP>` crops
+into `NoteTitleTranscriptDO` keyed by `(user_id, file_id, bitmap_md5)` using
+`format_title_ocr_prompt`. See `supernote.guides.mcp`.
 """
 
 import logging
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.base import TaskType
@@ -231,11 +233,26 @@ class OcrModule(ProcessorModule):
                 return
 
             user_id = file_do.user_id
+            file_name = file_do.file_name
             saved_page_index = int(content.page_index)
-            page_meta = await _get_verified_page_metadata(
-                session, user_id, file_id, page_id, content.content_hash
+            if (
+                content.text_content is not None
+                and self.note_metadata_service is not None
+                and await _has_untranscribed_titles(
+                    session, user_id, file_id, saved_page_index
+                )
+            ):
+                title_only = True
+            else:
+                title_only = False
+            page_meta = (
+                None
+                if title_only
+                else await _get_verified_page_metadata(
+                    session, user_id, file_id, page_id, content.content_hash
+                )
             )
-            if page_meta is not None and not page_meta.has_drawables:
+            if not title_only and page_meta is not None and not page_meta.has_drawables:
                 previous_text = (
                     content.text_content
                     if content.text_content is not None
@@ -264,20 +281,34 @@ class OcrModule(ProcessorModule):
                 )
                 return
 
-            page_metadata = PageMetadata(
-                file_name=file_do.file_name,
-                page_index=page_index if page_index is not None else saved_page_index,
-                page_id=page_id,
-                notebook_create_time=file_do.create_time,
+            if not title_only:
+                page_metadata = PageMetadata(
+                    file_name=file_name,
+                    page_index=page_index
+                    if page_index is not None
+                    else saved_page_index,
+                    page_id=page_id,
+                    notebook_create_time=file_do.create_time,
+                )
+                if page_meta is not None:
+                    page_metadata.page_style = page_meta.page_style
+                    page_metadata.keywords = page_meta.keyword_texts
+                prompt = (
+                    format_image_ocr_prompt(page_metadata)
+                    if is_image_filename(file_name)
+                    else format_ocr_prompt(page_metadata)
+                )
+
+        if title_only:
+            await self._transcribe_page_titles(
+                session_manager,
+                user_id=user_id,
+                file_id=file_id,
+                page_index=saved_page_index,
+                file_name=file_name,
             )
-            if page_meta is not None:
-                page_metadata.page_style = page_meta.page_style
-                page_metadata.keywords = page_meta.keyword_texts
-            prompt = (
-                format_image_ocr_prompt(page_metadata)
-                if is_image_filename(file_do.file_name)
-                else format_ocr_prompt(page_metadata)
-            )
+            logger.info(f"Completed title-only OCR for file {file_id} page {page_id}")
+            return
 
         png_path = get_page_png_path(file_id, page_id)
         png_data = await self.file_service.blob_storage.get_bytes(
@@ -385,30 +416,59 @@ class OcrModule(ProcessorModule):
             )
             if png_key is None:
                 logger.warning(
-                    f"Skipping title OCR for file {file_id} bitmap {bitmap_md5}: crop unavailable"
+                    f"Title crop unavailable for file {file_id} bitmap {bitmap_md5}; recording empty transcript"
                 )
-                continue
-            png_bytes = await self.file_service.blob_storage.get_bytes(
-                CACHE_BUCKET, png_key
+                normalized_text = ""
+            else:
+                png_bytes = await self.file_service.blob_storage.get_bytes(
+                    CACHE_BUCKET, png_key
+                )
+                raw_text = await self.ocr_model.extract_text(png_bytes, title_prompt)
+                normalized_text = " ".join(raw_text.split())
+            await self._upsert_title_transcript(
+                session_manager,
+                user_id=user_id,
+                file_id=file_id,
+                bitmap_md5=bitmap_md5,
+                text_content=normalized_text,
             )
-            raw_text = await self.ocr_model.extract_text(png_bytes, title_prompt)
-            normalized_text = " ".join(raw_text.split())
-            async with session_manager.session() as session:
+
+    async def _upsert_title_transcript(
+        self,
+        session_manager: DatabaseSessionManager,
+        *,
+        user_id: int,
+        file_id: int,
+        bitmap_md5: str,
+        text_content: str,
+    ) -> None:
+        """Persist a title transcript safely even if two pages race on the same `bitmap_md5`."""
+        async with session_manager.session() as session:
+            existing_row = await session.get(
+                NoteTitleTranscriptDO, (user_id, file_id, bitmap_md5)
+            )
+            if existing_row is not None:
+                existing_row.text_content = text_content
+                await session.commit()
+                return
+            session.add(
+                NoteTitleTranscriptDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    bitmap_md5=bitmap_md5,
+                    text_content=text_content,
+                )
+            )
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
                 existing_row = await session.get(
                     NoteTitleTranscriptDO, (user_id, file_id, bitmap_md5)
                 )
-                if existing_row is None:
-                    session.add(
-                        NoteTitleTranscriptDO(
-                            user_id=user_id,
-                            file_id=file_id,
-                            bitmap_md5=bitmap_md5,
-                            text_content=normalized_text,
-                        )
-                    )
-                else:
-                    existing_row.text_content = normalized_text
-                await session.commit()
+                if existing_row is not None:
+                    existing_row.text_content = text_content
+                    await session.commit()
 
     async def _publish_page_transcribed(
         self,
