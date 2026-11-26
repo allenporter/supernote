@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from supernote.server.components.ai import AiComponent
+from supernote.server.components.ai import (
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+    TEXT_MODEL_KEY,
+    AiComponent,
+)
 from supernote.server.components.gemini import GeminiComponent
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
 from supernote.server.core import Component, ServerCore
 from tests.server.components.conftest import LoadComponents
 
@@ -41,3 +48,50 @@ async def test_gemini_component_registers_all_ai_platforms(
     assert ai_registrar.text_providers == ("gemini",)
 
     await loader.async_stop_all(component_core)
+
+
+async def test_gemini_component_shares_backend_across_four_roles_and_closes_on_unload(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    gemini_base_url: str,
+) -> None:
+    """All four AI roles share one `GeminiBackend` and `ClientSession` and close both on unload."""
+    component_core.config.ai = AiConfig(
+        providers={
+            "gemini": ProviderConfig(api_key="test-key", base_url=gemini_base_url)
+        },
+        ocr=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        summary=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        embedding=ModelConfig(provider="gemini", model="text-embedding-004"),
+        text=ModelConfig(provider="gemini", model="gemini-2.0-flash-lite"),
+    )
+    loader = await load_components("gemini")
+
+    ocr_model = component_core.app[OCR_MODEL_KEY]
+    summary_model = component_core.app[SUMMARY_MODEL_KEY]
+    embedding_model = component_core.app[EMBEDDING_MODEL_KEY]
+    text_model = component_core.app[TEXT_MODEL_KEY]
+    assert ocr_model is not None
+    assert summary_model is not None
+    assert embedding_model is not None
+    assert text_model is not None
+
+    comp = loader.get("gemini")
+    assert isinstance(comp, GeminiComponent)
+    session = comp.session
+    assert session is not None
+    assert not session.closed
+    assert list(comp._backends) == ["gemini"]
+    shared_backend = comp._backends["gemini"]
+    assert shared_backend._session is session
+
+    assert await ocr_model.extract_text(b"png", "hello") == "Handwritten text content"
+    assert shared_backend._client is not None
+
+    await loader.async_reconfigure(
+        component_core, GeminiComponent(), {"enabled": False}
+    )
+    assert shared_backend._client is None
+    assert session.closed
+    assert comp.session is None
+    assert comp._backends == {}

@@ -94,10 +94,12 @@ class OpenAIBackend:
         api_key: str | None = None,
         *,
         provider: str,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._provider = provider
+        self._session = session
 
     @property
     def provider(self) -> str:
@@ -116,20 +118,29 @@ class OpenAIBackend:
                 f"OpenAI-compatible API error during {operation}: {err!r}"
             ) from err
 
+    async def _post_with_session(
+        self,
+        session: aiohttp.ClientSession,
+        path: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+    ) -> Any:
+        async with session.post(
+            f"{self._base_url}{path}", json=payload, headers=headers
+        ) as response:
+            if response.status >= 400:
+                body = await response.text()
+                raise AIError(f"{path} returned HTTP {response.status}: {body[:500]}")
+            return await response.json(content_type=None)
+
     async def _post(self, path: str, payload: dict[str, Any]) -> Any:
         headers = {}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
+        if self._session is not None:
+            return await self._post_with_session(self._session, path, payload, headers)
         async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
-            async with session.post(
-                f"{self._base_url}{path}", json=payload, headers=headers
-            ) as response:
-                if response.status >= 400:
-                    body = await response.text()
-                    raise AIError(
-                        f"{path} returned HTTP {response.status}: {body[:500]}"
-                    )
-                return await response.json(content_type=None)
+            return await self._post_with_session(session, path, payload, headers)
 
     async def chat_completion(
         self,
@@ -163,6 +174,8 @@ class OpenAIBackend:
 def create_openai_backend(
     providers: Mapping[str, ProviderConfig],
     provider: str,
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> OpenAIBackend | None:
     """Create an `OpenAIBackend` from configured providers, or `None` if unconfigured.
 
@@ -176,4 +189,9 @@ def create_openai_backend(
     api_key = (provider_cfg.api_key or "").strip() or None
     if not base_url and not api_key:
         return None
-    return OpenAIBackend(base_url or DEFAULT_BASE_URL, api_key, provider=provider)
+    return OpenAIBackend(
+        base_url or DEFAULT_BASE_URL,
+        api_key,
+        provider=provider,
+        session=session,
+    )

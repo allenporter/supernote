@@ -14,8 +14,9 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from aiohttp import web
 from aiohttp.test_utils import TestClient
-from pytest_aiohttp import AiohttpClient
+from pytest_aiohttp import AiohttpClient, AiohttpServer
 from sqlalchemy import delete, select
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
@@ -24,13 +25,20 @@ from supernote.server.app import (
     create_app,
     run,
 )
-from supernote.server.components.ai import EMBEDDING_MODEL_KEY, OCR_MODEL_KEY
+from supernote.server.components.ai import (
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+    TEXT_MODEL_KEY,
+)
 from supernote.server.components.config.service import async_save_component_config
 from supernote.server.components.conversion.processor import (
     PngConversionModule,
 )
 from supernote.server.components.fake_ai import FakeAiComponent
+from supernote.server.components.gemini import GeminiComponent
 from supernote.server.components.integrity import INTEGRITY_SERVICE_KEY
+from supernote.server.components.openai import OpenAIComponent
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.components.webhooks import WebhooksComponent
@@ -524,3 +532,81 @@ async def test_startup_loads_db_persisted_component_when_not_overridden_by_yaml_
     await aiohttp_client(app)
     comp = app[COMPONENT_LOADER_KEY].get("webhooks")
     assert isinstance(comp, WebhooksComponent)
+
+
+async def test_app_shutdown_closes_shared_ai_backend_sessions(
+    aiohttp_client: AiohttpClient,
+    aiohttp_server: AiohttpServer,
+    server_config: ServerConfig,
+    session_manager: Any,
+) -> None:
+    """App shutdown closes open OpenAI and Gemini HTTP sessions without leaking."""
+
+    async def handle_openai_chat(request: web.Request) -> web.Response:
+        return web.json_response({"choices": [{"message": {"content": "transcribed"}}]})
+
+    async def handle_gemini_generate(request: web.Request) -> web.Response:
+        return web.json_response(
+            {"candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]}
+        )
+
+    fake_ai_app = web.Application()
+    fake_ai_app.router.add_post("/v1/chat/completions", handle_openai_chat)
+    fake_ai_app.router.add_post(
+        "/v1beta/models/{model}:generateContent", handle_gemini_generate
+    )
+    ai_srv = await aiohttp_server(fake_ai_app)
+
+    config = dataclasses.replace(
+        server_config,
+        web_enabled=False,
+        ai=AiConfig(
+            providers={
+                "openai": ProviderConfig(base_url=str(ai_srv.make_url("/v1"))),
+                "gemini": ProviderConfig(
+                    api_key="test-key", base_url=str(ai_srv.make_url("/"))
+                ),
+            },
+            ocr=ModelConfig(provider="openai", model="gemma-vision"),
+            summary=ModelConfig(provider="openai", model="gemma"),
+            embedding=ModelConfig(provider="openai", model="nomic-embed-text"),
+            text=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        ),
+    )
+    app = create_app(config)
+    test_client = await aiohttp_client(app)
+
+    ocr_model = app[OCR_MODEL_KEY]
+    summary_model = app[SUMMARY_MODEL_KEY]
+    embedding_model = app[EMBEDDING_MODEL_KEY]
+    text_model = app[TEXT_MODEL_KEY]
+    assert ocr_model is not None
+    assert summary_model is not None
+    assert embedding_model is not None
+    assert text_model is not None
+
+    openai_comp = app[COMPONENT_LOADER_KEY].get("openai")
+    gemini_comp = app[COMPONENT_LOADER_KEY].get("gemini")
+    assert isinstance(openai_comp, OpenAIComponent)
+    assert isinstance(gemini_comp, GeminiComponent)
+    openai_session = openai_comp.session
+    gemini_session = gemini_comp.session
+    assert openai_session is not None
+    assert gemini_session is not None
+    assert list(gemini_comp._backends) == ["gemini"]
+    gemini_backend = gemini_comp._backends["gemini"]
+    assert gemini_backend._session is gemini_session
+
+    assert await ocr_model.extract_text(b"png", "hi") == "transcribed"
+    assert await text_model.generate_json("hi", response_schema={"type": "object"}) == {
+        "ok": True
+    }
+
+    assert not openai_session.closed
+    assert not gemini_session.closed
+    assert gemini_backend._client is not None
+
+    await test_client.close()
+    assert openai_session.closed
+    assert gemini_session.closed
+    assert gemini_backend._client is None

@@ -56,10 +56,12 @@ class GeminiBackend:
         base_url: str | None = None,
         *,
         provider: str,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
         self._provider = provider
+        self._session = session
         self._client: genai.Client | None = None
 
     @property
@@ -74,14 +76,29 @@ class GeminiBackend:
                     base_url=self._base_url,
                     api_version="v1beta",
                     retry_options=types.HttpRetryOptions(attempts=1),
+                    aiohttp_client=self._session,
                 )
             else:
-                http_options = types.HttpOptions(api_version="v1beta")
+                http_options = types.HttpOptions(
+                    api_version="v1beta",
+                    aiohttp_client=self._session,
+                )
             self._client = genai.Client(
                 api_key=self._api_key,
                 http_options=http_options,
             )
         return self._client
+
+    async def close(self) -> None:
+        """Close the underlying `genai.Client` async and sync HTTP clients, if initialized."""
+        client = self._client
+        self._client = None
+        if client is None:
+            return
+        try:
+            await client.aio.aclose()
+        finally:
+            client.close()
 
     @contextmanager
     def _handle_api_errors(self, operation: str) -> Generator[None]:
@@ -155,6 +172,8 @@ class GeminiBackend:
 def create_gemini_backend(
     providers: Mapping[str, ProviderConfig],
     provider: str,
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> GeminiBackend | None:
     """Create a `GeminiBackend` from configured providers, or `None` if unconfigured."""
     provider_cfg = providers.get(provider)
@@ -168,4 +187,5 @@ def create_gemini_backend(
         provider_cfg.api_key,
         base_url=provider_cfg.base_url,
         provider=provider,
+        session=session,
     )

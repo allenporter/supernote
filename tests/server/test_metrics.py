@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Any
 
+import aiohttp
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, make_mocked_request
@@ -335,7 +336,14 @@ async def test_gemini_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
             }
         )
 
+    gemini: GeminiBackend | None = None
+
+    async def _close_gemini(_app: web.Application) -> None:
+        if gemini is not None:
+            await gemini.close()
+
     app = web.Application()
+    app.on_cleanup.append(_close_gemini)
     app.router.add_post(
         "/v1beta/models/{model}:generateContent", handle_generate_content
     )
@@ -609,12 +617,20 @@ async def test_openai_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
             }
         )
 
+    session = aiohttp.ClientSession()
+
+    async def _close_session(_app: web.Application) -> None:
+        await session.close()
+
     app = web.Application()
+    app.on_cleanup.append(_close_session)
     app.router.add_post("/v1/chat/completions", handle_chat)
     app.router.add_post("/v1/embeddings", handle_embeddings)
     server = await aiohttp_server(app)
 
-    backend = OpenAIBackend(str(server.make_url("/v1")), provider="ollama")
+    backend = OpenAIBackend(
+        str(server.make_url("/v1")), provider="ollama", session=session
+    )
     ocr_model = InstrumentedOcrModel(OpenAIOcrModel(backend, "gemma-vision"))
     summary_model = InstrumentedSummaryModel(
         OpenAISummaryModel(backend, "gemma-vision")
