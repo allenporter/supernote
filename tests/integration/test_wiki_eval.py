@@ -81,7 +81,15 @@ def test_daily_log_eval_dataset_manifest_is_well_formed() -> None:
         "Q3_2026_Quarterly_Reflection.note",
     }.issubset(file_names)
     total_pages = sum(len(nb.pages) for nb in dataset.notebooks)
-    assert total_pages >= 34
+    assert total_pages >= 15
+    daily_nb = next(nb for nb in dataset.notebooks if nb.file_name == "Daily.note")
+    assert any(
+        sum(
+            1 for line in p.text_content.splitlines() if line.startswith(("10.", "11."))
+        )
+        >= 4
+        for p in daily_nb.pages
+    )
     assert len(dataset.expected_concepts) >= 8
     assert len(dataset.expected_facts) >= 6
 

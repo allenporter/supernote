@@ -18,7 +18,7 @@ Repeatable multi-notebook corpus and evaluation harness for measuring LLM Wiki b
 
 `daily_log_dataset.yaml` is a standalone chronological planner corpus with **no dedicated topic notebooks**:
 
-- **`Daily.note`** (30 daily bullet-journal pages, Oct 25 – Nov 23) mixing fleeting errands with recurring project updates.
+- **`Daily.note`** (30 days of running bullet-journal logs, Oct 25 – Nov 23, packed across 11 pages with 1 to 4 days per page) mixing fleeting errands with recurring project updates.
 - **`Monthly_Log_2026.note`** (October & November monthly calendar highlights, migrated tasks, and habit trackers).
 - **`Monthly_Reflections_2026.note`** (September & October monthly reflections covering wins, energy drains, and adjustments).
 - **`Q3_2026_Quarterly_Reflection.note`** (Q3 quarterly review and Q4 goals/themes).

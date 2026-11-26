@@ -2,14 +2,14 @@
 name: supernote-wiki-daily-log-v1
 description: >-
   Standalone Bullet Journal / personal planner corpus with NO dedicated topic
-  notebooks: a 30-page Daily.note log, Monthly_Log_2026.note,
-  Monthly_Reflections_2026.note, and Q3_2026_Quarterly_Reflection.note.
-  Evaluates whether the LLM Wiki compiler can extract recurring projects,
-  people, habits, reflection themes, and evolved decisions woven across
-  chronological daily/monthly/quarterly logs.
+  notebooks: a running Daily.note log (30 days packed across 11 multi-day
+  pages), Monthly_Log_2026.note, Monthly_Reflections_2026.note, and
+  Q3_2026_Quarterly_Reflection.note. Evaluates whether the LLM Wiki compiler
+  can extract recurring projects, people, habits, reflection themes, and
+  evolved decisions woven across chronological daily/monthly/quarterly logs.
 notebooks:
   - file_name: Daily.note
-    description: 30-page Bullet Journal daily log spanning Oct 25 - Nov 23.
+    description: Running Bullet Journal daily log spanning 30 days (Oct 25 - Nov 23) across 11 pages, with 1 to 4 days per page.
     pages:
       - page_index: 0
         page_id: P20261025080000DAILY0001
@@ -21,9 +21,7 @@ notebooks:
           • Email Carlos for tile install quote
           • Dishes + laundry before Mel gets back from SD
           • Read 20 pages of Four Thousand Weeks (Oliver Burkeman)
-      - page_index: 1
-        page_id: P20261026080000DAILY0002
-        text_content: |-
+
           10.26 MON
           • Work standup + review Q4 metrics
           • Call Pacific Solar & SunRun for solar + battery quotes
@@ -31,8 +29,8 @@ notebooks:
           > Order foam roller for IT band
           o 17:30 Leo robotics club intro w/ Coach Priya (FIRST LEGO League)
           • Watch Pitt ep 4 w/ Mel
-      - page_index: 2
-        page_id: P20261027080000DAILY0003
+      - page_index: 1
+        page_id: P20261027080000DAILY0002
         text_content: |-
           10.27 TUE
           o 06:30 Easy 4mi road run + 15min stretching
@@ -41,35 +39,29 @@ notebooks:
             - Wait time ~3 weeks
           • Pick up groceries: milk, spinach, chicken, tortillas
           • Pay water bill
-      - page_index: 3
-        page_id: P20261028080000DAILY0004
-        text_content: |-
+
           10.28 WED
           • SunRun virtual consult: $24,000 for 6.4kW + Powerwall 3
             - Feels pricey, pushy sales pitch
           • Read Four Thousand Weeks: "embrace finitude — stop trying to clear the inbox"
           o 18:00 Help Leo & Sam sketch LEGO robot arm gear train
           • Take car in for oil change Friday
-      - page_index: 4
-        page_id: P20261029080000DAILY0005
-        text_content: |-
+
           10.29 THU
           o 06:30 Tempo 5mi run; left knee still nagging slightly
             - Try Brooks Cascadia 18 trail shoes at running store
           • Mel likes matte subway tile better than zellige for kitchen backsplash
           • Ask Carlos to re-quote with white subway tile
           • Clean garage workbench
-      - page_index: 5
-        page_id: P20261030080000DAILY0006
-        text_content: |-
+
           10.30 FRI
           X Oil change + tire rotation ($95)
           • Pacific Solar site visit: $19,500 for 6.8kW + 1 Tesla Powerwall 3
             - Local crew, 25yr warranty, handles PG&E NEM 3.0 paperwork
           • Bought Brooks Cascadia 18 + foam roller
           • Pizza night w/ Mel, Leo, Sam
-      - page_index: 6
-        page_id: P20261031080000DAILY0007
+      - page_index: 2
+        page_id: P20261031080000DAILY0003
         text_content: |-
           10.31 SAT
           o 09:00 Robotics club build w/ Priya, Leo, Sam
@@ -77,17 +69,15 @@ notebooks:
             - Regional tournament is Nov 21 at Lincoln High
           • Trick-or-treating around neighborhood
           • Finish Oct budget check
-      - page_index: 7
-        page_id: P20261101080000DAILY0008
-        text_content: |-
+
           11.01 SUN
           o 07:30 Long trail run 10 miles in Brooks Cascadia 18
             - Zero knee pain! Foam rolling + new shoes worked.
           • Carlos sent revised kitchen backsplash quote: $2,850 w/ subway tile
             - Initially picked bright white grout
           • Started The Power Broker (Robert Caro) — massive book, 50 pages in
-      - page_index: 8
-        page_id: P20261102080000DAILY0009
+      - page_index: 3
+        page_id: P20261102080000DAILY0004
         text_content: |-
           11.02 MON
           • Compare Pacific Solar ($19.5k) vs SunRun ($24k) w/ Mel
@@ -95,51 +85,43 @@ notebooks:
           • Dentist reminder for kids in Dec
           • Trader Joe's run: coffee, oat milk, apples
           • Walk dog 30min
-      - page_index: 9
-        page_id: P20261103080000DAILY0010
-        text_content: |-
+
           11.03 TUE
           o 06:30 Easy 5mi recovery run
           • Mel tested grout samples in kitchen lighting:
             - Bright white grout shows stains too easily; switched to warm gray grout!
           • Texted Carlos to confirm warm gray grout & schedule install
           • Watch Pitt ep 5 w/ Mel
-      - page_index: 10
-        page_id: P20261104080000DAILY0011
-        text_content: |-
+
           11.04 WED
           • Pacific Solar rep explained Powerwall 3 has built-in hybrid inverter,
             cheaper and simpler than Enphase IQ8 + separate batteries under NEM 3.0.
           • Finished Four Thousand Weeks — top takeaway: pick 3 projects max at a time.
           o 17:30 Leo & Sam coding autonomous line-follower for robotics
           • Fix squeaky back gate hinge
-      - page_index: 11
-        page_id: P20261105080000DAILY0012
-        text_content: |-
+
           11.05 THU
           o 06:30 Hill repeats 6x400m (Marin Half prep)
           • Carlos confirmed kitchen backsplash install for Dec 4-5 ($2,850, warm gray grout)
           • Order 40 sq ft matte subway tile from Floor & Decor (15% overage)
           • Call mom Sunday
-      - page_index: 12
-        page_id: P20261106080000DAILY0013
+      - page_index: 4
+        page_id: P20261106080000DAILY0005
         text_content: |-
           11.06 FRI
           • Signed contract w/ Pacific Solar ($19,500, 6.8kW + 1 Powerwall 3)!
             - Permit submission next week, install targeted for January
           X Picked up subway tile boxes from Floor & Decor
           • Date night sushi w/ Mel
-      - page_index: 13
-        page_id: P20261107080000DAILY0014
-        text_content: |-
+
           11.07 SAT
           o 09:00 Robotics club full dress rehearsal w/ Coach Priya
             - Scored 260/300 on practice table; 3:1 arm gear rock solid
             - Sam presenting innovation project slides on urban storm drains
           • Mow lawn + rake leaves
           • Read The Power Broker Ch 4 (Robert Moses & Jones Beach)
-      - page_index: 14
-        page_id: P20261108080000DAILY0015
+      - page_index: 5
+        page_id: P20261108080000DAILY0006
         text_content: |-
           11.08 SUN
           o 07:00 Peak long run 12 miles (Marin Headlands) in 1:48
@@ -147,120 +129,100 @@ notebooks:
             - Taper starts now for Nov 14 Marin Trail Half Marathon!
           • Call mom + catch up on Thanksgiving plans
           • Prep lunches for week
-      - page_index: 15
-        page_id: P20261109080000DAILY0016
+      - page_index: 6
+        page_id: P20261109080000DAILY0007
         text_content: |-
           11.09 MON
           • Quiet work week; wrap up design doc
           • Clear kitchen counters checklist before Carlos arrives Dec 4
           • Mail birthday card to uncle
           • Foam roll + stretch 20min
-      - page_index: 16
-        page_id: P20261110080000DAILY0017
-        text_content: |-
+
           11.10 TUE
           o 06:30 Taper run 4 miles easy
           • Pacific Solar submitted city building permit (#SOL-2026-441)
           • Priya emailed tournament schedule for Nov 21 (check-in 8:15am Lincoln High)
           • Groceries: pasta, marinara, salad, bananas
-      - page_index: 17
-        page_id: P20261111080000DAILY0018
-        text_content: |-
+
           11.11 WED
           • Read The Power Broker Ch 6 — wild how Moses used Triborough Authority bonds
           • Help Sam rehearse 5-minute robotics innovation pitch
           • Order new running socks + race bib belt
           • Watch Pitt ep 6 w/ Mel
-      - page_index: 18
-        page_id: P20261112080000DAILY0019
-        text_content: |-
+
           11.12 THU
           o 06:30 Shakeout run 3 miles easy
           • Hydrate + carb load for Saturday Marin Trail Half
           • Mel volunteering at mile 8 aid station!
           • Clean espresso machine
-      - page_index: 19
-        page_id: P20261113080000DAILY0020
+      - page_index: 7
+        page_id: P20261113080000DAILY0008
         text_content: |-
           11.13 FRI
           • Rest day before race — lay out Brooks Cascadia 18, gels, windbreaker
           • Carlos texted: still on for Dec 4, bring extra warm gray grout bag just in case
           • Early pasta dinner w/ Mel, Leo, Sam
-      - page_index: 20
-        page_id: P20261114080000DAILY0021
-        text_content: |-
+
           11.14 SAT
           * X Marin Trail Half Marathon COMPLETE!
             - Finish time: 1:54:20 (beat 2:00 goal by nearly 6 minutes!)
             - Saw Mel at mile 8 aid station; zero knee pain the whole race
           • Celebratory burgers + beers w/ Mel and kids
           • Ice bath + early bedtime
-      - page_index: 21
-        page_id: P20261115080000DAILY0022
+      - page_index: 8
+        page_id: P20261115080000DAILY0009
         text_content: |-
           11.15 SUN
           • Recovery walk 2 miles — calves sore but happy
           • Check Pacific Solar permit portal: status "Under Review"
           • Read The Power Broker Ch 8
           • Laundry + groceries
-      - page_index: 22
-        page_id: P20261116080000DAILY0023
-        text_content: |-
+
           11.16 MON
           • Back to work; quiet Monday
           • Final robotics code tweak w/ Leo (calibrated gyro turn accuracy)
           • Pick up extra bag of warm gray grout for Carlos
           • Order Thanksgiving turkey from butcher
-      - page_index: 23
-        page_id: P20261117080000DAILY0024
-        text_content: |-
+
           11.17 TUE
           • Easy 30min spin bike recovery
           • Pacific Solar permit #SOL-2026-441 APPROVED! Install set for Jan 12.
           • Mel planning Thanksgiving menu (12 guests)
           • Pay credit card bill
-      - page_index: 24
-        page_id: P20261118080000DAILY0025
-        text_content: |-
+
           11.18 WED
           o 17:30 Final robotics practice w/ Priya, Leo, Sam before Saturday
             - Battery packs charged, spare gears packed
           • Picked up warm gray grout bag ($24)
           • Read The Power Broker Ch 10
-      - page_index: 25
-        page_id: P20261119080000DAILY0026
+      - page_index: 9
+        page_id: P20261119080000DAILY0010
         text_content: |-
           11.19 THU
           o 06:30 Easy 4mi return-to-running jog — legs feel fresh again
           • Thinking about Spring 50K trail race? Maybe Dipsea or Lake Sonoma
           • Clean guest bathroom before Thanksgiving
           • Return library books
-      - page_index: 26
-        page_id: P20261120080000DAILY0027
-        text_content: |-
+
           11.20 FRI
           • Pack robotics bin + snacks for Lincoln High tomorrow (8:15am check-in)
           • Confirm w/ Carlos: outlet cover spacers ready for Dec 4 backsplash
           • Grocery run for Thanksgiving sides w/ Mel
-      - page_index: 27
-        page_id: P20261121080000DAILY0028
+      - page_index: 10
+        page_id: P20261121080000DAILY0011
         text_content: |-
           11.21 SAT
           * X FIRST LEGO League Regional Tournament at Lincoln High!
             - Leo & Sam's team scored 285 and WON the Innovation Award!
             - Coach Priya thrilled; team advances to NorCal Championships in Feb
           • Ice cream celebration w/ team & families
-      - page_index: 28
-        page_id: P20261122080000DAILY0029
-        text_content: |-
+
           11.22 SUN
           o 08:00 Easy 6mi trail run w/ Mel
           • Note for Jan 12 Pacific Solar install: clear side yard gate for Powerwall 3
           • Read The Power Broker Ch 12
           • Meal prep + dishes
-      - page_index: 29
-        page_id: P20261123080000DAILY0030
-        text_content: |-
+
           11.23 MON
           • Quick recap before Thanksgiving week:
             - Finished Marin Trail Half (1:54:20)
