@@ -76,7 +76,12 @@ class ConfigurationConflictError(SupernoteError):
 
 
 def _configured_ai_provider_domains(server_config: ServerConfig) -> set[str]:
-    return server_config.ai.active_provider_types & _AI_PROVIDER_DOMAINS
+    active = set(server_config.ai.active_provider_types & _AI_PROVIDER_DOMAINS)
+    for domain in _AI_PROVIDER_DOMAINS:
+        raw_cfg = server_config.root_component_configs.get(domain)
+        if raw_cfg and raw_cfg.get("enabled", True):
+            active.add(domain)
+    return active
 
 
 def _resolve_static_component_sources(
@@ -128,9 +133,15 @@ def build_static_component_configs(
             for name, p_cfg in server_config.ai.providers.items()
             if server_config.ai.provider_type(name).strip().lower() == domain
         }
+        raw_domain_cfg = configs.get(domain, {})
+        enabled = (
+            bool(raw_domain_cfg["enabled"])
+            if "enabled" in raw_domain_cfg
+            else (bool(raw_domain_cfg) or domain in ai_domains)
+        )
         domain_cfg: dict[str, Any] = {
-            **configs.get(domain, {}),
-            "enabled": domain in ai_domains,
+            **raw_domain_cfg,
+            "enabled": enabled,
         }
         if provider_entries:
             domain_cfg["providers"] = {
@@ -141,6 +152,28 @@ def build_static_component_configs(
                 for key in ("api_key", "base_url"):
                     if key in provider_entries[domain]:
                         domain_cfg.setdefault(key, provider_entries[domain][key])
+        if (domain_cfg.get("api_key") or domain_cfg.get("base_url")) and domain not in (
+            domain_cfg.get("providers") or {}
+        ):
+            entry: dict[str, Any] = {"type": domain}
+            for key in ("api_key", "base_url"):
+                if domain_cfg.get(key) is not None:
+                    entry[key] = domain_cfg[key]
+            domain_cfg["providers"] = {
+                **(domain_cfg.get("providers") or {}),
+                domain: entry,
+            }
+        raw_providers = domain_cfg.get("providers")
+        if isinstance(raw_providers, dict):
+            ai_providers = dict(configs["ai"].get("providers") or {})
+            for p_name, p_val in raw_providers.items():
+                if isinstance(p_val, dict):
+                    ai_providers.setdefault(
+                        p_name,
+                        {**p_val, "type": p_val.get("type") or domain},
+                    )
+            if ai_providers:
+                configs["ai"]["providers"] = ai_providers
         configs[domain] = domain_cfg
     for f in fields(server_config):
         comp_meta = f.metadata.get("component")
@@ -155,6 +188,13 @@ def build_static_component_configs(
                 configs[comp_meta] = {}
         elif isinstance(comp_meta, tuple):
             domain, target_key = comp_meta
+            if (
+                target_key in server_config.root_component_configs.get(domain, {})
+                and val == f.default
+                and server_config.component_sources.get(domain)
+                != ComponentConfigSource.ENV
+            ):
+                continue
             configs[domain] = {
                 **configs.get(domain, {}),
                 target_key: copy.deepcopy(val),

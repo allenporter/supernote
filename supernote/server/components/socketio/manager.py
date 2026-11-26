@@ -36,7 +36,6 @@ from supernote.models.socket import (
     SocketMessageData,
     SocketTaskMessageData,
 )
-from supernote.server.config import ServerConfig
 from supernote.server.events import (
     DomainEventRecorded,
     LocalEventBus,
@@ -139,11 +138,9 @@ class SocketIOServerManager:
 
     def __init__(
         self,
-        config: ServerConfig,
         user_service: UserService,
         event_bus: LocalEventBus | None = None,
     ) -> None:
-        self.config = config
         self.user_service = user_service
         self.event_bus = event_bus
         self._sio = _CompatAsyncServer(

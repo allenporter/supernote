@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from mashumaro import field_options
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.yaml import DataClassYAMLMixin
 
@@ -256,14 +257,20 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_MCP_PORT`
     """
 
-    _base_url: str | None = field(default=None, metadata={"name": "base_url"})
+    _base_url: str | None = field(
+        default=None,
+        metadata=field_options(alias="base_url"),
+    )
     """Base URL for the main server (port 8080).
     Used for generating links and for the MCP Authorization Server issuer.
     """
 
     _mcp_base_url: str | None = field(
         default=None,
-        metadata={"name": "mcp_base_url", "component": ("mcp", "base_url")},
+        metadata={
+            **field_options(alias="mcp_base_url"),
+            "component": ("mcp", "base_url"),
+        },
     )
     """Base URL for the MCP server (port 8081).
 
@@ -617,7 +624,7 @@ class ServerConfig(DataClassYAMLMixin):
             if (
                 isinstance(key, str)
                 and _COMPONENT_DOMAIN_RE.fullmatch(key)
-                and key not in ("ai", "auth")
+                and key != "auth"
                 and isinstance(value, dict)
             ):
                 if "enabled" in value:
@@ -634,7 +641,8 @@ class ServerConfig(DataClassYAMLMixin):
                         setattr(config, attr_name, sub_val)
 
         for f in fields(cls):
-            if f.name in raw_yaml_data:
+            yaml_key = f.metadata.get("alias", f.name)
+            if yaml_key in raw_yaml_data:
                 comp_meta = f.metadata.get("component")
                 if isinstance(comp_meta, tuple):
                     config._component_sources[comp_meta[0]] = ComponentConfigSource.YAML
@@ -786,6 +794,8 @@ class ServerConfig(DataClassYAMLMixin):
             config.ai.providers.setdefault(
                 "gemini", ProviderConfig()
             ).api_key = gemini_api_key
+            if "gemini" in config._root_component_configs:
+                config._root_component_configs["gemini"]["api_key"] = gemini_api_key
             config._component_sources["gemini"] = ComponentConfigSource.ENV
             logger.info(
                 f"Using SUPERNOTE_GEMINI_API_KEY: xxx...{config.gemini_api_key[-3:]}"
@@ -797,12 +807,14 @@ class ServerConfig(DataClassYAMLMixin):
                 config.ai.ocr.model = gemini_ocr_model
             if config.ai.summary and config.ai.summary.provider == "gemini":
                 config.ai.summary.model = gemini_ocr_model
+            config._component_sources["ai"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_GEMINI_OCR_MODEL: {config.gemini_ocr_model}")
 
         if gemini_embedding_model := os.getenv("SUPERNOTE_GEMINI_EMBEDDING_MODEL"):
             config.gemini_embedding_model = gemini_embedding_model
             if config.ai.embedding and config.ai.embedding.provider == "gemini":
                 config.ai.embedding.model = gemini_embedding_model
+            config._component_sources["ai"] = ComponentConfigSource.ENV
             logger.info(
                 f"Using SUPERNOTE_GEMINI_EMBEDDING_MODEL: {config.gemini_embedding_model}"
             )
@@ -817,6 +829,7 @@ class ServerConfig(DataClassYAMLMixin):
                 ):
                     if model_cfg and model_cfg.provider == "gemini":
                         model_cfg.max_concurrency = config.gemini_max_concurrency
+                config._component_sources["ai"] = ComponentConfigSource.ENV
                 logger.info(
                     f"Using SUPERNOTE_GEMINI_MAX_CONCURRENCY: {config.gemini_max_concurrency}"
                 )

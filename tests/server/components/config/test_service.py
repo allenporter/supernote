@@ -305,3 +305,318 @@ async def test_config_service_protects_host_components_and_enforces_dependencies
         match="Cannot enable component 'summary' while required dependency 'conversion' is disabled",
     ):
         await service.update_component_config("summary", {"enabled": True})
+
+
+@pytest.mark.parametrize(
+    (
+        "domain",
+        "legacy_yaml",
+        "root_yaml",
+        "expected_yaml_config",
+        "expected_yaml_enabled",
+        "db_override",
+        "env_override",
+        "expected_env_subset",
+        "expected_env_enabled",
+    ),
+    [
+        (
+            "events",
+            {"event_log_retention_days": 14},
+            {"events": {"retention_days": 14}},
+            {"enabled": True, "retention_days": 14},
+            True,
+            {"enabled": False, "retention_days": 7},
+            {"SUPERNOTE_EVENT_LOG_RETENTION_DAYS": "30"},
+            {"retention_days": 30},
+            True,
+        ),
+        (
+            "metrics",
+            {"metrics_enabled": False, "metrics_path": "/custom-metrics"},
+            {"metrics": {"enabled": False, "path": "/custom-metrics"}},
+            {"enabled": False, "path": "/custom-metrics"},
+            False,
+            {"enabled": True, "path": "/db-metrics"},
+            {
+                "SUPERNOTE_METRICS_ENABLED": "true",
+                "SUPERNOTE_METRICS_PATH": "/env-metrics",
+            },
+            {"enabled": True, "path": "/env-metrics"},
+            True,
+        ),
+        (
+            "mcp",
+            {
+                "mcp_enabled": False,
+                "mcp_port": 9091,
+                "mcp_base_url": "https://mcp.example.com",
+            },
+            {
+                "mcp": {
+                    "enabled": False,
+                    "port": 9091,
+                    "base_url": "https://mcp.example.com",
+                }
+            },
+            {
+                "enabled": False,
+                "port": 9091,
+                "base_url": "https://mcp.example.com",
+            },
+            False,
+            {"enabled": True, "port": 8888, "base_url": None},
+            {
+                "SUPERNOTE_MCP_ENABLED": "true",
+                "SUPERNOTE_MCP_PORT": "9092",
+                "SUPERNOTE_MCP_BASE_URL": "https://env-mcp.example.com",
+            },
+            {
+                "enabled": True,
+                "port": 9092,
+                "base_url": "https://env-mcp.example.com",
+            },
+            True,
+        ),
+        (
+            "http",
+            {"proxy_mode": "strict", "trusted_proxies": ["10.0.0.0/8"]},
+            {
+                "http": {
+                    "proxy_mode": "strict",
+                    "trusted_proxies": ["10.0.0.0/8"],
+                }
+            },
+            {
+                "enabled": True,
+                "proxy_mode": "strict",
+                "trusted_proxies": ["10.0.0.0/8"],
+            },
+            True,
+            {"enabled": True, "proxy_mode": "relaxed", "trusted_proxies": []},
+            {
+                "SUPERNOTE_PROXY_MODE": "relaxed",
+                "SUPERNOTE_TRUSTED_PROXIES": "192.168.1.1,10.1.0.0/16",
+            },
+            {
+                "proxy_mode": "relaxed",
+                "trusted_proxies": ["192.168.1.1", "10.1.0.0/16"],
+            },
+            True,
+        ),
+        (
+            "conversion",
+            {"web_notebook_preview": False},
+            {"conversion": {"notebook_preview": False}},
+            {"enabled": True, "notebook_preview": False},
+            True,
+            {"enabled": False, "notebook_preview": True},
+            {"SUPERNOTE_WEB_NOTEBOOK_PREVIEW": "true"},
+            {"notebook_preview": True},
+            True,
+        ),
+        (
+            "processor",
+            {
+                "enable_image_processing": False,
+                "image_include_patterns": ["Notes/**"],
+                "image_exclude_patterns": ["Archive/**"],
+            },
+            {
+                "processor": {
+                    "enable_image_processing": False,
+                    "image_include_patterns": ["Notes/**"],
+                    "image_exclude_patterns": ["Archive/**"],
+                }
+            },
+            {
+                "enabled": True,
+                "enable_image_processing": False,
+                "image_include_patterns": ["Notes/**"],
+                "image_exclude_patterns": ["Archive/**"],
+            },
+            True,
+            {
+                "enabled": False,
+                "enable_image_processing": True,
+                "image_include_patterns": [],
+                "image_exclude_patterns": [],
+            },
+            {},
+            {},
+            True,
+        ),
+        (
+            "web_ui",
+            {"web_enabled": False},
+            {"web_ui": {"enabled": False}},
+            {"enabled": False},
+            False,
+            {"enabled": True},
+            {"SUPERNOTE_WEB_ENABLED": "true"},
+            {"enabled": True},
+            True,
+        ),
+        (
+            "ai",
+            {
+                "prompts_dir": "/custom/prompts",
+                "ai": {
+                    "ocr": {
+                        "provider": "gemini",
+                        "model": "gemini-2.5-flash",
+                        "max_concurrency": 5,
+                    }
+                },
+            },
+            {
+                "ai": {
+                    "prompts_dir": "/custom/prompts",
+                    "ocr": {
+                        "provider": "gemini",
+                        "model": "gemini-2.5-flash",
+                        "max_concurrency": 5,
+                    },
+                }
+            },
+            {
+                "enabled": True,
+                "prompts_dir": "/custom/prompts",
+                "providers": {},
+                "ocr": {
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash",
+                    "max_concurrency": 5,
+                },
+            },
+            True,
+            {"enabled": False, "prompts_dir": "/db/prompts"},
+            {
+                "SUPERNOTE_PROMPTS_DIR": "/env/prompts",
+                "SUPERNOTE_GEMINI_OCR_MODEL": "gemini-2.5-pro",
+                "SUPERNOTE_GEMINI_MAX_CONCURRENCY": "9",
+            },
+            {
+                "prompts_dir": "/env/prompts",
+                "ocr": {
+                    "provider": "gemini",
+                    "model": "gemini-2.5-pro",
+                    "max_concurrency": 9,
+                },
+            },
+            True,
+        ),
+    ],
+)
+async def test_migrated_components_legacy_and_root_yaml_parity_with_tier_precedence(
+    tmp_path: Path,
+    coordination_service: CoordinationService,
+    domain: str,
+    legacy_yaml: dict[str, object],
+    root_yaml: dict[str, object],
+    expected_yaml_config: dict[str, object],
+    expected_yaml_enabled: bool,
+    db_override: dict[str, object],
+    env_override: dict[str, str],
+    expected_env_subset: dict[str, object],
+    expected_env_enabled: bool,
+) -> None:
+    """Legacy flat `config.yaml` keys and root `<domain>:` sections resolve identically and honor `ENV > YAML > DATABASE`."""
+    await async_save_component_config(coordination_service, domain, db_override)
+
+    legacy_dir = tmp_path / f"{domain}_legacy"
+    legacy_dir.mkdir()
+    (legacy_dir / "config.yaml").write_text(yaml.safe_dump(legacy_yaml))
+    legacy_resolved = (
+        await async_resolve_component_configs(
+            ServerConfig.load(legacy_dir), coordination_service
+        )
+    )[domain]
+
+    root_dir = tmp_path / f"{domain}_root"
+    root_dir.mkdir()
+    (root_dir / "config.yaml").write_text(yaml.safe_dump(root_yaml))
+    root_resolved = (
+        await async_resolve_component_configs(
+            ServerConfig.load(root_dir), coordination_service
+        )
+    )[domain]
+
+    assert legacy_resolved.source == ComponentConfigSource.YAML
+    assert root_resolved.source == ComponentConfigSource.YAML
+    assert legacy_resolved.enabled is expected_yaml_enabled
+    assert root_resolved.enabled is expected_yaml_enabled
+    assert legacy_resolved.config == expected_yaml_config
+    assert root_resolved.config == expected_yaml_config
+
+    if env_override:
+        for cfg_dir in (legacy_dir, root_dir):
+            with patch.dict(os.environ, env_override):
+                env_server_cfg = ServerConfig.load(cfg_dir)
+            env_resolved = (
+                await async_resolve_component_configs(
+                    env_server_cfg, coordination_service
+                )
+            )[domain]
+            assert env_resolved.source == ComponentConfigSource.ENV
+            assert env_resolved.enabled is expected_env_enabled
+            for key, expected_val in expected_env_subset.items():
+                assert env_resolved.config[key] == expected_val
+
+
+async def test_ai_and_provider_root_yaml_compatibility(
+    tmp_path: Path,
+    coordination_service: CoordinationService,
+) -> None:
+    """Root `gemini:`, `openai:`, and `ai:` sections in `config.yaml` resolve cleanly alongside legacy `ai.providers`."""
+    root_dir = tmp_path / "ai_root_providers"
+    root_dir.mkdir()
+    (root_dir / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "gemini": {"api_key": "root-gemini-key"},
+                "openai": {
+                    "providers": {
+                        "ollama": {"base_url": "http://localhost:11434/v1"},
+                    }
+                },
+                "ai": {
+                    "enabled": False,
+                    "prompts_dir": "/root/prompts",
+                    "ocr": {"provider": "ollama", "model": "qwen2.5vl"},
+                },
+            }
+        )
+    )
+    resolved = await async_resolve_component_configs(
+        ServerConfig.load(root_dir), coordination_service
+    )
+
+    assert resolved["gemini"].enabled is True
+    assert resolved["gemini"].source == ComponentConfigSource.YAML
+    assert resolved["gemini"].config["api_key"] == "root-gemini-key"
+    assert (
+        resolved["gemini"].config["providers"]["gemini"]["api_key"] == "root-gemini-key"
+    )
+
+    assert resolved["openai"].enabled is True
+    assert resolved["openai"].source == ComponentConfigSource.YAML
+    assert (
+        resolved["openai"].config["providers"]["ollama"]["base_url"]
+        == "http://localhost:11434/v1"
+    )
+
+    assert resolved["ai"].enabled is False
+    assert resolved["ai"].source == ComponentConfigSource.YAML
+    assert resolved["ai"].config["prompts_dir"] == "/root/prompts"
+    assert resolved["ai"].config["providers"]["ollama"] == {
+        "base_url": "http://localhost:11434/v1",
+        "type": "openai",
+    }
+
+    with patch.dict(os.environ, {"SUPERNOTE_GEMINI_API_KEY": "env-gemini-key"}):
+        env_resolved = await async_resolve_component_configs(
+            ServerConfig.load(root_dir), coordination_service
+        )
+    assert env_resolved["gemini"].source == ComponentConfigSource.ENV
+    assert env_resolved["gemini"].config["api_key"] == "env-gemini-key"
