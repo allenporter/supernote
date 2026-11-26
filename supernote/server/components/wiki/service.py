@@ -699,6 +699,8 @@ class WikiService:
             last_error=cp.last_error if cp else None,
             backfill_remaining_files=overview.remaining_files,
             backfill_total_files=overview.total_files,
+            backfill_remaining_pages=overview.remaining_pages,
+            backfill_total_pages=overview.total_pages,
             backfill_untranscribed_files=overview.untranscribed_files,
             backfill_next_files=overview.next_files,
         )

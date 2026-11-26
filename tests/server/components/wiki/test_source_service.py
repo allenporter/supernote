@@ -242,6 +242,23 @@ async def test_get_backfill_overview_lists_next_files_and_untranscribed_notes(
                     text_content=f"Content {fid}",
                 )
             )
+        # Add a second non-blank page and a whitespace-only blank page on file 30.
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=30,
+                    page_index=1,
+                    page_id="P30_1",
+                    text_content="Second page on 30",
+                ),
+                NotePageContentDO(
+                    file_id=30,
+                    page_index=2,
+                    page_id="P30_2",
+                    text_content="   \n\t ",
+                ),
+            ]
+        )
         # Un-OCR'd .note file (counted in untranscribed_files) vs PDF (ignored).
         session.add_all(
             [
@@ -267,15 +284,19 @@ async def test_get_backfill_overview_lists_next_files_and_untranscribed_notes(
     initial = await svc.get_backfill_overview(1, before_file_id=None, preview_limit=2)
     assert initial.total_files == 3
     assert initial.remaining_files == 3
+    assert initial.total_pages == 4
+    assert initial.remaining_pages == 4
     assert initial.untranscribed_files == 1
     assert initial.next_files == ["Note30.note", "Note20.note"]
 
     after_first = await svc.get_backfill_overview(1, before_file_id=20, preview_limit=5)
     assert after_first.remaining_files == 1
+    assert after_first.remaining_pages == 1
     assert after_first.next_files == ["Note10.note"]
 
     done = await svc.get_backfill_overview(1, before_file_id=10, preview_limit=5)
     assert done.remaining_files == 0
+    assert done.remaining_pages == 0
     assert done.next_files == []
 
 

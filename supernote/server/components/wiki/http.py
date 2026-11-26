@@ -289,6 +289,13 @@ async def handle_wiki_status(request: web.Request) -> web.Response:
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
     status = await service.get_status(user_id)
+    compiler: WikiCompilerWorker | None = request.app.get(WIKI_COMPILER_KEY)
+    if compiler is not None:
+        in_flight = compiler.in_flight_backfill_pages(user_id)
+        if in_flight > 0:
+            status.backfill_remaining_pages = max(
+                0, status.backfill_remaining_pages - in_flight
+            )
     return web.json_response(WikiStatusResponseVO(status=status).to_dict())
 
 

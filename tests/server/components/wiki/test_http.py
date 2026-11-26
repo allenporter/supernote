@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from dataclasses import replace
 from typing import Any
 from unittest.mock import patch
 
@@ -23,6 +24,7 @@ from supernote.models.user import UserRegisterDTO
 from supernote.models.wiki import WikiSourceRefDTO, WikiSourceType
 from supernote.server.ai.base import AIError
 from supernote.server.components.wiki.compiler import WIKI_COMPILER_KEY
+from supernote.server.components.wiki.service import WIKI_SERVICE_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.keys import USER_SERVICE_KEY
 from supernote.server.services.user import UserService
@@ -300,3 +302,34 @@ async def test_wiki_http_upstream_compile_errors_return_502(
             json={"mode": "incremental"},
         )
         assert resp.status == 502
+
+
+async def test_wiki_http_status_subtracts_in_flight_backfill_pages(
+    client: TestClient,
+    wiki_client: WikiClient,
+) -> None:
+    assert client.app is not None
+    compiler = client.app[WIKI_COMPILER_KEY]
+    service = client.app[WIKI_SERVICE_KEY]
+
+    base_status = await wiki_client.get_status()
+    assert base_status.backfill_total_pages == 0
+    assert base_status.backfill_remaining_pages == 0
+
+    with (
+        patch.object(
+            service,
+            "get_status",
+            return_value=replace(
+                base_status,
+                backfill_total_files=2,
+                backfill_remaining_files=2,
+                backfill_total_pages=50,
+                backfill_remaining_pages=50,
+            ),
+        ),
+        patch.object(compiler, "in_flight_backfill_pages", return_value=16),
+    ):
+        live = await wiki_client.get_status()
+        assert live.backfill_total_pages == 50
+        assert live.backfill_remaining_pages == 34
