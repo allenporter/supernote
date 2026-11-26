@@ -118,11 +118,30 @@ def build_static_component_configs(
         domain: copy.deepcopy(cfg)
         for domain, cfg in server_config.root_component_configs.items()
     }
+    configs["ai"] = {
+        **configs.get("ai", {}),
+        **server_config.ai.to_dict(),
+    }
     for domain in _AI_PROVIDER_DOMAINS:
-        configs[domain] = {
+        provider_entries = {
+            name: p_cfg.to_dict()
+            for name, p_cfg in server_config.ai.providers.items()
+            if server_config.ai.provider_type(name).strip().lower() == domain
+        }
+        domain_cfg: dict[str, Any] = {
             **configs.get(domain, {}),
             "enabled": domain in ai_domains,
         }
+        if provider_entries:
+            domain_cfg["providers"] = {
+                **domain_cfg.get("providers", {}),
+                **provider_entries,
+            }
+            if domain in provider_entries:
+                for key in ("api_key", "base_url"):
+                    if key in provider_entries[domain]:
+                        domain_cfg.setdefault(key, provider_entries[domain][key])
+        configs[domain] = domain_cfg
     for f in fields(server_config):
         comp_meta = f.metadata.get("component")
         val = getattr(server_config, f.name)

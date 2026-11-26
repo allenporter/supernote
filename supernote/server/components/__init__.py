@@ -39,13 +39,7 @@ class BuiltinComponentSpec:
     default_enabled: bool = False
     """Whether the component loads by default when `enabled` is not set in config."""
     config_schema_path: str | None = None
-    """Optional dotted `module:ClassName` path for the component's typed config dataclass.
-
-    TODO: Migrate remaining configurable components (`ai`, `events`, `gemini`,
-    `http`, `mcp`, `metrics`, `openai`, `web_ui`) off flat `core.config` fields
-    onto their own `DataClassDictMixin` config schemas so every component
-    consumes the `config` mapping passed to `async_setup(core, config)`.
-    """
+    """Optional dotted `module:ClassName` path for the component's typed config dataclass."""
     runtime_configurable: bool = False
     """Whether the component can be dynamically reconfigured at runtime without restarting the server."""
 
@@ -55,6 +49,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="ai",
         import_path="supernote.server.components.ai:AiComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.ai.config:AiComponentConfig",
     ),
     BuiltinComponentSpec(
         domain="apple",
@@ -87,6 +82,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="gemini",
         import_path="supernote.server.components.gemini:GeminiComponent",
         default_enabled=False,
+        config_schema_path="supernote.server.components.gemini.config:GeminiConfig",
     ),
     BuiltinComponentSpec(
         domain="http",
@@ -120,6 +116,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="openai",
         import_path="supernote.server.components.openai:OpenAIComponent",
         default_enabled=False,
+        config_schema_path="supernote.server.components.openai.config:OpenAIConfig",
     ),
     BuiltinComponentSpec(
         domain="processor",

@@ -13,6 +13,8 @@ from typing import Any
 
 from supernote.server.core import ServerCore
 
+from .config import OpenAIConfig
+
 __all__ = ["OpenAIComponent"]
 
 
@@ -23,8 +25,12 @@ class OpenAIComponent:
     dependencies: tuple[str, ...] = ("ai",)
     platforms: tuple[str, ...] = ("ocr", "summary", "embedding", "text")
 
+    def __init__(self) -> None:
+        self._config: OpenAIConfig = OpenAIConfig()
+
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """No-op; OpenAI factories register via the `ocr`, `summary`, and `embedding` platforms."""
+        """Parse `OpenAIConfig` for OpenAI-compatible model registration."""
+        self._config = OpenAIConfig.from_dict(dict(config))
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; OpenAI clients run on demand with no background tasks."""

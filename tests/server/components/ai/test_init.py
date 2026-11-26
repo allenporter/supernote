@@ -196,7 +196,14 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
     assert AI_PLATFORMS == ("ocr", "summary", "embedding", "text")
     assert set(AI_PLATFORMS) <= KNOWN_PLATFORMS
 
-    loader = await load_components("ai")
+    loader = await load_components(
+        "ai",
+        configs={
+            "ai": {
+                "ocr": {"provider": "gemini", "model": "gemini-3.5-flash-lite"},
+            }
+        },
+    )
     component = loader.get("ai")
     assert isinstance(component, AiComponent)
     assert isinstance(component, Component)
@@ -205,6 +212,11 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
     assert component.dependencies == ()
     assert component.platforms == ("http",)
     assert component.hosted_platforms == AI_PLATFORMS
+    assert component._config.ocr == ModelConfig(
+        provider="gemini", model="gemini-3.5-flash-lite"
+    )
+    assert component._config.effective_text is None
+    assert component._config.provider_type("gemini") == "gemini"
 
     registrar = component.get_platform_registrar()
     assert isinstance(registrar, AiRegistrar)

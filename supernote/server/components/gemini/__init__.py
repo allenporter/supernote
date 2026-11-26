@@ -12,6 +12,8 @@ from typing import Any
 
 from supernote.server.core import ServerCore
 
+from .config import GeminiConfig
+
 __all__ = ["GeminiComponent"]
 
 
@@ -22,8 +24,12 @@ class GeminiComponent:
     dependencies: tuple[str, ...] = ("ai",)
     platforms: tuple[str, ...] = ("ocr", "summary", "embedding", "text")
 
+    def __init__(self) -> None:
+        self._config: GeminiConfig = GeminiConfig()
+
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """No-op; Gemini factories register via the `ocr`, `summary`, and `embedding` platforms."""
+        """Parse `GeminiConfig` for Gemini model registration."""
+        self._config = GeminiConfig.from_dict(dict(config))
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; Gemini clients run on demand with no background tasks."""
