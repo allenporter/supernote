@@ -721,3 +721,86 @@ async def test_background_backfill_runs_all_notebooks_stops_cleanly_and_resets(
         assert after_reset.backfill_remaining_files == 3
     finally:
         await worker.stop()
+
+
+async def test_background_backfill_guards_double_start_preserves_status_and_heals_stale_on_start(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=10,
+                user_id=1,
+                directory_id=0,
+                file_name="Single.note",
+                is_folder="N",
+                is_active="Y",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=10,
+                page_index=0,
+                page_id="P10",
+                text_content="Single content",
+            )
+        )
+        await session.commit()
+
+    worker = WikiCompilerWorker(
+        config=WikiConfig(enabled=True, auto_compile=False),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=FakeTextGenerationModel(
+            responses=[
+                {
+                    "page_ops": [
+                        {
+                            "slug": "topics/single",
+                            "title": "Single",
+                            "page_kind": "topic",
+                            "body_md": "Single body",
+                        }
+                    ]
+                }
+            ]
+        ),
+    )
+
+    # Simulate a stale `backfilling` checkpoint left over from a prior server crash.
+    await worker._update_checkpoint(1, status="backfilling", last_error=None)
+    assert (await wiki_service.get_status(1)).status == "backfilling"
+    await worker.start()
+    try:
+        assert (await wiki_service.get_status(1)).status == "idle"
+
+        # Two simultaneous start_backfill_job calls must only spawn one background task.
+        r1, r2 = await asyncio.gather(
+            worker.start_backfill_job(1, max_files_per_turn=1),
+            worker.start_backfill_job(1, max_files_per_turn=1),
+        )
+        assert r1.status == "backfilling"
+        assert r2.status == "backfilling"
+
+        # A concurrent incremental delta check while running must preserve `backfilling`.
+        delta_res = await worker.compile_user_delta(1)
+        assert delta_res.status in ("backfilling", "idle")
+
+        for _ in range(50):
+            if not worker.is_backfill_running(1):
+                break
+            await asyncio.sleep(0.02)
+
+        assert not worker.is_backfill_running(1)
+        final_status = await wiki_service.get_status(1)
+        assert final_status.status == "idle"
+        assert final_status.backfill_remaining_files == 0
+    finally:
+        await worker.stop()

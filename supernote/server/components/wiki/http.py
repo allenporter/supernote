@@ -316,6 +316,13 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
             res = await compiler.compile_user_delta(user_id)
             return _compile_result_response(req_dto.mode, res)
         if req_dto.mode == "backfill":
+            if compiler.is_backfill_running(user_id):
+                return web.json_response(
+                    {
+                        "error": "Background backfill is already running; stop it before running a manual batch."
+                    },
+                    status=409,
+                )
             res = await compiler.run_backfill(
                 user_id,
                 max_files=req_dto.max_files if req_dto.max_files is not None else 5,
