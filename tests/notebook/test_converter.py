@@ -698,6 +698,21 @@ def test_pdf_converter_wraps_and_scales_dense_page_text(
     assert float(font_match.group(1)) < 10.0
 
 
+def test_pdf_converter_uses_cid_font_for_cjk_text(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    notebook = make_notebook(width=10, height=10, pages=[{"PAGEID": "P0"}])
+    pdf_bytes = PdfConverter(notebook).convert(
+        0,
+        page_texts={0: "Meeting 日本語 中文笔记"},
+    )
+
+    assert b"/STSong-Light" in pdf_bytes
+    joined = b"\n".join(_extract_decompressed_pdf_streams(pdf_bytes))
+    assert b"3 Tr" in joined
+    assert b"(nnn)" not in joined
+
+
 def test_pdf_converter_embeds_toc_outline_entries(
     make_notebook: Callable[..., fileformat.Notebook],
 ) -> None:

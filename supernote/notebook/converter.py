@@ -34,6 +34,8 @@ import svgwrite
 from PIL import Image
 from reportlab.lib.pagesizes import A4, landscape, portrait
 from reportlab.lib.utils import simpleSplit
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas
 
 from . import color, exceptions, fileformat, schema, utils
@@ -462,10 +464,20 @@ class PdfOutlineEntry:
 
 
 _PDF_TEXT_FONT = "Helvetica"
+# ReportLab's built-in Unicode CID font requires no bundled TTF files and
+# encodes CJK + ASCII as UCS-2 so non-Latin OCR transcripts stay searchable
+# instead of degrading to placeholder glyphs under Helvetica/WinAnsi.
+_PDF_TEXT_CJK_FONT = "STSong-Light"
+_CJK_CHAR_RE = re.compile(
+    r"[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]"
+)
 _PDF_TEXT_DEFAULT_SIZE = 10.0
 _PDF_TEXT_MIN_SIZE = 1.0
 _PDF_TEXT_LEADING_RATIO = 1.2
 _PDF_TEXT_MARGIN = 18.0
+# PDF text rendering mode 3 ("neither fill nor stroke" in ISO 32000-1 §9.3.6):
+# draws the OCR transcript as an invisible overlay so PDF readers can search
+# and index the page without altering the rendered handwriting image.
 _PDF_TEXT_RENDER_INVISIBLE = 3
 
 
@@ -615,6 +627,15 @@ class PdfConverter:
         c.save()
 
     @staticmethod
+    def _select_text_font(text: str) -> str:
+        """Select Helvetica for Latin text or a built-in Unicode CID font for CJK."""
+        if not _CJK_CHAR_RE.search(text):
+            return _PDF_TEXT_FONT
+        if _PDF_TEXT_CJK_FONT not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(UnicodeCIDFont(_PDF_TEXT_CJK_FONT))
+        return _PDF_TEXT_CJK_FONT
+
+    @staticmethod
     def _draw_invisible_text(
         cvs: canvas.Canvas, text: str, pagesize: tuple[float, float]
     ) -> None:
@@ -623,8 +644,11 @@ class PdfConverter:
         usable_width = max(width - 2 * _PDF_TEXT_MARGIN, 1.0)
         usable_height = max(height - 2 * _PDF_TEXT_MARGIN, 1.0)
 
+        font_name = PdfConverter._select_text_font(text)
         font_size = _PDF_TEXT_DEFAULT_SIZE
-        wrapped_lines = PdfConverter._wrap_text_lines(text, font_size, usable_width)
+        wrapped_lines = PdfConverter._wrap_text_lines(
+            text, font_name, font_size, usable_width
+        )
         if not wrapped_lines:
             return
 
@@ -635,25 +659,29 @@ class PdfConverter:
             scale = usable_height / (len(wrapped_lines) * leading)
             font_size = max(_PDF_TEXT_MIN_SIZE, font_size * scale)
             leading = font_size * _PDF_TEXT_LEADING_RATIO
-            wrapped_lines = PdfConverter._wrap_text_lines(text, font_size, usable_width)
+            wrapped_lines = PdfConverter._wrap_text_lines(
+                text, font_name, font_size, usable_width
+            )
 
         text_obj = cvs.beginText(
             _PDF_TEXT_MARGIN, height - _PDF_TEXT_MARGIN - font_size
         )
-        text_obj.setFont(_PDF_TEXT_FONT, font_size, leading=leading)
+        text_obj.setFont(font_name, font_size, leading=leading)
         text_obj.setTextRenderMode(_PDF_TEXT_RENDER_INVISIBLE)
         text_obj.textLines(wrapped_lines)
         cvs.drawText(text_obj)
 
     @staticmethod
-    def _wrap_text_lines(text: str, font_size: float, max_width: float) -> list[str]:
+    def _wrap_text_lines(
+        text: str, font_name: str, font_size: float, max_width: float
+    ) -> list[str]:
         """Split `text` into wrapped lines that fit within `max_width`."""
         lines: list[str] = []
         for raw_line in text.splitlines():
             stripped = raw_line.strip()
             if not stripped:
                 continue
-            lines.extend(simpleSplit(stripped, _PDF_TEXT_FONT, font_size, max_width))
+            lines.extend(simpleSplit(stripped, font_name, font_size, max_width))
         return lines
 
     @staticmethod
