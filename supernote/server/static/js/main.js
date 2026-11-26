@@ -30,6 +30,7 @@ import { resetEscapeStack } from './composables/useModalEscape.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useRecycleBin } from './composables/useRecycleBin.js';
 import { useRouter } from './composables/useRouter.js';
+import { useServerFeatures } from './composables/useServerFeatures.js';
 import { useToast } from './composables/useToast.js';
 import { getErrorMessage } from './utils/format.js';
 import { withResolvedClient } from './utils/oauth.js';
@@ -100,6 +101,9 @@ createApp({
             resetRecycleBin,
         } = useRecycleBin();
 
+        // Server Feature Availability
+        const { isTabAvailable, loadServerFeatures, resetServerFeatures } = useServerFeatures();
+
         // Host Navigation & URL Routing
         const {
             activeTab,
@@ -135,6 +139,7 @@ createApp({
             loadedDirectoryId,
             loadDirectory,
             selectedIds,
+            isTabAvailable,
             onOAuthRouteEnter: () => {
                 isSubmittingOAuth.value = false;
                 oauthCompletedOutcome.value = null;
@@ -207,6 +212,8 @@ createApp({
         async function resumeSession() {
             const token = getToken();
             if (!token) return false;
+            await loadServerFeatures();
+            if (!getToken()) return false;
             isLoggedIn.value = true;
             connectSocket();
             return true;
@@ -372,6 +379,7 @@ createApp({
             resetRecycleBin();
             resetSessionRoutes();
             resetProcessingStatuses();
+            resetServerFeatures();
             clearToasts();
         });
 
@@ -442,6 +450,7 @@ createApp({
             handleLogin,
             handleLogout,
             activeTab,
+            isTabAvailable,
             selectedWikiSlug,
             navigateToWikiSlug,
             showSearchModal,

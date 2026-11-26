@@ -974,6 +974,25 @@ function mapSystemComponentStatus(raw) {
 }
 
 /**
+ * Fetch the domains of built-in server components currently running.
+ * Returns `null` when the server cannot report them (older server, error
+ * response, expired session, or network failure) so callers treat every
+ * feature as available.
+ * @returns {Promise<string[] | null>}
+ */
+export async function fetchServerFeatures() {
+    try {
+        const data = await apiRequest('/api/extended/system/features', {
+            method: 'GET',
+            fallbackValue: null,
+        });
+        return Array.isArray(data?.runningComponents) ? data.runningComponents.map(String) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Fetch built-in component configuration statuses (Admin only; returns `[]` for non-admins on 403).
  * @returns {Promise<SystemComponentStatus[]>}
  */

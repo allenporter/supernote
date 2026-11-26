@@ -11,7 +11,11 @@ import {
     useRouter,
 } from '../../supernote/server/static/js/composables/useRouter.js';
 
-function createRouterHarness({ onOAuthRouteEnter = null, onOAuthRouteClear = null } = {}) {
+function createRouterHarness({
+    onOAuthRouteEnter = null,
+    onOAuthRouteClear = null,
+    isTabAvailable = undefined,
+} = {}) {
     /** @type {string[]} */
     const historyStack = [''];
     let historyIdx = 0;
@@ -98,6 +102,7 @@ function createRouterHarness({ onOAuthRouteEnter = null, onOAuthRouteClear = nul
         selectedIds,
         onOAuthRouteEnter,
         onOAuthRouteClear,
+        isTabAvailable,
     });
     routerRef = router;
 
@@ -402,6 +407,37 @@ test('useRouter.js: handles #/wiki/<slug> deep links and navigateToWikiSlug', as
         await router.syncFromUrl();
         assert.equal(router.selectedWikiSlug.value, 'projects/alpha');
         assert.equal(globalThis.window.location.hash, '#/wiki/projects/alpha');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('useRouter.js: routes unavailable tabs to Files for deep links and switchTab', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        setToken('router-unavailable-tok');
+        const { router, historyStack } = createRouterHarness({
+            isTabAvailable: (tab) => tab !== 'wiki',
+        });
+
+        globalThis.window.history.pushState(null, '', '#/wiki/projects/alpha');
+        await router.syncFromUrl(true);
+        assert.equal(router.activeTab.value, 'files');
+        assert.equal(router.selectedWikiSlug.value, '');
+        assert.equal(globalThis.window.location.hash, '#/files');
+        assert.deepEqual(historyStack, ['', '#/files']);
+
+        await router.switchTab('wiki');
+        assert.equal(router.activeTab.value, 'files');
+        assert.equal(globalThis.window.location.hash, '#/files');
+
+        await router.switchTab('tasks');
+        assert.equal(router.activeTab.value, 'tasks');
+        assert.equal(globalThis.window.location.hash, '#/tasks');
     } finally {
         await logout({ reload: false });
         globalThis.window = origWindow;

@@ -185,6 +185,7 @@ export function buildUrlHash(
  * @param {import('vue').Ref<string[]>} options.selectedIds
  * @param {(() => void) | null} [options.onOAuthRouteEnter=null]
  * @param {(() => void) | null} [options.onOAuthRouteClear=null]
+ * @param {(tab: string) => boolean} [options.isTabAvailable] Whether a host tab's backing server component is running; unavailable tabs route to Files.
  */
 export function useRouter({
     isLoggedIn,
@@ -195,6 +196,7 @@ export function useRouter({
     selectedIds,
     onOAuthRouteEnter = null,
     onOAuthRouteClear = null,
+    isTabAvailable = () => true,
 }) {
     const activeTab = ref('files'); // 'files' | 'digests' | 'tasks' | 'wiki'
     const selectedWikiSlug = ref('');
@@ -481,7 +483,17 @@ export function useRouter({
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
 
-        if (parsed.tab === 'digests' || parsed.tab === 'tasks' || parsed.tab === 'wiki') {
+        const isOptionalTab =
+            parsed.tab === 'digests' || parsed.tab === 'tasks' || parsed.tab === 'wiki';
+        if (isOptionalTab && !isTabAvailable(parsed.tab)) {
+            lastSyncedHash = '#/files';
+            window.history.replaceState(null, '', '#/files');
+            activeTab.value = 'files';
+            viewerOpenedFromHistory = false;
+            await restoreDirectoryState('0', isInitial, seq);
+            return;
+        }
+        if (isOptionalTab) {
             activeTab.value = parsed.tab;
             if (parsed.tab === 'wiki') {
                 selectedWikiSlug.value = parsed.wikiSlug || '';
@@ -527,6 +539,9 @@ export function useRouter({
      * @param {'files' | 'digests' | 'tasks' | 'wiki'} tab
      */
     async function switchTab(tab) {
+        if (!isTabAvailable(tab)) {
+            tab = 'files';
+        }
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
         activeTab.value = tab;
