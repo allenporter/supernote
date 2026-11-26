@@ -11,11 +11,14 @@ import pytest
 from aiohttp.test_utils import TestClient
 from sqlalchemy import delete
 
+from supernote.client.config import ConfigClient
+from supernote.models.config import ServerFeaturesVO
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.config.service import CONFIG_SERVICE_KEY
 from supernote.server.config import ComponentConfigSource, ServerConfig
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import CONFIG_KEY
+from supernote.server.keys import COMPONENT_LOADER_KEY, CONFIG_KEY
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -97,6 +100,36 @@ async def test_list_system_components_rejects_non_admin(
         "/api/extended/system/components", headers=user_headers
     )
     assert member_resp.status == 403
+
+
+async def test_get_features_as_non_admin(
+    client: TestClient,
+    config_client: ConfigClient,
+) -> None:
+    """Any signed-in user sees running component domains, tracking live reconfiguration."""
+    loader = client.app[COMPONENT_LOADER_KEY]
+    expected = sorted(
+        comp.domain for comp in loader.components if loader.is_running(comp.domain)
+    )
+    assert await config_client.get_features() == ServerFeaturesVO(
+        running_components=expected
+    )
+    assert "schedule" in expected
+    assert "webhooks" not in expected
+    assert "wiki" not in expected
+
+    await client.app[CONFIG_SERVICE_KEY].update_component_config(
+        "webhooks", {"enabled": True, "endpoints": []}
+    )
+    assert await config_client.get_features() == ServerFeaturesVO(
+        running_components=sorted([*expected, "webhooks"])
+    )
+
+
+async def test_get_features_requires_auth(client: TestClient) -> None:
+    """Unauthenticated requests are rejected by the auth middleware."""
+    resp = await client.get("/api/extended/system/features")
+    assert resp.status == 401
 
 
 async def test_update_system_component_live_reconfigures(

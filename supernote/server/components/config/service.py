@@ -421,6 +421,12 @@ class ConfigService:
             fields=extract_component_field_specs(spec),
         )
 
+    def list_running_domains(self) -> list[str]:
+        """Return the sorted domains of built-in components currently running."""
+        return sorted(
+            spec.domain for spec in self._specs if self._loader.is_running(spec.domain)
+        )
+
     async def list_component_statuses(self) -> list[ComponentStatusVO]:
         """Return runtime status and configuration for all built-in components."""
         resolved = await self.resolve_all()

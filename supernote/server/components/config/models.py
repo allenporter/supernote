@@ -12,6 +12,7 @@ from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.models.base import BaseResponse
+from supernote.models.config import ServerFeaturesVO
 from supernote.server.config import ComponentConfigSource
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "ComponentListResponseVO",
     "ComponentStatusResponseVO",
     "ComponentStatusVO",
+    "ServerFeaturesVO",
     "UpdateComponentConfigDTO",
 ]
 
