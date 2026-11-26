@@ -14,6 +14,7 @@ and `AiRegistrar` (passed into
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -42,6 +43,7 @@ from supernote.server.ai.models.text import (
     TextGenerationModel,
 )
 from supernote.server.core import ServerCore
+from supernote.server.events import Event
 from supernote.server.utils.prompt_loader import PROMPT_LOADER
 
 from .config import AiComponentConfig
@@ -56,8 +58,20 @@ __all__ = [
     "SUMMARY_MODEL_KEY",
     "TEXT_MODEL_KEY",
     "AiComponent",
+    "AiModelsUpdatedEvent",
     "AiRegistrar",
 ]
+
+
+@dataclass
+class AiModelsUpdatedEvent(Event):
+    """Published inline when `AiComponent` rebinds active AI role models at runtime."""
+
+    ocr_model: OcrModel | None
+    summary_model: SummaryModel | None
+    embedding_model: EmbeddingModel | None
+    text_model: TextGenerationModel | None
+
 
 AI_PLATFORMS: tuple[str, ...] = ("ocr", "summary", "embedding", "text")
 """AI capability platform names hosted by `AiComponent`."""
@@ -297,6 +311,49 @@ class AiComponent:
     async def async_finalize_platforms(self, core: ServerCore) -> None:
         """Instantiate configured AI models and bind them onto ``core.app``."""
         self.get_platform_registrar().apply_to_app(core.app, self._config)
+
+    async def async_update_config(
+        self, core: ServerCore, config: Mapping[str, Any]
+    ) -> None:
+        """Live-reconfigure AI role models in place without tearing down hosted platforms."""
+        new_config = AiComponentConfig.from_dict(dict(config))
+        registrar = self.get_platform_registrar()
+        ocr_model = registrar.create_ocr_model(new_config)
+        summary_model = registrar.create_summary_model(new_config)
+        embedding_model = registrar.create_embedding_model(new_config)
+        text_model = registrar.create_text_model(new_config)
+
+        for role_name, role_cfg, resolved_model in (
+            ("OCR", new_config.ocr, ocr_model),
+            ("summary", new_config.summary, summary_model),
+            ("embedding", new_config.embedding, embedding_model),
+            ("text", new_config.text, text_model),
+        ):
+            if role_cfg is not None and resolved_model is None:
+                raise ValueError(
+                    f"Provider {role_cfg.provider!r} is not configured for "
+                    f"{role_name} model {role_cfg.model!r}"
+                )
+
+        if (
+            new_config.prompts_dir
+            and new_config.prompts_dir != self._config.prompts_dir
+        ):
+            PROMPT_LOADER.configure(Path(new_config.prompts_dir))
+
+        core.app[OCR_MODEL_KEY] = ocr_model
+        core.app[SUMMARY_MODEL_KEY] = summary_model
+        core.app[EMBEDDING_MODEL_KEY] = embedding_model
+        core.app[TEXT_MODEL_KEY] = text_model
+        self._config = new_config
+        await core.event_bus.publish(
+            AiModelsUpdatedEvent(
+                ocr_model=ocr_model,
+                summary_model=summary_model,
+                embedding_model=embedding_model,
+                text_model=text_model,
+            )
+        )
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; AI model clients are invoked on demand by workers and services."""

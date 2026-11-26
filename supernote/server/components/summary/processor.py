@@ -29,7 +29,7 @@ from supernote.models.summary import (
 )
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
-from supernote.server.components.ai import SUMMARY_MODEL_KEY
+from supernote.server.components.ai import SUMMARY_MODEL_KEY, AiModelsUpdatedEvent
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorRegistrar,
@@ -315,7 +315,8 @@ class SummaryModule(ProcessorModule):
         **kwargs: object,
     ) -> None:
         """Aggregate OCR text in memory and upsert the notebook's AI summary record."""
-        if self.summary_model is None:
+        summary_model = self.summary_model
+        if summary_model is None:
             raise ValueError("Summary model not configured")
 
         logger.info(f"Starting summary generation for file_id={file_id}")
@@ -378,7 +379,7 @@ class SummaryModule(ProcessorModule):
 
         custom_type = Path(file_do.file_name).stem.lower()
         prompt = format_summary_prompt(full_text, custom_type=custom_type)
-        summary_response = await self.summary_model.summarize(prompt)
+        summary_response = await summary_model.summarize(prompt)
 
         # Format segments into Markdown and collect metadata
         ai_summary = "No summary generated."
@@ -429,7 +430,7 @@ class SummaryModule(ProcessorModule):
             file_id=file_id,
             summary_uuid=summary_uuid,
             content=ai_summary,
-            data_source=self.summary_model.model_id,
+            data_source=summary_model.model_id,
             source_path=source_path,
             metadata=metadata_str,
         )
@@ -531,10 +532,14 @@ async def async_setup_processor(
     registrar: ProcessorRegistrar,
 ) -> None:
     """Register `SummaryModule` with the `"processor"` platform."""
-    registrar.register_module(
-        SummaryModule(
-            file_service=core.file_service,
-            summary_service=core.app[SUMMARY_SERVICE_KEY],
-            summary_model=core.app.get(SUMMARY_MODEL_KEY),
-        )
+    module = SummaryModule(
+        file_service=core.file_service,
+        summary_service=core.app[SUMMARY_SERVICE_KEY],
+        summary_model=core.app.get(SUMMARY_MODEL_KEY),
     )
+
+    async def _on_ai_models_updated(event: AiModelsUpdatedEvent) -> None:
+        module.summary_model = event.summary_model
+
+    core.event_bus.subscribe(AiModelsUpdatedEvent, _on_ai_models_updated, inline=True)
+    registrar.register_module(module)

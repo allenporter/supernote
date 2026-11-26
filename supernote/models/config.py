@@ -124,6 +124,12 @@ class ComponentStatusVO(DataClassJSONMixin):
     fields: list[ComponentFieldSpecVO] = field(default_factory=list)
     """Declarative field descriptors extracted from the component's config schema."""
 
+    field_sources: dict[str, ComponentConfigSource] = field(
+        default_factory=dict,
+        metadata=field_options(alias="fieldSources"),
+    )
+    """Optional per-field provenance (`ENV`, `YAML`, `DATABASE`, `DEFAULT`) for components supporting granular edits."""
+
     class Config(BaseConfig):
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]

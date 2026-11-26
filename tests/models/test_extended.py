@@ -323,6 +323,8 @@ def test_web_ai_status_model() -> None:
         "summaryModel": None,
         "vectorSearchEnabled": False,
         "embeddingModel": None,
+        "textEnabled": False,
+        "textModel": None,
         "model": None,
     }
     assert WebAiStatusVO.from_dict(default_vo.to_dict()) == default_vo
@@ -335,6 +337,8 @@ def test_web_ai_status_model() -> None:
         summary_model="gemini-2.5-flash",
         vector_search_enabled=False,
         embedding_model=None,
+        text_enabled=True,
+        text_model="gemini-2.5-pro",
         model="apple-vision",
     )
     data = vo.to_dict()
@@ -349,6 +353,8 @@ def test_web_ai_status_model() -> None:
         "summaryModel": "gemini-2.5-flash",
         "vectorSearchEnabled": False,
         "embeddingModel": None,
+        "textEnabled": True,
+        "textModel": "gemini-2.5-pro",
         "model": "apple-vision",
     }
     assert WebAiStatusVO.from_dict(data) == vo

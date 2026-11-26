@@ -2,20 +2,29 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Generator
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import yaml
 
+from supernote.models.base import TaskType
 from supernote.models.config import (
     ComponentConfigSource,
     ComponentFieldSpecVO,
     ComponentFieldType,
 )
-from supernote.server.components import BuiltinComponentSpec
+from supernote.server.components import BUILTIN_COMPONENTS, BuiltinComponentSpec
+from supernote.server.components.ai import (
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+    TEXT_MODEL_KEY,
+)
 from supernote.server.components.config.service import (
     _COMPONENT_CONFIG_KEY_PREFIX,
     ConfigService,
@@ -25,12 +34,18 @@ from supernote.server.components.config.service import (
     extract_component_field_specs,
     load_component_config_schema,
 )
+from supernote.server.components.events import EventsComponent
 from supernote.server.components.gemini.config import GeminiConfig
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
+from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.components.webhooks.config import WebhookConfig
+from supernote.server.components.wiki.compiler import WIKI_COMPILER_KEY
 from supernote.server.components.wiki.config import WikiConfig
 from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentError, ComponentLoader, ServerCore
+from supernote.server.exceptions import InvalidInputError
 from supernote.server.services.coordination import CoordinationService
+from tests.server.components.conftest import LoadComponents
 
 _WEBHOOKS_SPEC = BuiltinComponentSpec(
     domain="webhooks",
@@ -605,3 +620,197 @@ async def test_ai_and_provider_root_yaml_compatibility(
         )
     assert env_resolved["gemini"].source == ComponentConfigSource.ENV
     assert env_resolved["gemini"].config["api_key"] == "env-gemini-key"
+
+
+async def test_ai_per_field_static_pinning_and_role_clearing(
+    tmp_path: Path,
+    component_core: ServerCore,
+) -> None:
+    """`SUPERNOTE_GEMINI_API_KEY` pins `ai.providers` without locking `ai` model roles, and clearing roles persists."""
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    with patch.dict(os.environ, {"SUPERNOTE_GEMINI_API_KEY": "secret-gemini-key"}):
+        core = replace(component_core, config=ServerConfig.load(empty_dir))
+
+    loader = ComponentLoader()
+    service = ConfigService(core=core, loader=loader)
+
+    initial_statuses = {s.domain: s for s in await service.list_component_statuses()}
+    ai_status = initial_statuses["ai"]
+    assert ai_status.read_only is False
+    assert ai_status.field_sources == {"providers": ComponentConfigSource.ENV}
+    assert ai_status.config["providers"]["gemini"]["api_key"] == "***"
+    assert initial_statuses["gemini"].config["api_key"] == "***"
+
+    # Update ocr and explicitly clear embedding while providers stays ENV-pinned.
+    updated = await service.update_component_config(
+        "ai",
+        {
+            "ocr": {
+                "provider": "gemini",
+                "model": "gemini-2.5-pro",
+                "max_concurrency": 2,
+            },
+            "embedding": None,
+        },
+    )
+    assert updated.config["ocr"]["model"] == "gemini-2.5-pro"
+    assert updated.config["ocr"]["max_concurrency"] == 2
+    assert "embedding" not in updated.config
+    assert updated.field_sources["ocr"] is ComponentConfigSource.DATABASE
+    assert updated.field_sources["embedding"] is ComponentConfigSource.DATABASE
+    assert updated.field_sources["providers"] is ComponentConfigSource.ENV
+
+    # Static providers (and API keys) must never be written into SQLite.
+    raw_db = await core.coordination.get_value(f"{_COMPONENT_CONFIG_KEY_PREFIX}ai")
+    assert raw_db is not None
+    persisted = json.loads(raw_db)
+    assert "providers" not in persisted
+    assert persisted["embedding"] is None
+    assert persisted["ocr"]["model"] == "gemini-2.5-pro"
+
+    # Re-resolving preserves cleared embedding instead of resurrecting legacy Gemini defaults.
+    re_resolved = (await service.resolve_all())["ai"]
+    assert re_resolved.config["ocr"]["model"] == "gemini-2.5-pro"
+    assert "embedding" not in re_resolved.config
+
+    # Pinning SUPERNOTE_GEMINI_OCR_MODEL locks ocr/summary while leaving text editable.
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_GEMINI_API_KEY": "secret-gemini-key",
+            "SUPERNOTE_GEMINI_OCR_MODEL": "gemini-2.5-flash",
+        },
+    ):
+        core_pinned = replace(component_core, config=ServerConfig.load(empty_dir))
+    service = ConfigService(core=core_pinned, loader=loader)
+
+    with pytest.raises(
+        ConfigurationConflictError,
+        match="Field 'ocr' of component 'ai' is managed by env configuration",
+    ):
+        await service.update_component_config(
+            "ai", {"ocr": {"provider": "gemini", "model": "gemini-2.5-pro"}}
+        )
+
+    text_updated = await service.update_component_config(
+        "ai", {"text": {"provider": "gemini", "model": "gemini-2.5-pro"}}
+    )
+    assert text_updated.config["text"]["model"] == "gemini-2.5-pro"
+    assert text_updated.config["ocr"]["model"] == "gemini-2.5-flash"
+
+
+async def test_secret_redaction_preserves_existing_secret_on_partial_update(
+    component_core: ServerCore,
+) -> None:
+    """Echoing redacted `'***'` secrets back on update preserves the stored secret."""
+    loader = ComponentLoader()
+    loader.register(EventsComponent())
+    await loader.async_setup_all(component_core, {"events": {"enabled": True}})
+    await loader.async_start_all(component_core)
+    service = ConfigService(core=component_core, loader=loader, specs=(_WEBHOOKS_SPEC,))
+
+    created = await service.update_component_config(
+        "webhooks",
+        {
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "http://127.0.0.1:9999/hook",
+                    "user": "admin@example.com",
+                    "secret": "real-hmac-secret",
+                }
+            ],
+        },
+    )
+    assert created.config["endpoints"][0]["secret"] == "***"
+
+    # Toggle enabled while echoing the redacted config back (matching Web UI behavior).
+    toggled = await service.update_component_config(
+        "webhooks", {**created.config, "enabled": False}
+    )
+    assert toggled.config["endpoints"][0]["secret"] == "***"
+
+    resolved = (await service.resolve_all())["webhooks"]
+    assert resolved.config["endpoints"][0]["secret"] == "real-hmac-secret"
+    await loader.async_stop_all(component_core)
+
+
+async def test_ai_live_reconfiguration_propagates_to_consumers(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    """Updating `ai` roles live-updates `core.app` keys and all subscribed AI consumers."""
+    selected_domains = (
+        "ai",
+        "fake_ai",
+        "conversion",
+        "events",
+        "processor",
+        "transcript",
+        "summary",
+        "search",
+        "wiki",
+    )
+    loader = await load_components(
+        *selected_domains,
+        configs={"conversion": {"enabled": True, "notebook_preview": False}},
+    )
+    specs = tuple(s for s in BUILTIN_COMPONENTS if s.domain in selected_domains)
+
+    processor = component_core.app[PROCESSOR_SERVICE_KEY]
+    search_service = component_core.app[SEARCH_SERVICE_KEY]
+    wiki_compiler = component_core.app[WIKI_COMPILER_KEY]
+    modules_by_type = {m.task_type: m for m in processor.task_graph.modules}
+
+    assert modules_by_type[TaskType.PNG_CONVERSION].enabled is False
+    assert modules_by_type[TaskType.OCR_EXTRACTION].enabled is False
+    assert modules_by_type[TaskType.SUMMARY_GENERATION].enabled is False
+    assert modules_by_type[TaskType.EMBEDDING_GENERATION].enabled is False
+    assert search_service.embedding_model is None
+    assert wiki_compiler._text_model is None
+
+    service = ConfigService(core=component_core, loader=loader, specs=specs)
+    await service.update_component_config(
+        "ai",
+        {
+            "ocr": {"provider": "fake_ai", "model": "fake-ocr-v2"},
+            "summary": {"provider": "fake_ai", "model": "fake-summary-v2"},
+            "embedding": {"provider": "fake_ai", "model": "fake-embed-v2"},
+            "text": {"provider": "fake_ai", "model": "fake-text-v2"},
+        },
+    )
+
+    ocr_model = component_core.app[OCR_MODEL_KEY]
+    summary_model = component_core.app[SUMMARY_MODEL_KEY]
+    embedding_model = component_core.app[EMBEDDING_MODEL_KEY]
+    text_model = component_core.app[TEXT_MODEL_KEY]
+    assert ocr_model is not None and ocr_model.model_id == "fake-ocr-v2"
+    assert summary_model is not None and summary_model.model_id == "fake-summary-v2"
+    assert embedding_model is not None and embedding_model.model_id == "fake-embed-v2"
+    assert text_model is not None and text_model.model_id == "fake-text-v2"
+
+    assert modules_by_type[TaskType.PNG_CONVERSION].enabled is True
+    assert modules_by_type[TaskType.OCR_EXTRACTION].enabled is True
+    assert modules_by_type[TaskType.SUMMARY_GENERATION].enabled is True
+    assert modules_by_type[TaskType.EMBEDDING_GENERATION].enabled is True
+    assert processor.task_graph.is_effectively_enabled(TaskType.OCR_EXTRACTION) is True
+    assert search_service.embedding_model is embedding_model
+    assert wiki_compiler._text_model is text_model
+
+    # Clearing `text` falls back to `summary` live.
+    await service.update_component_config("ai", {"text": None})
+    fallback_text_model = component_core.app[TEXT_MODEL_KEY]
+    assert (
+        fallback_text_model is not None
+        and fallback_text_model.model_id == "fake-summary-v2"
+    )
+    assert wiki_compiler._text_model is fallback_text_model
+
+    # Invalid provider fails with 400 and leaves live models intact.
+    with pytest.raises(InvalidInputError, match="Unsupported OCR model provider type"):
+        await service.update_component_config(
+            "ai", {"ocr": {"provider": "missing_provider", "model": "bad"}}
+        )
+    still_ocr = component_core.app[OCR_MODEL_KEY]
+    assert still_ocr is not None and still_ocr.model_id == "fake-ocr-v2"

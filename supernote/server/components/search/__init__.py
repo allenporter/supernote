@@ -31,7 +31,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from supernote.server.components.ai import EMBEDDING_MODEL_KEY
+from supernote.server.components.ai import EMBEDDING_MODEL_KEY, AiModelsUpdatedEvent
 from supernote.server.core import ServerCore
 
 from .models import NotebookInfo, SearchResult
@@ -64,6 +64,13 @@ class SearchComponent:
         )
         core.app[SEARCH_SERVICE_KEY] = service
         self._service = service
+
+        async def _on_ai_models_updated(event: AiModelsUpdatedEvent) -> None:
+            service.embedding_model = event.embedding_model
+
+        core.event_bus.subscribe(
+            AiModelsUpdatedEvent, _on_ai_models_updated, inline=True
+        )
 
     async def async_start(self, core: ServerCore) -> None:
         """Bind the resolved embedding model onto `SearchService` once AI platforms load."""

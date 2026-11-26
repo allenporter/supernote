@@ -17,7 +17,7 @@ from sqlalchemy import select
 from supernote.models.base import TaskType
 from supernote.notebook.converter import ImageConverter
 from supernote.notebook.parser import load_notebook
-from supernote.server.components.ai import OCR_MODEL_KEY
+from supernote.server.components.ai import OCR_MODEL_KEY, AiModelsUpdatedEvent
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorRegistrar,
@@ -80,6 +80,10 @@ class PngConversionModule(ProcessorModule):
     @property
     def enabled(self) -> bool:
         return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        self._enabled = value
 
     @property
     def version(self) -> str | None:
@@ -223,6 +227,12 @@ async def async_setup_processor(
     png_enabled = (ocr_model is not None) or (
         web_ui_loaded and conversion_service.notebook_preview
     )
-    registrar.register_module(
-        PngConversionModule(file_service=core.file_service, enabled=png_enabled)
-    )
+    module = PngConversionModule(file_service=core.file_service, enabled=png_enabled)
+
+    async def _on_ai_models_updated(event: AiModelsUpdatedEvent) -> None:
+        module.enabled = (event.ocr_model is not None) or (
+            web_ui_loaded and conversion_service.notebook_preview
+        )
+
+    core.event_bus.subscribe(AiModelsUpdatedEvent, _on_ai_models_updated, inline=True)
+    registrar.register_module(module)

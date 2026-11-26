@@ -115,6 +115,7 @@ async def test_update_component_live_reconfigures(
     enabled = await admin_config_client.update_component(
         "webhooks", {"enabled": True, "endpoints": endpoints}
     )
+    redacted_endpoints = [{**endpoints[0], "secret": "***"}]
     assert enabled == ComponentStatusVO(
         domain="webhooks",
         enabled=True,
@@ -123,7 +124,7 @@ async def test_update_component_live_reconfigures(
         read_only=False,
         runtime_configurable=True,
         restart_required=False,
-        config={"enabled": True, "endpoints": endpoints},
+        config={"enabled": True, "endpoints": redacted_endpoints},
         fields=WEBHOOK_FIELDS,
     )
 
