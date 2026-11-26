@@ -10,6 +10,7 @@ from aiohttp import web
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from supernote.models.wiki import WikiSourceType
 from supernote.server.db.models.wiki import (
     WikiAliasDO,
     WikiCheckpointDO,
@@ -204,7 +205,17 @@ class WikiService:
             ).scalar_one_or_none()
             if page is None:
                 return None
-            return (await self._hydrate_pages(session, user_id, [page]))[0]
+            hydrated = (await self._hydrate_pages(session, user_id, [page]))[0]
+        if hydrated.source_refs:
+            meta_map = await self._source_service.resolve_source_metadata(
+                user_id, hydrated.source_refs
+            )
+            for ref in hydrated.source_refs:
+                if meta := meta_map.get((ref.source_type, ref.source_key)):
+                    ref.file_name = meta.file_name
+                    ref.page_index = meta.page_index
+                    ref.task_title = meta.task_title
+        return hydrated
 
     async def list_pages(
         self,
@@ -415,7 +426,7 @@ class WikiService:
             for ref in refs:
                 refs_by_page.setdefault(ref.page_id, []).append(
                     WikiSourceRefDTO(
-                        source_type=ref.source_type,
+                        source_type=WikiSourceType(ref.source_type),
                         source_key=ref.source_key,
                         file_id=ref.file_id,
                         last_event_seq=ref.last_event_seq,
@@ -1008,7 +1019,7 @@ class WikiService:
         ):
             refs_by_page.setdefault(ref_row.page_id, []).append(
                 WikiSourceRefDTO(
-                    source_type=ref_row.source_type,
+                    source_type=WikiSourceType(ref_row.source_type),
                     source_key=ref_row.source_key,
                     file_id=ref_row.file_id,
                     last_event_seq=ref_row.last_event_seq,

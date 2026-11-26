@@ -20,7 +20,7 @@ from supernote.client.exceptions import (
 )
 from supernote.client.wiki import WikiClient
 from supernote.models.user import UserRegisterDTO
-from supernote.models.wiki import WikiSourceRefDTO
+from supernote.models.wiki import WikiSourceRefDTO, WikiSourceType
 from supernote.server.ai.base import AIError
 from supernote.server.components.wiki.compiler import WIKI_COMPILER_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
@@ -94,7 +94,9 @@ async def test_wiki_http_crud_conflict_search_and_isolation(
         aliases=["Project Apollo"],
         claims=[{"text": "Launch in Q3"}],
         source_refs=[
-            WikiSourceRefDTO(source_type="note_page", source_key="1:p1", file_id=1)
+            WikiSourceRefDTO(
+                source_type=WikiSourceType.NOTE_PAGE, source_key="1:p1", file_id=1
+            )
         ],
         edit_policy="protected_prose",
     )

@@ -13,6 +13,7 @@ import {
     fetchWikiStatus,
     formatLintTypeLabel,
     formatPageKindLabel,
+    formatSourceRef,
     formatWikiActionResult,
     resolveWikiLintIssue,
     saveWikiPage,
@@ -39,10 +40,16 @@ export default {
             default: '',
         },
     },
-    emits: ['select-slug'],
+    emits: ['select-slug', 'open-file', 'open-task'],
     /**
      * @param {{ initialSlug: string }} props
-     * @param {{ emit: (event: 'select-slug', slug: string, replace?: boolean) => void }} ctx
+     * @param {{
+     *   emit: {
+     *     (event: 'select-slug', slug: string, replace?: boolean): void,
+     *     (event: 'open-file', target: { id: string, pageIndex?: number | null }): void,
+     *     (event: 'open-task', task: { id: string, title?: string }): void,
+     *   }
+     * }} ctx
      */
     setup(props, { emit }) {
         const { showToast } = useToast();
@@ -605,6 +612,21 @@ export default {
         }
 
         /**
+         * Open a notebook page or schedule task cited in the active wiki page's Sources footer.
+         *
+         * @param {import('../api/wiki.js').WikiSourceRef} ref
+         */
+        function handleOpenSource(ref) {
+            const info = formatSourceRef(ref);
+            if (!info.clickable) return;
+            if (info.kind === 'note' && info.fileId) {
+                emit('open-file', { id: info.fileId, pageIndex: info.pageIndex });
+            } else if (info.kind === 'task' && info.taskId) {
+                emit('open-task', { id: info.taskId, title: info.label });
+            }
+        }
+
+        /**
          * Intercept clicks on rendered `[[wikilink]]` anchors to navigate in-place.
          *
          * @param {MouseEvent} event
@@ -642,6 +664,7 @@ export default {
             KIND_FILTERS,
             formatPageKindLabel,
             formatLintTypeLabel,
+            formatSourceRef,
             isLoading,
             isDisabled,
             isBusy,
@@ -699,6 +722,7 @@ export default {
             handleRunAction,
             handleResolveIssue,
             handleExportZip,
+            handleOpenSource,
             handleBodyClick,
         };
     },
@@ -1086,11 +1110,20 @@ export default {
                             <div v-if="activePage.source_refs.length">
                                 <div class="text-[11px] font-semibold text-stone-500 uppercase tracking-wide mb-1">Sources</div>
                                 <div class="flex flex-wrap gap-1.5">
-                                    <span v-for="ref in activePage.source_refs" :key="ref.source_type + ':' + ref.source_key"
-                                        :class="ref.is_source_deleted ? 'bg-red-50 text-red-700 line-through' : 'bg-stone-100 text-stone-700'"
-                                        class="px-2 py-0.5 rounded font-mono text-[11px]">
-                                        {{ ref.source_type }}:{{ ref.source_key }}
-                                    </span>
+                                    <template v-for="ref in activePage.source_refs" :key="ref.source_type + ':' + ref.source_key">
+                                        <button v-if="formatSourceRef(ref).clickable" type="button"
+                                            @click="handleOpenSource(ref)"
+                                            :title="formatSourceRef(ref).tooltip"
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-slate-700 hover:text-slate-900 text-[11px] font-medium transition-colors max-w-full">
+                                            <span class="truncate">{{ formatSourceRef(ref).label }}</span>
+                                        </button>
+                                        <span v-else
+                                            :title="formatSourceRef(ref).tooltip"
+                                            :class="ref.is_source_deleted ? 'bg-red-50 text-red-700 line-through' : 'bg-stone-100 text-stone-500'"
+                                            class="px-2 py-0.5 rounded text-[11px] max-w-full truncate">
+                                            {{ formatSourceRef(ref).label }}
+                                        </span>
+                                    </template>
                                 </div>
                             </div>
                             <div v-if="activePage.aliases.length" class="sm:col-span-2">

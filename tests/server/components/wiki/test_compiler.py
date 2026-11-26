@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from supernote.models.wiki import WikiSourceType
 from supernote.server.ai.base import AIError
 from supernote.server.components.events.service import EventLogService
 from supernote.server.components.fake_ai.text import FakeTextGenerationModel
@@ -156,10 +157,10 @@ async def test_deleted_pages_and_vfs_purge_mark_source_refs_deleted(
             body_md="Summary",
             source_refs=[
                 WikiSourceRefDTO(
-                    source_type="note_page", source_key="42:p1", file_id=42
+                    source_type=WikiSourceType.NOTE_PAGE, source_key="42:p1", file_id=42
                 ),
                 WikiSourceRefDTO(
-                    source_type="note_page", source_key="99:p2", file_id=99
+                    source_type=WikiSourceType.NOTE_PAGE, source_key="99:p2", file_id=99
                 ),
             ],
             author_kind="compiler",
@@ -299,7 +300,7 @@ async def test_same_batch_delete_preserves_is_source_deleted_on_reemit(
             body_md="Initial",
             source_refs=[
                 WikiSourceRefDTO(
-                    source_type="note_page", source_key="55:p1", file_id=55
+                    source_type=WikiSourceType.NOTE_PAGE, source_key="55:p1", file_id=55
                 )
             ],
             author_kind="compiler",

@@ -219,7 +219,8 @@
 
                 <!-- LLM Wiki Panel -->
                 <template v-else-if="activeTab === 'wiki'">
-                    <wiki-panel :initial-slug="selectedWikiSlug" @select-slug="navigateToWikiSlug"></wiki-panel>
+                    <wiki-panel :initial-slug="selectedWikiSlug" @select-slug="navigateToWikiSlug"
+                        @open-file="handleSystemOpenFile" @open-task="handleSearchSelectTask"></wiki-panel>
                 </template>
             </template>
 

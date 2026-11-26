@@ -38,6 +38,7 @@ from typing import Any
 from mashumaro.jsonschema import build_json_schema
 from mashumaro.mixins.json import DataClassJSONMixin
 
+from supernote.models.wiki import WikiSourceType
 from supernote.server.db.models.schedule import ScheduleTaskDO
 from supernote.server.utils.prompt_loader import PROMPT_LOADER, PromptId
 
@@ -68,7 +69,7 @@ __all__ = [
 class WikiSourceRefOp(DataClassJSONMixin):
     """A single provenance citation emitted inside a compiled wiki page op."""
 
-    source_type: str = field(
+    source_type: WikiSourceType = field(
         metadata={"description": "Source kind: 'note_page' or 'schedule_task'."}
     )
     source_key: str = field(
