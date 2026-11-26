@@ -8,13 +8,11 @@ from supernote.server.ai.models.ocr import OcrModel
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "FakeOcrModel",
     "async_setup_ocr",
-    "create_ocr_model",
 ]
 
 
@@ -47,16 +45,9 @@ class FakeOcrModel(OcrModel):
         return f"Transcribed ({len(png_data)} bytes)"
 
 
-def create_ocr_model(config: ServerConfig) -> OcrModel | None:
-    """Create a `FakeOcrModel` from `ServerConfig`, or `None` if unconfigured."""
-    if config.ai.ocr is None:
-        return None
-    return FakeOcrModel(
-        model_id=config.ai.ocr.model,
-        provider=config.ai.ocr.provider,
-    )
-
-
 async def async_setup_ocr(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``fake_ai`` OCR provider with `AiRegistrar`."""
-    registrar.register_ocr("fake_ai", create_ocr_model)
+    registrar.register_ocr(
+        "fake_ai",
+        lambda provider, model: FakeOcrModel(model_id=model, provider=provider),
+    )

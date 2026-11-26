@@ -21,15 +21,19 @@ from evals.wiki import (  # noqa: E402
     run_wiki_eval,
 )
 from supernote.server.ai.models.text import TextGenerationModel  # noqa: E402
+from supernote.server.components.gemini.backend import (  # noqa: E402
+    create_gemini_backend,
+)
 from supernote.server.components.gemini.text import (  # noqa: E402
-    create_text_model as create_gemini_text_model,
+    GeminiTextGenerationModel,
+)
+from supernote.server.components.openai.backend import (  # noqa: E402
+    create_openai_backend,
 )
 from supernote.server.components.openai.text import (  # noqa: E402
-    create_text_model as create_openai_text_model,
+    OpenAITextGenerationModel,
 )
 from supernote.server.config import (  # noqa: E402
-    AiConfig,
-    ModelConfig,
     ProviderConfig,
     ServerConfig,
 )
@@ -149,17 +153,13 @@ def _build_text_model(args: argparse.Namespace) -> TextGenerationModel:
             providers["gemini"] = ProviderConfig(
                 type="gemini", api_key=args.gemini_api_key
             )
-        cfg.ai = AiConfig(
-            providers=providers,
-            text=ModelConfig(provider="gemini", model=model_name),
-        )
-        model = create_gemini_text_model(cfg)
-        if model is None:
+        backend = create_gemini_backend(providers, "gemini")
+        if backend is None:
             raise SystemExit(
                 "Gemini text model could not be initialized. Set GEMINI_API_KEY "
                 "(or pass --gemini-api-key / --config)."
             )
-        return model
+        return GeminiTextGenerationModel(backend, model_name)
 
     if provider in ("openai", "ollama"):
         if provider == "ollama":
@@ -174,16 +174,12 @@ def _build_text_model(args: argparse.Namespace) -> TextGenerationModel:
                 api_key=args.openai_api_key,
                 base_url=args.openai_base_url,
             )
-        cfg.ai = AiConfig(
-            providers=providers,
-            text=ModelConfig(provider=provider, model=model_name),
-        )
-        model = create_openai_text_model(cfg)
-        if model is None:
+        openai_backend = create_openai_backend(providers, provider)
+        if openai_backend is None:
             raise SystemExit(
                 f"{provider} text model could not be initialized. Check API key / base URL."
             )
-        return model
+        return OpenAITextGenerationModel(openai_backend, model_name)
 
     raise SystemExit(
         f"Unsupported provider {provider!r}; use 'fake', 'gemini', 'openai', or 'ollama'."

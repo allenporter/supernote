@@ -12,22 +12,12 @@ from supernote.server.components.ai import (
     AiComponent,
     AiRegistrar,
 )
-from supernote.server.components.fake_ai.embedding import (
-    create_embedding_model as create_fake_embedding_model,
-)
-from supernote.server.components.fake_ai.ocr import (
-    FakeOcrModel,
-)
-from supernote.server.components.fake_ai.ocr import (
-    create_ocr_model as create_fake_ocr_model,
-)
-from supernote.server.components.fake_ai.summary import (
-    create_summary_model as create_fake_summary_model,
-)
-from supernote.server.components.fake_ai.text import (
-    create_text_model as create_fake_text_model,
-)
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
+from supernote.server.components.ai.config import AiComponentConfig
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.fake_ai.text import FakeTextGenerationModel
+from supernote.server.config import ModelConfig, ProviderConfig
 from supernote.server.core import Component, PlatformHost, ServerCore
 from tests.server.components.conftest import LoadComponents
 
@@ -47,7 +37,7 @@ class _ZeroVectorEmbeddingModel(EmbeddingModel):
 
 def test_ai_registrar_returns_none_when_capabilities_unconfigured() -> None:
     registrar = AiRegistrar()
-    unconfigured = ServerConfig()
+    unconfigured = AiComponentConfig()
     assert registrar.create_ocr_model(unconfigured) is None
     assert registrar.create_summary_model(unconfigured) is None
     assert registrar.create_embedding_model(unconfigured) is None
@@ -56,25 +46,31 @@ def test_ai_registrar_returns_none_when_capabilities_unconfigured() -> None:
 
 async def test_ai_registrar_creates_and_invokes_registered_models() -> None:
     registrar = AiRegistrar()
-    registrar.register_ocr("Fake", create_fake_ocr_model)
-    registrar.register_summary("fake", create_fake_summary_model)
-    registrar.register_embedding("fake", create_fake_embedding_model)
+    registrar.register_ocr(
+        "Fake", lambda provider, model: FakeOcrModel(model_id=model, provider=provider)
+    )
+    registrar.register_summary(
+        "fake",
+        lambda provider, model: FakeSummaryModel(model_id=model, provider=provider),
+    )
+    registrar.register_embedding(
+        "fake",
+        lambda provider, model: FakeEmbeddingModel(model_id=model, provider=provider),
+    )
 
     assert registrar.ocr_providers == ("fake",)
     assert registrar.summary_providers == ("fake",)
     assert registrar.embedding_providers == ("fake",)
 
-    configured = ServerConfig(
-        ai=AiConfig(
-            providers={"local_fake": ProviderConfig(type="Fake")},
-            ocr=ModelConfig(provider="local_fake", model="fake-ocr", max_concurrency=3),
-            summary=ModelConfig(
-                provider="local_fake", model="fake-summary", max_concurrency=2
-            ),
-            embedding=ModelConfig(
-                provider="local_fake", model="fake-embed", max_concurrency=4
-            ),
-        )
+    configured = AiComponentConfig(
+        providers={"local_fake": ProviderConfig(type="Fake")},
+        ocr=ModelConfig(provider="local_fake", model="fake-ocr", max_concurrency=3),
+        summary=ModelConfig(
+            provider="local_fake", model="fake-summary", max_concurrency=2
+        ),
+        embedding=ModelConfig(
+            provider="local_fake", model="fake-embed", max_concurrency=4
+        ),
     )
 
     ocr = registrar.create_ocr_model(configured)
@@ -99,12 +95,10 @@ async def test_ai_registrar_creates_and_invokes_registered_models() -> None:
 
 async def test_ai_registrar_validates_embedding_vectors() -> None:
     registrar = AiRegistrar()
-    registrar.register_embedding("bad", lambda _cfg: _ZeroVectorEmbeddingModel())
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={"bad": ProviderConfig()},
-            embedding=ModelConfig(provider="bad", model="m"),
-        )
+    registrar.register_embedding("bad", lambda _p, _m: _ZeroVectorEmbeddingModel())
+    config = AiComponentConfig(
+        providers={"bad": ProviderConfig()},
+        embedding=ModelConfig(provider="bad", model="m"),
     )
 
     embedding = registrar.create_embedding_model(config)
@@ -116,18 +110,16 @@ async def test_ai_registrar_validates_embedding_vectors() -> None:
 async def test_ai_registrar_applies_ocr_prompt_override() -> None:
     inner = FakeOcrModel(model_id="DeepSeek-OCR-8bit", provider="local")
     registrar = AiRegistrar()
-    registrar.register_ocr("local", lambda _cfg: inner)
+    registrar.register_ocr("local", lambda _p, _m: inner)
 
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={"local": ProviderConfig()},
-            ocr=ModelConfig(
-                provider="local",
-                model="DeepSeek-OCR-8bit",
-                max_concurrency=1,
-                prompt_override="Convert the document to markdown.",
-            ),
-        )
+    config = AiComponentConfig(
+        providers={"local": ProviderConfig()},
+        ocr=ModelConfig(
+            provider="local",
+            model="DeepSeek-OCR-8bit",
+            max_concurrency=1,
+            prompt_override="Convert the document to markdown.",
+        ),
     )
 
     ocr = registrar.create_ocr_model(config)
@@ -138,17 +130,15 @@ async def test_ai_registrar_applies_ocr_prompt_override() -> None:
 
 def test_ai_registrar_returns_none_when_factory_returns_none() -> None:
     registrar = AiRegistrar()
-    registrar.register_ocr("noop", lambda _cfg: None)
-    registrar.register_summary("noop", lambda _cfg: None)
-    registrar.register_embedding("noop", lambda _cfg: None)
+    registrar.register_ocr("noop", lambda _p, _m: None)
+    registrar.register_summary("noop", lambda _p, _m: None)
+    registrar.register_embedding("noop", lambda _p, _m: None)
 
-    noop_cfg = ServerConfig(
-        ai=AiConfig(
-            providers={"noop": ProviderConfig()},
-            ocr=ModelConfig(provider="noop", model="m"),
-            summary=ModelConfig(provider="noop", model="m"),
-            embedding=ModelConfig(provider="noop", model="m"),
-        )
+    noop_cfg = AiComponentConfig(
+        providers={"noop": ProviderConfig()},
+        ocr=ModelConfig(provider="noop", model="m"),
+        summary=ModelConfig(provider="noop", model="m"),
+        embedding=ModelConfig(provider="noop", model="m"),
     )
     assert registrar.create_ocr_model(noop_cfg) is None
     assert registrar.create_summary_model(noop_cfg) is None
@@ -157,29 +147,27 @@ def test_ai_registrar_returns_none_when_factory_returns_none() -> None:
 
 def test_ai_registrar_rejects_duplicate_and_blank_providers() -> None:
     registrar = AiRegistrar()
-    registrar.register_ocr("noop", lambda _cfg: None)
-    registrar.register_summary("noop", lambda _cfg: None)
-    registrar.register_embedding("noop", lambda _cfg: None)
+    registrar.register_ocr("noop", lambda _p, _m: None)
+    registrar.register_summary("noop", lambda _p, _m: None)
+    registrar.register_embedding("noop", lambda _p, _m: None)
 
     with pytest.raises(ValueError, match="already registered"):
-        registrar.register_ocr("noop", lambda _cfg: None)
+        registrar.register_ocr("noop", lambda _p, _m: None)
     with pytest.raises(ValueError, match="already registered"):
-        registrar.register_summary("noop", lambda _cfg: None)
+        registrar.register_summary("noop", lambda _p, _m: None)
     with pytest.raises(ValueError, match="already registered"):
-        registrar.register_embedding("noop", lambda _cfg: None)
+        registrar.register_embedding("noop", lambda _p, _m: None)
     with pytest.raises(ValueError, match="must be non-empty"):
-        registrar.register_ocr("   ", lambda _cfg: None)
+        registrar.register_ocr("   ", lambda _p, _m: None)
 
 
 def test_ai_registrar_rejects_unknown_provider_types() -> None:
     registrar = AiRegistrar()
-    missing_cfg = ServerConfig(
-        ai=AiConfig(
-            providers={"unknown": ProviderConfig()},
-            ocr=ModelConfig(provider="unknown", model="m"),
-            summary=ModelConfig(provider="unknown", model="m"),
-            embedding=ModelConfig(provider="unknown", model="m"),
-        )
+    missing_cfg = AiComponentConfig(
+        providers={"unknown": ProviderConfig()},
+        ocr=ModelConfig(provider="unknown", model="m"),
+        summary=ModelConfig(provider="unknown", model="m"),
+        embedding=ModelConfig(provider="unknown", model="m"),
     )
     with pytest.raises(ValueError, match="Unsupported OCR model provider type"):
         registrar.create_ocr_model(missing_cfg)
@@ -196,14 +184,7 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
     assert AI_PLATFORMS == ("ocr", "summary", "embedding", "text")
     assert set(AI_PLATFORMS) <= KNOWN_PLATFORMS
 
-    loader = await load_components(
-        "ai",
-        configs={
-            "ai": {
-                "ocr": {"provider": "gemini", "model": "gemini-3.5-flash-lite"},
-            }
-        },
-    )
+    loader = await load_components("ai")
     component = loader.get("ai")
     assert isinstance(component, AiComponent)
     assert isinstance(component, Component)
@@ -212,9 +193,7 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
     assert component.dependencies == ()
     assert component.platforms == ("http",)
     assert component.hosted_platforms == AI_PLATFORMS
-    assert component._config.ocr == ModelConfig(
-        provider="gemini", model="gemini-3.5-flash-lite"
-    )
+    assert component._config == AiComponentConfig()
     assert component._config.effective_text is None
     assert component._config.provider_type("gemini") == "gemini"
 
@@ -231,27 +210,28 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
 
 async def test_ai_registrar_text_model_falls_back_to_summary() -> None:
     registrar = AiRegistrar()
-    registrar.register_text("fake", create_fake_text_model)
+    registrar.register_text(
+        "fake",
+        lambda provider, model: FakeTextGenerationModel(
+            model_id=model, provider=provider
+        ),
+    )
 
-    summary_only = ServerConfig(
-        ai=AiConfig(
-            providers={"local_fake": ProviderConfig(type="Fake")},
-            summary=ModelConfig(
-                provider="local_fake", model="fake-summary", max_concurrency=2
-            ),
-        )
+    summary_only = AiComponentConfig(
+        providers={"local_fake": ProviderConfig(type="Fake")},
+        summary=ModelConfig(
+            provider="local_fake", model="fake-summary", max_concurrency=2
+        ),
     )
     fallback_model = registrar.create_text_model(summary_only)
     assert fallback_model is not None
     assert fallback_model.provider == "local_fake"
     assert fallback_model.model_id == "fake-summary"
 
-    with_override = ServerConfig(
-        ai=AiConfig(
-            providers={"local_fake": ProviderConfig(type="Fake")},
-            summary=ModelConfig(provider="local_fake", model="fake-summary"),
-            text=ModelConfig(provider="local_fake", model="fake-wiki-override"),
-        )
+    with_override = AiComponentConfig(
+        providers={"local_fake": ProviderConfig(type="Fake")},
+        summary=ModelConfig(provider="local_fake", model="fake-summary"),
+        text=ModelConfig(provider="local_fake", model="fake-wiki-override"),
     )
     override_model = registrar.create_text_model(with_override)
     assert override_model is not None
@@ -260,19 +240,15 @@ async def test_ai_registrar_text_model_falls_back_to_summary() -> None:
 
 def test_ai_registrar_text_fallback_skips_unregistered_summary_provider() -> None:
     registrar = AiRegistrar()
-    summary_only = ServerConfig(
-        ai=AiConfig(
-            providers={"summary_only": ProviderConfig()},
-            summary=ModelConfig(provider="summary_only", model="m"),
-        )
+    summary_only = AiComponentConfig(
+        providers={"summary_only": ProviderConfig()},
+        summary=ModelConfig(provider="summary_only", model="m"),
     )
     assert registrar.create_text_model(summary_only) is None
 
-    explicit_unknown = ServerConfig(
-        ai=AiConfig(
-            providers={"unknown": ProviderConfig()},
-            text=ModelConfig(provider="unknown", model="m"),
-        )
+    explicit_unknown = AiComponentConfig(
+        providers={"unknown": ProviderConfig()},
+        text=ModelConfig(provider="unknown", model="m"),
     )
     with pytest.raises(ValueError, match="Unsupported text model provider type"):
         registrar.create_text_model(explicit_unknown)

@@ -11,17 +11,16 @@ from supernote.server.ai.prompts import (
     parse_summary_response,
 )
 
-from .backend import OpenAIBackend, create_openai_backend
+from . import resolve_openai_backend
+from .backend import OpenAIBackend
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "OpenAISummaryModel",
     "async_setup_summary",
-    "create_summary_model",
 ]
 
 
@@ -58,17 +57,11 @@ class OpenAISummaryModel(SummaryModel):
         return parse_summary_response(text)
 
 
-def create_summary_model(config: ServerConfig) -> SummaryModel | None:
-    """Create an `OpenAISummaryModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.summary
-    if model_cfg is None:
-        return None
-    backend = create_openai_backend(config.ai.providers, model_cfg.provider)
-    if backend is None:
-        return None
-    return OpenAISummaryModel(backend, model_cfg.model)
-
-
 async def async_setup_summary(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``openai`` summary provider with `AiRegistrar`."""
-    registrar.register_summary("openai", create_summary_model)
+
+    def _create(provider: str, model: str) -> SummaryModel | None:
+        backend = resolve_openai_backend(core, provider)
+        return OpenAISummaryModel(backend, model) if backend is not None else None
+
+    registrar.register_summary("openai", _create)

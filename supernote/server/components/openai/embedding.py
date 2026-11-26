@@ -10,17 +10,16 @@ from supernote.server.ai.models.embedding import (
     validate_embedding_vector,
 )
 
-from .backend import OpenAIBackend, create_openai_backend
+from . import resolve_openai_backend
+from .backend import OpenAIBackend
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "OpenAIEmbeddingModel",
     "async_setup_embedding",
-    "create_embedding_model",
 ]
 
 
@@ -52,17 +51,11 @@ class OpenAIEmbeddingModel(EmbeddingModel):
         return validate_embedding_vector(values, self._model_name)
 
 
-def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
-    """Create an `OpenAIEmbeddingModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.embedding
-    if model_cfg is None:
-        return None
-    backend = create_openai_backend(config.ai.providers, model_cfg.provider)
-    if backend is None:
-        return None
-    return OpenAIEmbeddingModel(backend, model_cfg.model)
-
-
 async def async_setup_embedding(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``openai`` embedding provider with `AiRegistrar`."""
-    registrar.register_embedding("openai", create_embedding_model)
+
+    def _create(provider: str, model: str) -> EmbeddingModel | None:
+        backend = resolve_openai_backend(core, provider)
+        return OpenAIEmbeddingModel(backend, model) if backend is not None else None
+
+    registrar.register_embedding("openai", _create)

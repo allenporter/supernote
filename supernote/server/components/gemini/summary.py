@@ -13,17 +13,16 @@ from supernote.server.ai.prompts import (
     parse_summary_response,
 )
 
-from .backend import GeminiBackend, create_gemini_backend
+from . import resolve_gemini_backend
+from .backend import GeminiBackend
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
-    from supernote.server.config import ServerConfig
     from supernote.server.core import ServerCore
 
 __all__ = [
     "GeminiSummaryModel",
     "async_setup_summary",
-    "create_summary_model",
 ]
 
 
@@ -57,17 +56,11 @@ class GeminiSummaryModel(SummaryModel):
         return parse_summary_response(response.text)
 
 
-def create_summary_model(config: ServerConfig) -> SummaryModel | None:
-    """Create a `GeminiSummaryModel` from `ServerConfig`, or `None` if unconfigured."""
-    model_cfg = config.ai.summary
-    if model_cfg is None:
-        return None
-    backend = create_gemini_backend(config.ai.providers, model_cfg.provider)
-    if backend is None:
-        return None
-    return GeminiSummaryModel(backend, model_cfg.model)
-
-
 async def async_setup_summary(core: ServerCore, registrar: AiRegistrar) -> None:
     """Register the ``gemini`` summary provider with `AiRegistrar`."""
-    registrar.register_summary("gemini", create_summary_model)
+
+    def _create(provider: str, model: str) -> SummaryModel | None:
+        backend = resolve_gemini_backend(core, provider)
+        return GeminiSummaryModel(backend, model) if backend is not None else None
+
+    registrar.register_summary("gemini", _create)
