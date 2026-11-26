@@ -12,7 +12,7 @@ When `supernote.server.config.ServerConfig.load` and `supernote.server.component
    - Any `SUPERNOTE_*` environment variable overrides `config.yaml`, database overrides, and built-in defaults, and pins the affected component as read-only (`readOnly: true`).
 2. **YAML Configuration File (`yaml`)**:
    - Checks `--config-dir` CLI flag, or `SUPERNOTE_CONFIG_DIR` environment variable (defaults to `config` locally, `/data/config` in Docker), and reads `<config_dir>/config.yaml` if present.
-   - Top-level `<domain>:` sections in `config.yaml` (such as `webhooks:`, `wiki:`, `mcp:`, `metrics:`, `web_ui:`) configure the corresponding vertical component domain and take precedence over database overrides. The server never auto-writes a default `config.yaml` on first boot, so unconfigured components remain editable via the database tier.
+   - Root-level `<domain>:` sections in `config.yaml` (such as `mcp:`, `metrics:`, `events:`, `http:`, `conversion:`, `processor:`, `web_ui:`, `ai:`, `gemini:`, `openai:`, `webhooks:`, `wiki:`) configure the corresponding vertical component domain (`supernote.server.components.<domain>.config`) and take precedence over database overrides. Legacy top-level flat aliases (such as `mcp_enabled`, `mcp_port`, `metrics_enabled`, `web_enabled`, `web_notebook_preview`, `event_log_retention_days`, `proxy_mode`, `prompts_dir`) remain supported and resolve identically. The server never auto-writes a default `config.yaml` on first boot, so unconfigured components remain editable via the database tier.
 3. **Database Overrides (`database`) & Generated Secrets**:
    - Components not pinned by `env` or `yaml` can be configured dynamically via `PUT /api/extended/system/components/{domain}` (persisted under `component_config:<domain>` in `CoordinationService`).
    - If `auth.secret_key` (`SUPERNOTE_JWT_SECRET`) is not provided via environment variable or `config.yaml`, `supernote.server.services.user.UserService` automatically generates and persists a random secret key inside the SQLite coordination store (`storage/system/supernote.db`) so tokens survive restarts without manual secret management.
@@ -177,29 +177,29 @@ webhooks:
 
 ---
 
-## Top-Level Server Settings (`supernote.server.config.ServerConfig`)
+## Top-Level Server & Component Alias Settings (`supernote.server.config.ServerConfig`)
 
-| YAML Key | Environment Variable | Type | Default | Description |
+| YAML Key *(Root Component Key)* | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `host` | `SUPERNOTE_HOST` | `str` | `"0.0.0.0"` | Network interface address to bind both the main HTTP server and MCP server. |
 | `port` | `SUPERNOTE_PORT` | `int` | `8080` | TCP port for the main HTTP server (Device API, Web UI, Socket.IO, OAuth 2.1 Authorization Server). |
-| `mcp_enabled` | `SUPERNOTE_MCP_ENABLED` | `bool` | `true` | Enables the Model Context Protocol (MCP) server on `mcp_port` and mounts OAuth 2.1 endpoints on `port`. |
-| `mcp_port` | `SUPERNOTE_MCP_PORT` | `int` | `8081` | TCP port for the Streamable HTTP MCP Resource Server (`/mcp`). |
+| `mcp_enabled` *(`mcp.enabled`)* | `SUPERNOTE_MCP_ENABLED` | `bool` | `true` | Enables the Model Context Protocol (MCP) server on `mcp_port` and mounts OAuth 2.1 endpoints on `port`. |
+| `mcp_port` *(`mcp.port`)* | `SUPERNOTE_MCP_PORT` | `int` | `8081` | TCP port for the Streamable HTTP MCP Resource Server (`/mcp`). |
 | `base_url` | `SUPERNOTE_BASE_URL` *(or legacy `SUPERNOTE_AUTH_URL_BASE`)* | `str \| None` | `None` *(falls back to `http://<host>:<port>`)* | Publicly reachable base URL of the main server (port `8080`). Used as the OAuth 2.1 issuer URL and for signed OSS URLs when set. |
-| `mcp_base_url` | `SUPERNOTE_MCP_BASE_URL` | `str \| None` | `None` *(falls back to `http://<host>:<mcp_port>`)* | Publicly reachable base URL of the MCP server (port `8081`). Used in RFC 9728 Protected Resource metadata (`/.well-known/oauth-protected-resource`). |
+| `mcp_base_url` *(`mcp.base_url`)* | `SUPERNOTE_MCP_BASE_URL` | `str \| None` | `None` *(falls back to `http://<host>:<mcp_port>`)* | Publicly reachable base URL of the MCP server (port `8081`). Used in RFC 9728 Protected Resource metadata (`/.well-known/oauth-protected-resource`). |
 | `storage_dir` | `SUPERNOTE_STORAGE_DIR` | `str` | `"storage"` *(`"/data"` in Docker)* | Root directory for SQLite (`system/supernote.db`), trace logs, user file blobs (`supernote-user-data/`), and PNG/PDF cache (`supernote-cache/`). |
 | `default_user_quota` | `SUPERNOTE_DEFAULT_USER_QUOTA` | `int` | `0` | Default per-user storage quota in bytes (`0` = uncapped per-user quota, bounded by storage volume free space). Individual users can override this via `UserDO.total_capacity` (`supernote admin user set-quota`). |
-| `enable_image_processing` | — *(YAML only)* | `bool` | `true` | Enables background OCR and indexing for standalone raster images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`). |
-| `image_include_patterns` | — *(YAML only)* | `list[str]` | `[]` | Optional VFS path globs restricting standalone image indexing (empty allows all paths not excluded). |
-| `image_exclude_patterns` | — *(YAML only)* | `list[str]` | `["MyStyle/**", "EXPORT/**"]` | VFS path globs excluded from standalone image indexing. |
-| `event_log_retention_days` | `SUPERNOTE_EVENT_LOG_RETENTION_DAYS` | `int` | `90` | Number of days to retain domain events in `f_user_event` (`UserEventDO`, managed by `supernote.server.components.events.service.EventLogService`). Set `0` to retain indefinitely. |
-| `proxy_mode` | `SUPERNOTE_PROXY_MODE` | `str \| None` | `None` | Reverse proxy header handling: `None`/`"disabled"` (ignore `X-Forwarded-*`), `"relaxed"` (trust immediate upstream proxy and disable MCP DNS rebinding check), or `"strict"` (only trust `trusted_proxies`). |
-| `trusted_proxies` | `SUPERNOTE_TRUSTED_PROXIES` | `list[str]` *(comma-separated in env)* | `["127.0.0.1", "::1", "172.17.0.0/16"]` | IP addresses or CIDR ranges trusted when `proxy_mode` is `"strict"`. |
-| `web_enabled` | `SUPERNOTE_WEB_ENABLED` | `bool` | `true` | Serves the single-page Web UI dashboard at `/` and static assets at `/static/`. |
-| `web_notebook_preview` | `SUPERNOTE_WEB_NOTEBOOK_PREVIEW` | `bool` | `true` | Enables background PNG rasterization of `.note` pages for Web UI viewing. Automatically enabled if `ai.ocr` is configured. |
-| `prompts_dir` | `SUPERNOTE_PROMPTS_DIR` | `str \| None` | `None` | Path to a directory containing custom Markdown prompt overrides for `ocr/` and `summary/`. |
-| `metrics_enabled` | `SUPERNOTE_METRICS_ENABLED` | `bool` | `true` | Enables Prometheus request, processing, and blob storage inventory metrics (`supernote.server.components.metrics.storage.StorageMetricsCollector`) and exposes the metrics endpoint. |
-| `metrics_path` | `SUPERNOTE_METRICS_PATH` | `str` | `"/metrics"` | URL path on the main server (`port`) where Prometheus metrics are exposed. |
+| `enable_image_processing` *(`processor.enable_image_processing`)* | — *(YAML / DB)* | `bool` | `true` | Enables background OCR and indexing for standalone raster images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`). |
+| `image_include_patterns` *(`processor.image_include_patterns`)* | — *(YAML / DB)* | `list[str]` | `[]` | Optional VFS path globs restricting standalone image indexing (empty allows all paths not excluded). |
+| `image_exclude_patterns` *(`processor.image_exclude_patterns`)* | — *(YAML / DB)* | `list[str]` | `["MyStyle/**", "EXPORT/**"]` | VFS path globs excluded from standalone image indexing. |
+| `event_log_retention_days` *(`events.retention_days`)* | `SUPERNOTE_EVENT_LOG_RETENTION_DAYS` | `int` | `90` | Number of days to retain domain events in `f_user_event` (`UserEventDO`, managed by `supernote.server.components.events.service.EventLogService`). Set `0` to retain indefinitely. |
+| `proxy_mode` *(`http.proxy_mode`)* | `SUPERNOTE_PROXY_MODE` | `str \| None` | `None` | Reverse proxy header handling: `None`/`"disabled"` (ignore `X-Forwarded-*`), `"relaxed"` (trust immediate upstream proxy and disable MCP DNS rebinding check), or `"strict"` (only trust `trusted_proxies`). |
+| `trusted_proxies` *(`http.trusted_proxies`)* | `SUPERNOTE_TRUSTED_PROXIES` | `list[str]` *(comma-separated in env)* | `["127.0.0.1", "::1", "172.17.0.0/16"]` | IP addresses or CIDR ranges trusted when `proxy_mode` is `"strict"`. |
+| `web_enabled` *(`web_ui.enabled`)* | `SUPERNOTE_WEB_ENABLED` | `bool` | `true` | Serves the single-page Web UI dashboard at `/` and static assets at `/static/`. |
+| `web_notebook_preview` *(`conversion.notebook_preview`)* | `SUPERNOTE_WEB_NOTEBOOK_PREVIEW` | `bool` | `true` | Enables background PNG rasterization of `.note` pages for Web UI viewing. Automatically enabled if `ai.ocr` is configured. |
+| `prompts_dir` *(`ai.prompts_dir`)* | `SUPERNOTE_PROMPTS_DIR` | `str \| None` | `None` | Path to a directory containing custom Markdown prompt overrides for `ocr/` and `summary/`. |
+| `metrics_enabled` *(`metrics.enabled`)* | `SUPERNOTE_METRICS_ENABLED` | `bool` | `true` | Enables Prometheus request, processing, and blob storage inventory metrics (`supernote.server.components.metrics.storage.StorageMetricsCollector`) and exposes the metrics endpoint. |
+| `metrics_path` *(`metrics.path`)* | `SUPERNOTE_METRICS_PATH` | `str` | `"/metrics"` | URL path on the main server (`port`) where Prometheus metrics are exposed. |
 | `log_level` | `SUPERNOTE_LOG_LEVEL` | `str` | `"INFO"` | Server logging verbosity (`"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`). |
 | `trace_log_file` | `SUPERNOTE_TRACE_LOG_FILE` | `str \| None` | `<storage_dir>/system/trace.log` | File path for structured HTTP request/response trace logging. Set to `""` (empty string) to disable writing trace logs to disk. |
 | `trace_log_unsafe` | `SUPERNOTE_TRACE_LOG_UNSAFE` | `bool` | `false` | Disables credential, cookie, and token redaction across `trace.log` and HTTP access logs. Use only for local protocol debugging. |

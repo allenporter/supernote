@@ -1,6 +1,6 @@
 # ADR 0003: Component Configuration and Runtime Reconfiguration Architecture
 
-- **Status**: Accepted (Foundation in progress; per-component schema migration incremental)
+- **Status**: Accepted (Implemented)
 - **Date**: 2026-11-25
 - **Scope**: `supernote.server.config`, `supernote.server.components.config`, `BuiltinComponentSpec`, and per-component configuration schemas
 
@@ -10,7 +10,7 @@
 
 As `supernote.server` evolved from a monolithic application factory into the `ServerCore` + vertical `Component` architecture ([ADR 0001](0001-server-core-component-architecture.md)), component configuration remained split across two patterns:
 
-1. **Legacy flat attributes on `ServerConfig` ([`supernote/server/config.py`](../../../supernote/server/config.py))**: Several components (`mcp`, `metrics`, `web_ui`, `events`, `http`, `ai`, `gemini`, `openai`) still read flat top-level fields directly from `core.config` (e.g., `core.config.mcp_enabled`, `core.config.mcp_port`, `core.config.metrics_path`, `core.config.web_notebook_preview`, `core.config.event_log_retention_days`) and ignore the `config: Mapping[str, Any]` dictionary passed into `Component.async_setup(core, config)`.
+1. **Legacy flat attributes on `ServerConfig` ([`supernote/server/config.py`](../../../supernote/server/config.py))**: Several components (`mcp`, `metrics`, `web_ui`, `conversion`, `processor`, `events`, `http`, `ai`, `gemini`, `openai`) historically read flat top-level fields directly from `core.config` (e.g., `core.config.mcp_enabled`, `core.config.mcp_port`, `core.config.metrics_path`, `core.config.web_notebook_preview`, `core.config.event_log_retention_days`) and ignored the `config: Mapping[str, Any]` dictionary passed into `Component.async_setup(core, config)`.
 2. **Typed per-component config dataclasses**: Newer vertical components (`webhooks`, `wiki`) define their own `mashumaro` `DataClassDictMixin` config dataclasses ([`WebhookConfig`](../../../supernote/server/components/webhooks/config.py), [`WikiConfig`](../../../supernote/server/components/wiki/config.py)) validated from the `config` mapping passed to `async_setup(core, config)`.
 
 At the same time, self-hosted operators need two complementary ways to configure components:
@@ -57,6 +57,9 @@ metrics:
 
 web_ui:
   enabled: true
+
+conversion:
+  enabled: true
   notebook_preview: true
 
 webhooks:
@@ -95,4 +98,4 @@ Every configurable built-in component declares a `config_schema_path` on its [`B
 To reach this end state incrementally through small, backward-compatible PRs:
 
 1. **Declarative field alias metadata on `ServerConfig`**: While legacy flat fields (`mcp_enabled`, `metrics_enabled`, `web_enabled`, etc.) exist on `ServerConfig`, they carry `field(metadata={"component": (domain, key)})`. `ServerConfig.load()` and `build_static_component_configs()` ([`supernote/server/components/config/service.py`](../../../supernote/server/components/config/service.py)) use this metadata generically to synchronize legacy flat fields with root `<domain>:` sections in both directions.
-2. **Incremental per-component schema migration**: As each remaining component (`mcp`, `metrics`, `web_ui`, `events`, `http`, `ai`, `gemini`, `openai`) is migrated to its own `supernote/server/components/<domain>/config.py` dataclass and `config_schema_path`, its flat attributes on `ServerConfig` and the transitional bridging in `build_static_component_configs()` are retired until `build_static_component_configs()` becomes a direct pass-through of `root_component_configs`.
+2. **Per-component schema migration**: Every configurable component (`mcp`, `metrics`, `conversion`, `processor`, `events`, `http`, `ai`, `gemini`, `openai`, `webhooks`, `wiki`) defines its own `supernote/server/components/<domain>/config.py` dataclass and `config_schema_path` on `BuiltinComponentSpec`, consuming its typed schema from `async_setup(core, config)` while `build_static_component_configs()` preserves backward compatibility with legacy flat `config.yaml` fields and `SUPERNOTE_*` environment variables.
