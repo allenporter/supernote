@@ -119,6 +119,8 @@ export default {
 
         const backfillTotal = computed(() => status.value?.backfill_total_files ?? 0);
         const backfillRemaining = computed(() => status.value?.backfill_remaining_files ?? 0);
+        const backfillTotalPages = computed(() => status.value?.backfill_total_pages ?? 0);
+        const backfillRemainingPages = computed(() => status.value?.backfill_remaining_pages ?? 0);
         const backfillUntranscribed = computed(
             () => status.value?.backfill_untranscribed_files ?? 0,
         );
@@ -130,7 +132,16 @@ export default {
         const backfillCompleted = computed(() =>
             Math.max(0, backfillTotal.value - backfillRemaining.value),
         );
+        const backfillCompletedPages = computed(() =>
+            Math.max(0, backfillTotalPages.value - backfillRemainingPages.value),
+        );
         const backfillPercent = computed(() => {
+            if (backfillTotalPages.value > 0) {
+                return Math.min(
+                    100,
+                    Math.round((backfillCompletedPages.value / backfillTotalPages.value) * 100),
+                );
+            }
             if (backfillTotal.value <= 0) return 0;
             return Math.min(100, Math.round((backfillCompleted.value / backfillTotal.value) * 100));
         });
@@ -715,6 +726,9 @@ export default {
             renderedBodyHtml,
             backfillTotal,
             backfillRemaining,
+            backfillTotalPages,
+            backfillRemainingPages,
+            backfillCompletedPages,
             backfillUntranscribed,
             backfillNextFiles,
             backfillCompleted,
@@ -816,7 +830,12 @@ export default {
                             <span v-if="backfillTotal > 0"
                                 :class="isBackfillDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-stone-100 text-stone-700 border-stone-200'"
                                 class="text-[11px] font-medium px-2 py-0.5 rounded-full border">
-                                {{ backfillCompleted }} of {{ backfillTotal }} compiled ({{ backfillPercent }}%)
+                                <template v-if="backfillTotalPages > 0">
+                                    {{ backfillCompletedPages }} / {{ backfillTotalPages }} pages · {{ backfillCompleted }} / {{ backfillTotal }} {{ backfillTotal === 1 ? 'notebook' : 'notebooks' }} ({{ backfillPercent }}%)
+                                </template>
+                                <template v-else>
+                                    {{ backfillCompleted }} of {{ backfillTotal }} compiled ({{ backfillPercent }}%)
+                                </template>
                             </span>
                             <span v-if="backfillUntranscribed > 0" class="text-[11px] text-stone-500">
                                 · {{ backfillUntranscribed }} awaiting OCR
