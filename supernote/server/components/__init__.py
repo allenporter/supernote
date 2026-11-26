@@ -108,6 +108,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         config_schema_path="supernote.server.components.metrics.config:MetricsConfig",
     ),
     BuiltinComponentSpec(
+        domain="note_metadata",
+        import_path="supernote.server.components.note_metadata:NoteMetadataComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="oauth",
         import_path="supernote.server.components.oauth:OAuthComponent",
         default_enabled=True,
