@@ -40,7 +40,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from aiohttp import web
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from supernote.models.events import DomainEventType
 from supernote.server.ai.base import AIError
@@ -141,6 +141,9 @@ class WikiCompilerWorker:
         self._text_model = text_model
         self._user_locks: dict[int, asyncio.Lock] = {}
         self._debounce_tasks: dict[int, asyncio.Task[None]] = {}
+        self._backfill_tasks: dict[int, asyncio.Task[None]] = {}
+        self._backfill_stop_events: dict[int, asyncio.Event] = {}
+        self._backfill_starting: set[int] = set()
         self._active_tasks: set[asyncio.Task[None]] = set()
         self._started = False
         self._subscribed = False
@@ -154,6 +157,14 @@ class WikiCompilerWorker:
         if self._started:
             return
         self._started = True
+        # Reset any stale `backfilling` checkpoints left behind by a prior process exit.
+        async with self._session_manager.session() as session:
+            await session.execute(
+                update(WikiCheckpointDO)
+                .where(WikiCheckpointDO.status == "backfilling")
+                .values(status="idle", update_time=_now_ms())
+            )
+            await session.commit()
         if not self._subscribed:
             self._subscribed = True
             self._event_bus.subscribe(
@@ -167,8 +178,16 @@ class WikiCompilerWorker:
     async def stop(self) -> None:
         """Cancel pending debounce timers and active compile tasks idempotently."""
         self._started = False
-        tasks = list(self._debounce_tasks.values()) + list(self._active_tasks)
+        for ev in self._backfill_stop_events.values():
+            ev.set()
+        tasks = (
+            list(self._debounce_tasks.values())
+            + list(self._backfill_tasks.values())
+            + list(self._active_tasks)
+        )
         self._debounce_tasks.clear()
+        self._backfill_tasks.clear()
+        self._backfill_stop_events.clear()
         self._active_tasks.clear()
         unique_tasks = list(dict.fromkeys(tasks))
         for task in unique_tasks:
@@ -256,11 +275,14 @@ class WikiCompilerWorker:
                 )
 
             if not page.events:
+                idle_status = (
+                    "backfilling" if self.is_backfill_running(user_id) else "idle"
+                )
                 if page.next_sync_token != cp.last_sync_token:
                     await self._update_checkpoint(
                         user_id,
                         last_sync_token=page.next_sync_token,
-                        status="idle",
+                        status=idle_status,
                         last_error=None,
                     )
                 issues = await self._wiki_service.list_lint_issues(
@@ -271,7 +293,7 @@ class WikiCompilerWorker:
                     pages_updated=0,
                     skipped_policy_pages=0,
                     lint_issues_open=len(issues),
-                    status="idle",
+                    status=idle_status,
                 )
 
             await self._mark_deleted_sources_from_events(user_id, page.events)
@@ -335,11 +357,12 @@ class WikiCompilerWorker:
             if updated_slugs:
                 await self._wiki_service.sync_index_page(user_id)
             issues = await self._wiki_service.run_structural_lint(user_id)
+            next_status = "backfilling" if self.is_backfill_running(user_id) else "idle"
             await self._update_checkpoint(
                 user_id,
                 last_sync_token=page.next_sync_token,
                 pending_delta=len(page.events),
-                status="idle",
+                status=next_status,
                 last_error=None,
             )
             if page.has_more and self._started and self._config.auto_compile:
@@ -349,12 +372,16 @@ class WikiCompilerWorker:
                 pages_updated=len(updated_slugs),
                 skipped_policy_pages=skipped_policy,
                 lint_issues_open=len(issues),
-                status="idle",
+                status=next_status,
                 updated_pages=updated_slugs,
             )
 
     async def run_backfill(
-        self, user_id: int, *, max_files: int = 5
+        self,
+        user_id: int,
+        *,
+        max_files: int = 5,
+        _final_status: str = "idle",
     ) -> WikiCompileResult:
         """Compile existing `.note` OCR transcripts newest-first in bounded chunks."""
         async with self._lock_for_user(user_id):
@@ -388,6 +415,7 @@ class WikiCompilerWorker:
                 issues = await self._wiki_service.list_lint_issues(
                     user_id, status="open"
                 )
+                await self._update_checkpoint(user_id, status="idle", last_error=None)
                 return WikiCompileResult(
                     events_processed=0,
                     pages_updated=0,
@@ -426,7 +454,7 @@ class WikiCompilerWorker:
                         for t in task_rows
                     ]
                 backfill_page_budget = max(
-                    self._config.max_pages_per_batch, max_files * 2
+                    self._config.max_pages_per_batch, max_files * 2, 10
                 )
                 prompt = build_compile_prompt(
                     all_pages,
@@ -457,24 +485,195 @@ class WikiCompilerWorker:
                     await self._wiki_service.sync_index_page(user_id)
 
             issues = await self._wiki_service.run_structural_lint(user_id)
+            remaining_files, _ = await self._source_service.count_backfill_progress(
+                user_id, before_file_id=next_cursor
+            )
+            resolved_status = "idle" if remaining_files == 0 else _final_status
             await self._update_checkpoint(
                 user_id,
                 backfill_file_cursor=next_cursor,
-                status="idle",
+                status=resolved_status,
                 last_error=None,
-            )
-            remaining_files, _ = await self._source_service.count_backfill_progress(
-                user_id, before_file_id=next_cursor
             )
             return WikiCompileResult(
                 events_processed=len(synthetic_diffs),
                 pages_updated=len(updated_slugs),
                 skipped_policy_pages=skipped_policy,
                 lint_issues_open=len(issues),
-                status="idle",
+                status=resolved_status,
                 files_processed=files_processed,
                 updated_pages=updated_slugs,
                 remaining_files=remaining_files,
+            )
+
+    def is_backfill_running(self, user_id: int) -> bool:
+        """Return True if a background backfill loop is currently running for `user_id`."""
+        task = self._backfill_tasks.get(user_id)
+        return user_id in self._backfill_starting or (
+            task is not None and not task.done()
+        )
+
+    async def start_backfill_job(
+        self, user_id: int, *, max_files_per_turn: int = 1
+    ) -> WikiCompileResult:
+        """Start a server-side background backfill loop processing all remaining notebooks."""
+        if self._text_model is None:
+            await self._update_checkpoint(
+                user_id,
+                status="paused",
+                last_error="Text generation model not configured",
+            )
+            issues = await self._wiki_service.list_lint_issues(user_id, status="open")
+            return WikiCompileResult(
+                events_processed=0,
+                pages_updated=0,
+                skipped_policy_pages=0,
+                lint_issues_open=len(issues),
+                status="paused",
+            )
+
+        if self.is_backfill_running(user_id):
+            cp = await self._get_or_create_checkpoint(user_id)
+            remaining, _ = await self._source_service.count_backfill_progress(
+                user_id, before_file_id=cp.backfill_file_cursor
+            )
+            issues = await self._wiki_service.list_lint_issues(user_id, status="open")
+            return WikiCompileResult(
+                events_processed=0,
+                pages_updated=0,
+                skipped_policy_pages=0,
+                lint_issues_open=len(issues),
+                status="backfilling",
+                remaining_files=remaining,
+            )
+
+        # Reserve synchronously before any await so concurrent calls cannot spawn duplicate tasks.
+        self._backfill_starting.add(user_id)
+        try:
+            cp = await self._get_or_create_checkpoint(user_id)
+            remaining, _ = await self._source_service.count_backfill_progress(
+                user_id, before_file_id=cp.backfill_file_cursor
+            )
+            issues = await self._wiki_service.list_lint_issues(user_id, status="open")
+
+            if remaining == 0:
+                await self._update_checkpoint(user_id, status="idle", last_error=None)
+                return WikiCompileResult(
+                    events_processed=0,
+                    pages_updated=0,
+                    skipped_policy_pages=0,
+                    lint_issues_open=len(issues),
+                    status="idle",
+                    remaining_files=0,
+                )
+
+            await self._update_checkpoint(
+                user_id, status="backfilling", last_error=None
+            )
+            stop_event = asyncio.Event()
+            self._backfill_stop_events[user_id] = stop_event
+            capped_files = max(1, min(max_files_per_turn, 20))
+
+            async def _loop() -> None:
+                current = asyncio.current_task()
+                errored = False
+                paused = False
+                try:
+                    while not stop_event.is_set():
+                        res = await self.run_backfill(
+                            user_id,
+                            max_files=capped_files,
+                            _final_status="backfilling",
+                        )
+                        if res.status == "paused":
+                            paused = True
+                            break
+                        if (res.remaining_files or 0) == 0:
+                            break
+                        if res.events_processed == 0 and res.pages_updated == 0:
+                            break
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    errored = True
+                    logger.exception(
+                        "Background wiki backfill failed for user %s", user_id
+                    )
+                finally:
+                    if self._backfill_tasks.get(user_id) is current:
+                        self._backfill_tasks.pop(user_id, None)
+                    if self._backfill_stop_events.get(user_id) is stop_event:
+                        self._backfill_stop_events.pop(user_id, None)
+                    if current is not None:
+                        self._active_tasks.discard(current)
+                    if not errored and not paused:
+                        try:
+                            await self._update_checkpoint(
+                                user_id, status="idle", last_error=None
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Skipping final idle checkpoint update for user %s",
+                                user_id,
+                            )
+
+            task = asyncio.create_task(_loop())
+            self._backfill_tasks[user_id] = task
+            self._active_tasks.add(task)
+            return WikiCompileResult(
+                events_processed=0,
+                pages_updated=0,
+                skipped_policy_pages=0,
+                lint_issues_open=len(issues),
+                status="backfilling",
+                remaining_files=remaining,
+            )
+        finally:
+            self._backfill_starting.discard(user_id)
+
+    async def stop_backfill_job(self, user_id: int) -> WikiCompileResult:
+        """Signal an active background backfill job to stop after its current notebook."""
+        running = self.is_backfill_running(user_id)
+        if stop_event := self._backfill_stop_events.get(user_id):
+            stop_event.set()
+        cp = await self._get_or_create_checkpoint(user_id)
+        if not running and cp.status == "backfilling":
+            await self._update_checkpoint(user_id, status="idle", last_error=None)
+        remaining, _ = await self._source_service.count_backfill_progress(
+            user_id, before_file_id=cp.backfill_file_cursor
+        )
+        issues = await self._wiki_service.list_lint_issues(user_id, status="open")
+        return WikiCompileResult(
+            events_processed=0,
+            pages_updated=0,
+            skipped_policy_pages=0,
+            lint_issues_open=len(issues),
+            status="stopping" if running else "idle",
+            remaining_files=remaining,
+        )
+
+    async def reset_backfill(self, user_id: int) -> WikiCompileResult:
+        """Reset `backfill_file_cursor` so all OCR'd notebooks are queued for backfill again."""
+        if self.is_backfill_running(user_id):
+            raise ValueError("Stop the running backfill before resetting.")
+        async with self._lock_for_user(user_id):
+            await self._update_checkpoint(
+                user_id,
+                clear_backfill_cursor=True,
+                status="idle",
+                last_error=None,
+            )
+            remaining, _ = await self._source_service.count_backfill_progress(
+                user_id, before_file_id=None
+            )
+            issues = await self._wiki_service.list_lint_issues(user_id, status="open")
+            return WikiCompileResult(
+                events_processed=0,
+                pages_updated=0,
+                skipped_policy_pages=0,
+                lint_issues_open=len(issues),
+                status="idle",
+                remaining_files=remaining,
             )
 
     async def run_semantic_lint(self, user_id: int) -> list[WikiLintIssueDTO]:
@@ -678,6 +877,7 @@ class WikiCompilerWorker:
         pending_delta: int = 0,
         reset_lint: bool = False,
         backfill_file_cursor: int | None = None,
+        clear_backfill_cursor: bool = False,
         status: str | None = None,
         last_error: str | None = None,
     ) -> None:
@@ -698,7 +898,9 @@ class WikiCompilerWorker:
             if reset_lint:
                 cp.pending_events_since_lint = 0
                 cp.last_lint_time = now
-            if backfill_file_cursor is not None:
+            if clear_backfill_cursor:
+                cp.backfill_file_cursor = None
+            elif backfill_file_cursor is not None:
                 cp.backfill_file_cursor = backfill_file_cursor
             if status is not None:
                 cp.status = status

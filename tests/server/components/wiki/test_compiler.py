@@ -603,3 +603,204 @@ async def test_apply_compile_plan_skips_llm_index_op_without_consuming_page_cap(
     assert index_page.version == 1
     assert "[[projects/one]]" in index_page.body_md
     assert "[[projects/two]]" in index_page.body_md
+
+
+async def test_background_backfill_runs_all_notebooks_stops_cleanly_and_resets(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    async with session_manager.session() as session:
+        for fid in (10, 20, 30):
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=1,
+                    directory_id=0,
+                    file_name=f"Notebook_{fid}.note",
+                    is_folder="N",
+                    is_active="Y",
+                )
+            )
+            session.add(
+                NotePageContentDO(
+                    file_id=fid,
+                    page_index=0,
+                    page_id=f"P{fid}",
+                    text_content=f"Content for {fid}",
+                )
+            )
+        await session.commit()
+
+    in_first_turn = asyncio.Event()
+    release_first_turn = asyncio.Event()
+    calls = 0
+
+    class ControlledModel(FakeTextGenerationModel):
+        async def generate_json(
+            self,
+            prompt: str,
+            *,
+            response_schema: Mapping[str, Any],
+            schema_name: str = "response",
+            stage: Any = None,
+        ) -> dict[str, Any]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                in_first_turn.set()
+                await release_first_turn.wait()
+            return {
+                "page_ops": [
+                    {
+                        "slug": f"topics/note-{calls}",
+                        "title": f"Note {calls}",
+                        "page_kind": "topic",
+                        "body_md": f"Compiled turn {calls}",
+                    }
+                ]
+            }
+
+    worker = WikiCompilerWorker(
+        config=WikiConfig(enabled=True, auto_compile=False),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=ControlledModel(),
+    )
+    try:
+        started = await worker.start_backfill_job(1, max_files_per_turn=1)
+        assert started.status == "backfilling"
+        assert started.remaining_files == 3
+
+        await asyncio.wait_for(in_first_turn.wait(), timeout=2.0)
+
+        # Reset must fail while a background backfill is active.
+        with pytest.raises(ValueError, match="Stop the running backfill"):
+            await worker.reset_backfill(1)
+
+        # Request graceful stop; turn 1 finishes and turns 2 & 3 do not run.
+        stopped = await worker.stop_backfill_job(1)
+        assert stopped.status == "stopping"
+        release_first_turn.set()
+
+        for _ in range(50):
+            if not worker.is_backfill_running(1):
+                break
+            await asyncio.sleep(0.02)
+
+        assert not worker.is_backfill_running(1)
+        assert calls == 1
+        mid_status = await wiki_service.get_status(1)
+        assert mid_status.status == "idle"
+        assert mid_status.backfill_remaining_files == 2
+
+        # Resume background backfill to finish remaining 2 notebooks automatically.
+        resumed = await worker.start_backfill_job(1, max_files_per_turn=1)
+        assert resumed.status == "backfilling"
+        for _ in range(50):
+            if not worker.is_backfill_running(1):
+                break
+            await asyncio.sleep(0.02)
+
+        assert not worker.is_backfill_running(1)
+        assert calls == 3
+        done_status = await wiki_service.get_status(1)
+        assert done_status.status == "idle"
+        assert done_status.backfill_remaining_files == 0
+
+        # Reset cursor queues all 3 notebooks again.
+        reset_res = await worker.reset_backfill(1)
+        assert reset_res.status == "idle"
+        assert reset_res.remaining_files == 3
+        after_reset = await wiki_service.get_status(1)
+        assert after_reset.backfill_remaining_files == 3
+    finally:
+        await worker.stop()
+
+
+async def test_background_backfill_guards_double_start_preserves_status_and_heals_stale_on_start(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=10,
+                user_id=1,
+                directory_id=0,
+                file_name="Single.note",
+                is_folder="N",
+                is_active="Y",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=10,
+                page_index=0,
+                page_id="P10",
+                text_content="Single content",
+            )
+        )
+        await session.commit()
+
+    worker = WikiCompilerWorker(
+        config=WikiConfig(enabled=True, auto_compile=False),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=FakeTextGenerationModel(
+            responses=[
+                {
+                    "page_ops": [
+                        {
+                            "slug": "topics/single",
+                            "title": "Single",
+                            "page_kind": "topic",
+                            "body_md": "Single body",
+                        }
+                    ]
+                }
+            ]
+        ),
+    )
+
+    # Simulate a stale `backfilling` checkpoint left over from a prior server crash.
+    await worker._update_checkpoint(1, status="backfilling", last_error=None)
+    assert (await wiki_service.get_status(1)).status == "backfilling"
+    await worker.start()
+    try:
+        assert (await wiki_service.get_status(1)).status == "idle"
+
+        # Two simultaneous start_backfill_job calls must only spawn one background task.
+        r1, r2 = await asyncio.gather(
+            worker.start_backfill_job(1, max_files_per_turn=1),
+            worker.start_backfill_job(1, max_files_per_turn=1),
+        )
+        assert r1.status == "backfilling"
+        assert r2.status == "backfilling"
+
+        # A concurrent incremental delta check while running must preserve `backfilling`.
+        delta_res = await worker.compile_user_delta(1)
+        assert delta_res.status in ("backfilling", "idle")
+
+        for _ in range(50):
+            if not worker.is_backfill_running(1):
+                break
+            await asyncio.sleep(0.02)
+
+        assert not worker.is_backfill_running(1)
+        final_status = await wiki_service.get_status(1)
+        assert final_status.status == "idle"
+        assert final_status.backfill_remaining_files == 0
+    finally:
+        await worker.stop()

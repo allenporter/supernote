@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from supernote.models.wiki import (
+    WikiCompileMode,
     WikiCompileResponseVO,
     WikiIndexEntryVO,
     WikiIndexResponseVO,
@@ -60,7 +61,7 @@ def test_wiki_index_entry_projection_and_compile_vo_roundtrip() -> None:
     ]
 
     compile_vo = WikiCompileResponseVO(
-        mode="incremental",
+        mode=WikiCompileMode.INCREMENTAL,
         events_processed=0,
         pages_updated=0,
         skipped_policy_pages=0,
@@ -68,5 +69,6 @@ def test_wiki_index_entry_projection_and_compile_vo_roundtrip() -> None:
         status="idle",
     )
     roundtripped = WikiCompileResponseVO.from_dict(compile_vo.to_dict())
+    assert roundtripped.mode is WikiCompileMode.INCREMENTAL
     assert roundtripped.events_processed == 0
     assert roundtripped.issues is None

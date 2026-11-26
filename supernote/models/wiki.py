@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -10,6 +11,7 @@ from mashumaro.mixins.json import DataClassJSONMixin
 from .base import BaseResponse
 
 __all__ = [
+    "WikiCompileMode",
     "WikiCompileResponseVO",
     "WikiDeleteResponseVO",
     "WikiIndexEntryVO",
@@ -205,11 +207,22 @@ class WikiStatusResponseVO(BaseResponse):
     status: WikiStatusDTO | None = None
 
 
+class WikiCompileMode(StrEnum):
+    """Supported execution modes for `POST /api/extended/wiki/compile`."""
+
+    INCREMENTAL = "incremental"
+    BACKFILL = "backfill"
+    BACKFILL_START = "backfill_start"
+    BACKFILL_STOP = "backfill_stop"
+    BACKFILL_RESET = "backfill_reset"
+    LINT = "lint"
+
+
 @dataclass
 class WikiCompileResponseVO(BaseResponse):
     """Response VO for `POST /api/extended/wiki/compile`."""
 
-    mode: str = "incremental"
+    mode: WikiCompileMode = WikiCompileMode.INCREMENTAL
     events_processed: int | None = None
     pages_updated: int | None = None
     skipped_policy_pages: int | None = None

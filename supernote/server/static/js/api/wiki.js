@@ -240,13 +240,23 @@ export function formatLintTypeLabel(issueType) {
 }
 
 /**
- * @param {'incremental' | 'backfill' | 'lint'} [mode='incremental']
+ * @typedef {'incremental' | 'backfill' | 'backfill_start' | 'backfill_stop' | 'backfill_reset' | 'lint'} WikiCompileMode
+ */
+
+/**
+ * @param {WikiCompileMode} [mode='incremental']
+ * @param {{ maxFiles?: number }} [options]
  * @returns {Promise<WikiCompileResult>}
  */
-export async function triggerWikiCompile(mode = 'incremental') {
+export async function triggerWikiCompile(mode = 'incremental', { maxFiles } = {}) {
+    /** @type {Record<string, any>} */
+    const body = { mode };
+    if (typeof maxFiles === 'number') {
+        body.max_files = maxFiles;
+    }
     return apiRequest('/api/extended/wiki/compile', {
         method: 'POST',
-        body: { mode },
+        body,
         errorPrefix: `Failed to run wiki ${mode}`,
     });
 }
@@ -254,7 +264,7 @@ export async function triggerWikiCompile(mode = 'incremental') {
 /**
  * Format a user-facing toast message and severity for a wiki compile/backfill/lint response.
  *
- * @param {'incremental' | 'backfill' | 'lint'} mode
+ * @param {WikiCompileMode} mode
  * @param {WikiCompileResult | null | undefined} result
  * @returns {{ message: string, type: 'success' | 'info' | 'error' }}
  */
@@ -263,6 +273,35 @@ export function formatWikiActionResult(mode, result) {
         return {
             message: 'Wiki compiler is paused — check the status banner for details.',
             type: 'error',
+        };
+    }
+    if (mode === 'backfill_start') {
+        const remaining = result?.remaining_files ?? 0;
+        if (result?.status === 'backfilling') {
+            return {
+                message: `Started background backfill (${remaining} ${remaining === 1 ? 'notebook' : 'notebooks'} queued, 1 per turn). You can safely leave this tab.`,
+                type: 'success',
+            };
+        }
+        return {
+            message: 'No remaining OCR’d notebooks to backfill.',
+            type: 'info',
+        };
+    }
+    if (mode === 'backfill_stop') {
+        return {
+            message:
+                result?.status === 'stopping'
+                    ? 'Stopping backfill after the current notebook finishes.'
+                    : 'Background backfill is not running.',
+            type: 'info',
+        };
+    }
+    if (mode === 'backfill_reset') {
+        const remaining = result?.remaining_files ?? 0;
+        return {
+            message: `Backfill cursor reset — ${remaining} ${remaining === 1 ? 'notebook' : 'notebooks'} ready to rebuild.`,
+            type: 'info',
         };
     }
     if (mode === 'lint') {
