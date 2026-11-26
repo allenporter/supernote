@@ -462,16 +462,30 @@ export default {
             }
         }
 
-        async function handleResetBackfill() {
+        /**
+         * Reset the backfill cursor and optionally kick off the background rebuild immediately.
+         *
+         * @param {boolean} [startImmediately=true]
+         */
+        async function handleResetBackfill(startImmediately = true) {
             if (isBusy.value || isDisabled.value || isBackfillActive.value) return;
             isBusy.value = true;
+            stopBackfillRequested.value = false;
             try {
-                const result = await triggerWikiCompile('backfill_reset');
+                const resetResult = await triggerWikiCompile('backfill_reset');
                 lastBackfillSummary.value = null;
                 backfillBannerDismissed.value = false;
                 showBackfillPanel.value = true;
-                const toast = formatWikiActionResult('backfill_reset', result);
-                showToast(toast.message, toast.type);
+                if (startImmediately && (resetResult?.remaining_files ?? 0) > 0) {
+                    const startResult = await triggerWikiCompile('backfill_start', {
+                        maxFiles: 1,
+                    });
+                    const toast = formatWikiActionResult('backfill_start', startResult);
+                    showToast(toast.message, toast.type);
+                } else {
+                    const toast = formatWikiActionResult('backfill_reset', resetResult);
+                    showToast(toast.message, toast.type);
+                }
                 await loadAll(activePage.value?.slug || '');
             } catch (err) {
                 showToast(getErrorMessage(err), 'error');
@@ -903,14 +917,14 @@ export default {
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
                                 Next {{ nextBatchCount }} Only
                             </button>
-                            <button v-if="backfillCompleted > 0" type="button" @click="handleResetBackfill" :disabled="isBusy"
+                            <button v-if="backfillCompleted > 0" type="button" @click="handleResetBackfill(false)" :disabled="isBusy"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors">
                                 Reset Cursor
                             </button>
                         </template>
                         <template v-else-if="isBackfillDone">
-                            <button type="button" @click="handleResetBackfill" :disabled="isBusy"
-                                title="Reset backfill cursor to re-compile all OCR'd notebooks"
+                            <button type="button" @click="handleResetBackfill(true)" :disabled="isBusy"
+                                title="Reset backfill cursor and immediately rebuild all OCR'd notebooks in the background"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
                                 Reset &amp; Rebuild
                             </button>
