@@ -15,6 +15,9 @@ from evals.wiki import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASET_PATH = REPO_ROOT / "evals/wiki/dataset.yaml"
 DAILY_LOG_DATASET_PATH = REPO_ROOT / "evals/wiki/daily_log_dataset.yaml"
+CHRONOLOGICAL_DRIFT_DATASET_PATH = (
+    REPO_ROOT / "evals/wiki/chronological_drift_dataset.yaml"
+)
 
 
 def test_wiki_eval_dataset_manifest_is_multi_batch_and_well_formed() -> None:
@@ -109,3 +112,12 @@ async def test_run_daily_log_eval_with_fake_model(tmp_path: Path) -> None:
     assert report.metrics.batches_run == len(dataset.notebooks)
     assert report.metrics.has_index_page is True
     assert (export_dir / "report.md").is_file()
+
+
+def test_chronological_drift_eval_dataset_manifest_is_well_formed() -> None:
+    dataset = load_wiki_eval_dataset(CHRONOLOGICAL_DRIFT_DATASET_PATH)
+    assert dataset.name == "supernote-wiki-chronological-drift-v1"
+    assert len(dataset.notebooks) == 12
+    assert sum(len(nb.pages) for nb in dataset.notebooks) >= 70
+    assert len(dataset.expected_concepts) >= 14
+    assert len(dataset.expected_facts) >= 12

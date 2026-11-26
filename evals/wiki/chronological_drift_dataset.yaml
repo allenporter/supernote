@@ -1,0 +1,939 @@
+---
+name: supernote-wiki-chronological-drift-v1
+description: 'Large-scale 12-notebook, 70-page multi-quarter corpus spanning Feb-Nov 2026: 6 undated deep
+  project notebooks whose later specs supersede earlier ones, 3 weekly/monthly/quarterly reflection notebooks,
+  2 recurring topic notebooks, and a 32-page running Daily_Log.note.'
+notebooks:
+- file_name: FieldNote_Initial_Spec.note
+  description: Undated Q1 architecture notebook for Project FieldNote (later superseded).
+  pages:
+  - page_index: 0
+    page_id: P20260115090000FN0101
+    text_content: 'Project FieldNote — Architecture Overview
+
+      - Tech Lead: Devon
+
+      - Primary database: PostgreSQL on AWS RDS ($420/mo estimated)
+
+      - Authentication: Auth0 managed SaaS ($300/mo)
+
+      - Mobile client: React Native (shared TypeScript codebase)
+
+      - Target v1.0 launch: June 1'
+  - page_index: 1
+    page_id: P20260122090000FN0102
+    text_content: 'FieldNote Sync Engine Design
+
+      - Devon designed React Native SQLite bridge for local caching.
+
+      - PgBouncer connection pooler in front of AWS RDS for sync workers.
+
+      - Auth0 JWT refresh tokens stored in iOS Keychain.'
+  - page_index: 2
+    page_id: P20260205090000FN0103
+    text_content: 'FieldNote Schema Notes
+
+      - Postgres JSONB columns for note metadata and sync cursors.
+
+      - Estimated RDS storage growth: 40GB/year for 5,000 beta users.'
+  - page_index: 3
+    page_id: P20260218090000FN0104
+    text_content: 'FieldNote Beta Checklist
+
+      - Finish Auth0 social login screens in React Native.
+
+      - Load test RDS write throughput before June 1 beta.'
+- file_name: FieldNote_Midyear_Pivot.note
+  description: Undated Q2 pivot notebook superseding Auth0, React Native, Devon lead, and June 1 target.
+  pages:
+  - page_index: 0
+    page_id: P20260504100000FN0201
+    text_content: 'FieldNote Leadership & Auth Pivot
+
+      - Leadership transition: Devon moved to platform infra; Sora is now FieldNote Tech Lead.
+
+      - Auth migration: Replaced Auth0 with self-hosted Keycloak to save $300/mo.
+
+      - Launch schedule moved from June 1 to September 15.'
+  - page_index: 1
+    page_id: P20260518100000FN0202
+    text_content: 'Keycloak Self-Hosting Runbook
+
+      - Deployed Keycloak container with automated OIDC realm backups.
+
+      - Cancelled Auth0 SaaS billing cleanly after token migration.'
+  - page_index: 2
+    page_id: P20260608100000FN0203
+    text_content: 'Mobile Client Rewrite Evaluation
+
+      - React Native offline sync bridge suffered recurring background-thread crashes on iOS.
+
+      - Sora approved switching mobile client from React Native to Flutter.'
+  - page_index: 3
+    page_id: P20260622100000FN0204
+    text_content: 'Flutter Prototype Findings
+
+      - Dart isolates handle background sync cleanly without UI jank.
+
+      - Keycloak OIDC login verified end-to-end in Flutter.'
+- file_name: FieldNote_Launch_Notes.note
+  description: Undated Q3 launch notebook superseding AWS RDS and recording final v1.0 production state.
+  pages:
+  - page_index: 0
+    page_id: P20260720110000FN0301
+    text_content: 'Database Cost Reduction Spike
+
+      - Replaced AWS RDS PostgreSQL ($420/mo) with embedded SQLite + Litestream on Fly.io ($18/mo).
+
+      - Continuous WAL replication to S3 gives 1-second RPO at 95% lower cost.'
+  - page_index: 1
+    page_id: P20260828110000FN0302
+    text_content: 'Pre-Launch Soak Test
+
+      - Flutter offline sync reached 99.95% reliability across 10,000 simulated offline edits.
+
+      - Devon automated Fly.io + Litestream deployment pipeline.'
+  - page_index: 2
+    page_id: P20260912180000FN0303
+    text_content: 'FieldNote v1.0 Launch Retro
+
+      - Shipped v1.0 on September 12 (3 days ahead of September 15 target).
+
+      - Sora led the launch war room; zero critical incidents.
+
+      - Production stack: SQLite + Litestream on Fly.io ($18/mo), self-hosted Keycloak, Flutter mobile
+      app.'
+  - page_index: 3
+    page_id: P20261016110000FN0304
+    text_content: 'Q4 Roadmap — Offline-first Plugin SDK
+
+      - Next major focus: Offline-first Plugin SDK for third-party exporters.
+
+      - Hired Maya as product designer (starts Nov 2) to partner with Sora on Plugin SDK UX.'
+- file_name: Home_Energy_Upgrade.note
+  description: Undated home solar, battery, and water heater upgrade notebook.
+  pages:
+  - page_index: 0
+    page_id: P20260218100000ENGY01
+    text_content: 'Solar & Battery Quotes
+
+      - SunRun quoted $24,000 for 6.4kW + Powerwall 3 (high-pressure sales pitch).
+
+      - Existing gas water heater is 13 years old; check heat-pump replacement.'
+  - page_index: 1
+    page_id: P20260314100000ENGY02
+    text_content: 'Pacific Solar Comparison
+
+      - Pacific Solar quoted $19,500 for 6.8kW + 1 Tesla Powerwall 3 (25yr warranty, handles PG&E NEM
+      3.0).
+
+      - Mel & I prefer Pacific Solar over SunRun by a wide margin.'
+  - page_index: 2
+    page_id: P20260604100000ENGY03
+    text_content: 'Contracts Signed & Water Heater
+
+      - Signed Pacific Solar contract ($19,500, 6.8kW + Powerwall 3).
+
+      - Replaced old gas water heater with Rheem hybrid heat-pump water heater ($3,400).'
+  - page_index: 3
+    page_id: P20260806100000ENGY04
+    text_content: 'Permit & Install Prep
+
+      - City permit #SOL-2026-441 approved; Pacific Solar installation scheduled for January 12.
+
+      - Clear side yard gate for Powerwall 3 wall mount.'
+- file_name: Backyard_Workshop.note
+  description: Undated backyard shed -> insulated studio project notebook.
+  pages:
+  - page_index: 0
+    page_id: P20260224140000WKSH01
+    text_content: 'Initial Shed Idea
+
+      - Considering a 10x12 uninsulated cedar shed in the back corner.
+
+      - Contractor Marco quoted $8,500 (basic framing, no electrical).'
+  - page_index: 1
+    page_id: P20260515140000WKSH02
+    text_content: 'Scope Upgrade to Insulated Studio
+
+      - Decided 10x12 uninsulated shed is too cramped for year-round work.
+
+      - Contractor Elena quoted $14,200 for a 12x16 insulated backyard studio with concrete slab and 60A
+      subpanel.'
+  - page_index: 2
+    page_id: P20260616140000WKSH03
+    text_content: 'Studio Approval & Layout
+
+      - Signed with Elena ($14,200); dropped Marco''s cedar shed quote.
+
+      - Using daylighting ideas from A Pattern Language for south-facing desk window.'
+  - page_index: 3
+    page_id: P20261105140000WKSH04
+    text_content: 'Construction Progress
+
+      - Concrete slab poured October 8; framing completed and 60A subpanel rough-in inspection passed.'
+- file_name: Trail_Ultra_Prep.note
+  description: Undated running & ultra training notebook evolving from Marin Half to Lake Sonoma 50K.
+  pages:
+  - page_index: 0
+    page_id: P20260210070000RUN001
+    text_content: 'Spring Half Marathon Plan
+
+      - Goal: Run Marin Trail Half Marathon under 2:00:00.
+
+      - Current shoes: Hoka Speedgoat 5 — experiencing left knee IT-band tightness after mile 6.'
+  - page_index: 1
+    page_id: P20260329070000RUN002
+    text_content: 'Shoe & Strength Fix
+
+      - Coach Priya recommended hip strength drills + foam rolling.
+
+      - Switched from Hoka Speedgoat 5 to Brooks Cascadia 18 — zero knee pain on 10mi and 12mi long runs.'
+  - page_index: 2
+    page_id: P20260517070000RUN003
+    text_content: 'Marin Trail Half Recap
+
+      - Finished Marin Trail Half Marathon in 1:54:20 (beat 2:00 goal by nearly 6 minutes) with zero knee
+      pain.'
+  - page_index: 3
+    page_id: P20260807070000RUN004
+    text_content: 'Next Goal: Lake Sonoma 50K
+
+      - Registered for Lake Sonoma 50K (April 10).
+
+      - Built up to 18mi trail long runs in Brooks Cascadia 18 with gels every 45min.'
+- file_name: Q1_Q2_Quarterly_Reviews.note
+  description: Q1 and Q2 quarterly reflections & energy audits.
+  pages:
+  - page_index: 0
+    page_id: P20260331200000QREV01
+    text_content: 'Q1 2026 Quarterly Review
+
+      - Wins: Fixed left knee issue with Brooks Cascadia 18; found Pacific Solar.
+
+      - Energy drains: Juggling too many side errands and late-night work Slack after 9pm.
+
+      - Q2 Theme: Cap active major projects at 3 (from Four Thousand Weeks); enforce 9pm phone-in-kitchen
+      cutoff.'
+  - page_index: 1
+    page_id: P20260630200000QREV02
+    text_content: 'Q2 2026 Quarterly Review
+
+      - Wins: Crushed Marin Trail Half (1:54:20), signed Pacific Solar ($19,500) + Rheem heat pump ($3,400),
+      switched FieldNote to Keycloak & Flutter under Sora.
+
+      - Adjustments for Q3: Protect Sunday family mornings with Mel, Leo, and Sam; keep 9pm phone-free
+      rule for 7.5+ hrs sleep.'
+- file_name: Monthly_Logs_2026.note
+  description: March, June, and September 2026 monthly logs & habit trackers.
+  pages:
+  - page_index: 0
+    page_id: P20260301080000MLOG01
+    text_content: 'MARCH 2026 MONTHLY LOG
+
+      - Pacific Solar site visit ($19,500)
+
+      - Switch to Brooks Cascadia 18
+
+      - Habit tracker: 9pm phone-free 14/31 days (needs work)'
+  - page_index: 1
+    page_id: P20260601080000MLOG02
+    text_content: 'JUNE 2026 MONTHLY LOG
+
+      - Sign Pacific Solar & install Rheem heat pump ($3,400)
+
+      - Sign Elena''s $14,200 12x16 studio contract
+
+      - Habit tracker: 9pm phone-free 22/30 days — sleep much better!'
+  - page_index: 2
+    page_id: P20260901080000MLOG03
+    text_content: 'SEPTEMBER 2026 MONTHLY LOG
+
+      - Ship FieldNote v1.0 (Sep 12!) on SQLite + Litestream ($18/mo)
+
+      - Start recruiting product designer (Maya)
+
+      - Habit tracker: 9pm phone-free 26/30 days; running 4x/week for Lake Sonoma 50K'
+- file_name: Weekly_Reviews_Autumn.note
+  description: Autumn weekly review notes covering Sep-Nov 2026.
+  pages:
+  - page_index: 0
+    page_id: P20260913190000WREV01
+    text_content: 'Week of Sep 7-13 Review
+
+      - Huge win: FieldNote v1.0 shipped Sep 12 with Sora & Devon; RDS retired for $18/mo Litestream.
+
+      - Next week: Recovery jogs + scope Offline-first Plugin SDK.'
+  - page_index: 1
+    page_id: P20261011190000WREV02
+    text_content: 'Week of Oct 5-11 Review
+
+      - Elena poured 12x16 backyard studio concrete slab on Oct 8.
+
+      - Leo & Sam robotics dress rehearsal went great with Coach Priya.'
+  - page_index: 2
+    page_id: P20261108190000WREV03
+    text_content: 'Week of Nov 2-8 Review
+
+      - Maya onboarded smoothly on FieldNote Plugin SDK UX.
+
+      - 12x16 studio framing & 60A subpanel rough-in passed inspection.
+
+      - Protected Sunday family breakfast with Mel, Leo, and Sam.'
+- file_name: Reading_Log_2026.note
+  description: Nonfiction reading notes across 4 books in 2026.
+  pages:
+  - page_index: 0
+    page_id: P20260330210000READ01
+    text_content: 'Four Thousand Weeks (Oliver Burkeman)
+
+      - Embrace finitude: stop trying to clear the inbox.
+
+      - Hard cap of 3 major active projects at a time.'
+  - page_index: 1
+    page_id: P20260420210000READ02
+    text_content: 'Designing Data-Intensive Applications (Martin Kleppmann)
+
+      - Ch 3: LSM-trees vs B-trees write amplification trade-offs.
+
+      - Ch 7: Snapshot isolation & write skew — useful context for FieldNote offline sync.'
+  - page_index: 2
+    page_id: P20260921210000READ03
+    text_content: 'The Power Broker (Robert Caro) & A Pattern Language (Christopher Alexander)
+
+      - Caro: How Robert Moses used Triborough Authority bonds to build power.
+
+      - Alexander: Light on two sides of every room — applied to Elena''s 12x16 backyard studio.'
+- file_name: Robotics_Club_2026.note
+  description: FIRST LEGO League robotics club notes for Leo and Sam with Coach Priya.
+  pages:
+  - page_index: 0
+    page_id: P20260419170000ROBO01
+    text_content: 'FIRST LEGO League Kickoff
+
+      - Leo & Sam joined FLL team coached by Coach Priya.
+
+      - Initial robot arm used 1:1 gear ratio (lacked torque).'
+  - page_index: 1
+    page_id: P20260906170000ROBO02
+    text_content: 'Robot Build & Innovation Project
+
+      - Upgraded robot arm to 3:1 gear reduction for torque + calibrated gyro turns.
+
+      - Sam presenting innovation project on urban storm drains.'
+  - page_index: 2
+    page_id: P20261025170000ROBO03
+    text_content: 'Regional Tournament Win!
+
+      - Oct 24 at Lincoln High: scored 285 points and WON the Innovation Award!
+
+      - Team advances to NorCal Championships in February.'
+- file_name: Daily_Log.note
+  description: 32-page running multi-day Bullet Journal spanning Feb-Nov 2026 (2 days/page, heavy noise
+    + sparse updates).
+  pages:
+  - page_index: 0
+    page_id: P20260203080000D0001
+    text_content: '02.03 TUE
+
+      • Standup w/ Devon on FieldNote RDS sizing
+
+      • Groceries: milk, eggs, broccoli, tortillas
+
+      • Pay water bill
+
+
+      02.04 WED
+
+      • 5mi easy run in Speedgoat 5 — slight left knee twinge
+
+      • Call dentist to reschedule cleaning
+
+      • Read 15 pages of Four Thousand Weeks'
+  - page_index: 1
+    page_id: P20260208080000D0002
+    text_content: '02.08 SUN
+
+      • Meal prep chicken bowls w/ Mel
+
+      • Walked dog 40min at park
+
+      • Sketched 10x12 backyard shed footprint on graph paper
+
+
+      02.09 MON
+
+      • Devon demoed Auth0 login screen in React Native
+
+      • Drop off dry cleaning
+
+      • Fix squeaky front door hinge'
+  - page_index: 2
+    page_id: P20260215080000D0003
+    text_content: '02.15 SUN
+
+      • Trail run 8mi w/ 800ft gain — left knee nagging at mile 6
+
+      • Laundry + fold sheets
+
+      • Pizza night w/ Mel, Leo, Sam
+
+
+      02.17 TUE
+
+      • SunRun rep emailed $24,000 solar proposal (feels pushy)
+
+      • Oil change + tire rotation ($95)'
+  - page_index: 3
+    page_id: P20260224080000D0004
+    text_content: '02.24 TUE
+
+      • Marco quoted $8,500 for basic 10x12 cedar shed (no electrical)
+
+      • Pick up prescriptions from pharmacy
+
+      • Read DDIA Ch 3 on LSM-trees
+
+
+      02.26 THU
+
+      • Work sprint planning + triage 12 Jira bugs
+
+      • Take recycling out'
+  - page_index: 4
+    page_id: P20260303080000D0005
+    text_content: '03.03 TUE
+
+      • Coach Priya suggested foam rolling + hip strength for IT band
+
+      • Buy coffee beans + oat milk
+
+      • Watch movie w/ Mel
+
+
+      03.05 THU
+
+      • FieldNote React Native sync worker crashed twice on iOS background wake
+
+      • Mow front lawn'
+  - page_index: 5
+    page_id: P20260312080000D0006
+    text_content: '03.12 THU
+
+      • Pacific Solar site visit: $19,500 for 6.8kW + Powerwall 3
+
+      • Return library books
+
+      • Help Leo w/ math homework
+
+
+      03.14 SAT
+
+      • Farmers market w/ Mel & kids
+
+      • Clean garage workbench'
+  - page_index: 6
+    page_id: P20260321080000D0007
+    text_content: '03.21 SAT
+
+      • Tried Brooks Cascadia 18 at running store — felt much more stable
+
+      • Grocery run: pasta, marinara, spinach, apples
+
+      • Wash car
+
+
+      03.23 MON
+
+      • Pay credit card bill
+
+      • Quiet work Monday, reviewed PRs'
+  - page_index: 7
+    page_id: P20260329080000D0008
+    text_content: '03.29 SUN
+
+      • 10mi trail run in Brooks Cascadia 18 — zero knee pain!
+
+      • Call mom + catch up on spring plans
+
+      • Finished Four Thousand Weeks — max 3 active projects rule
+
+
+      03.30 MON
+
+      • Email plumber about hybrid heat-pump water heater quote'
+  - page_index: 8
+    page_id: P20260406080000D0009
+    text_content: '04.06 MON
+
+      • Mel & I agreed 10x12 uninsulated shed is too cramped; look at 12x16 studio
+
+      • Drop off package at UPS
+
+      • Walk dog 30min
+
+
+      04.08 WED
+
+      • Plumber quoted $3,400 for Rheem hybrid heat-pump water heater (replaces gas)
+
+      • Dishes + laundry'
+  - page_index: 9
+    page_id: P20260415080000D0010
+    text_content: '04.15 WED
+
+      • Filed taxes before deadline!
+
+      • Read DDIA Ch 7 on transactions & write skew
+
+      • Pick up dog food
+
+
+      04.18 SAT
+
+      • Robotics club spring workshop w/ Coach Priya, Leo, Sam
+
+      • Barbecue w/ neighbors'
+  - page_index: 10
+    page_id: P20260425080000D0011
+    text_content: '04.25 SAT
+
+      • Long run 12mi in Marin Headlands — legs felt awesome in Cascadia 18
+
+      • Weed tomato beds
+
+      • Order birthday gift for Sam
+
+
+      04.27 MON
+
+      • Devon announced move to platform infra team; Sora stepping up as FieldNote Tech Lead'
+  - page_index: 11
+    page_id: P20260505080000D0012
+    text_content: '05.05 TUE
+
+      • Sora kicked off Auth0 -> self-hosted Keycloak migration (saves $300/mo)
+
+      • Trader Joe''s run: yogurt, berries, sourdough
+
+      • Clean espresso machine
+
+
+      05.07 THU
+
+      • Met contractor Elena about 12x16 insulated backyard studio w/ 60A subpanel'
+  - page_index: 12
+    page_id: P20260514080000D0013
+    text_content: '05.14 THU
+
+      • Elena sent studio quote: $14,200 including concrete slab & 60A subpanel
+
+      • Pay electric bill
+
+      • Watch Pitt ep 4 w/ Mel
+
+
+      05.16 SAT
+
+      • Marin Trail Half Marathon COMPLETE: 1:54:20! Zero knee pain!
+
+      • Celebratory burgers w/ Mel, Leo, Sam'
+  - page_index: 13
+    page_id: P20260522080000D0014
+    text_content: '05.22 FRI
+
+      • Recovery walk 3mi; thinking about Lake Sonoma 50K next April
+
+      • Cancelled Auth0 subscription after Keycloak cutover
+
+      • Haircut 2pm
+
+
+      05.24 SUN
+
+      • Started The Power Broker (Robert Caro)
+
+      • Meal prep for week'
+  - page_index: 14
+    page_id: P20260602080000D0015
+    text_content: '06.02 TUE
+
+      • Signed Pacific Solar contract ($19,500, 6.8kW + Powerwall 3)!
+
+      • Drop off donations at Goodwill
+
+      • Fix leaky garden hose nozzle
+
+
+      06.04 THU
+
+      • Sora reviewed Flutter offline sync prototype — way cleaner than React Native'
+  - page_index: 15
+    page_id: P20260612080000D0016
+    text_content: '06.12 FRI
+
+      • Rheem hybrid heat-pump water heater installed ($3,400) — whisper quiet
+
+      • Date night sushi w/ Mel
+
+      • Buy sunscreen + bug spray
+
+
+      06.15 MON
+
+      • Approved Elena''s $14,200 12x16 studio contract; dropped Marco''s cedar shed'
+  - page_index: 16
+    page_id: P20260621080000D0017
+    text_content: '06.21 SUN
+
+      • Father''s Day hike w/ Mel, Leo, Sam
+
+      • Read The Power Broker Ch 5 (Jones Beach)
+
+      • Laundry + groceries
+
+
+      06.23 TUE
+
+      • Sora formally approved full Flutter rewrite for FieldNote; launch target Sep 15'
+  - page_index: 17
+    page_id: P20260702080000D0018
+    text_content: '07.02 THU
+
+      • Pacific Solar submitted permit #SOL-2026-441
+
+      • Pack camping gear for July 4 weekend
+
+      • Refill propane tank
+
+
+      07.06 MON
+
+      • Back from camping trip; unpack tents + wash sleeping bags'
+  - page_index: 18
+    page_id: P20260714080000D0019
+    text_content: '07.14 TUE
+
+      • Easy 6mi trail run w/ Coach Priya''s tempo workout
+
+      • Pay water + trash bills
+
+      • Order new running socks
+
+
+      07.16 THU
+
+      • Benchmarked SQLite + Litestream on Fly.io for FieldNote ($18/mo vs $420/mo RDS!)'
+  - page_index: 19
+    page_id: P20260725080000D0020
+    text_content: '07.25 SAT
+
+      • Summer robotics scrimmage w/ Priya, Leo, Sam — testing 3:1 arm gear ratio
+
+      • Mow lawn + trim hedges
+
+      • Read A Pattern Language (Christopher Alexander) for studio desk layout
+
+
+      07.27 MON
+
+      • Quiet work day; reviewed Keycloak token refresh logs'
+  - page_index: 20
+    page_id: P20260804080000D0021
+    text_content: '08.04 TUE
+
+      • City approved solar permit #SOL-2026-441! Pacific Solar install set for Jan 12.
+
+      • Groceries: chicken, rice, avocados, limes
+
+      • Call car insurance about windshield chip
+
+
+      08.06 THU
+
+      • Registered for Lake Sonoma 50K (April 10)!'
+  - page_index: 21
+    page_id: P20260815080000D0022
+    text_content: '08.15 SAT
+
+      • 14mi trail run w/ 1,600ft climb (Lake Sonoma 50K base)
+
+      • Back-to-school supplies shopping w/ Mel, Leo, Sam
+
+      • Ice bath
+
+
+      08.18 TUE
+
+      • Elena staked out 12x16 backyard studio pad & trench line for 60A subpanel'
+  - page_index: 22
+    page_id: P20260827080000D0023
+    text_content: '08.27 THU
+
+      • FieldNote Flutter beta hit 99.95% offline sync reliability in soak test!
+
+      • Clean guest bathroom
+
+      • Take dog to vet for annual shots
+
+
+      08.29 SAT
+
+      • Read The Power Broker Ch 14 (Triborough Authority bonds)'
+  - page_index: 23
+    page_id: P20260905080000D0024
+    text_content: '09.05 SAT
+
+      • Robotics build day w/ Coach Priya — Leo & Sam calibrated gyro turn accuracy
+
+      • Farmers market + coffee w/ Mel
+
+      • Rake backyard leaves
+
+
+      09.08 TUE
+
+      • Devon completed Fly.io + Litestream production cutover ($18/mo); RDS slated for teardown'
+  - page_index: 24
+    page_id: P20260912080000D0025
+    text_content: '09.12 SAT
+
+      • SHIPPED FieldNote v1.0 (3 days ahead of Sep 15 target!) w/ Sora & Devon!
+
+      • Celebratory dinner w/ Mel
+
+
+      09.14 MON
+
+      • Decommissioned AWS RDS instance — saving $400+/mo
+
+      • Buy printer paper + pens'
+  - page_index: 25
+    page_id: P20260920080000D0026
+    text_content: '09.20 SUN
+
+      • 16mi long trail run in Cascadia 18 — nutrition gel every 45min worked great
+
+      • Meal prep + dishes
+
+      • Read A Pattern Language on natural daylighting
+
+
+      09.22 TUE
+
+      • Sora & I scoped Q4 focus: Offline-first Plugin SDK'
+  - page_index: 26
+    page_id: P20260929080000D0027
+    text_content: '09.29 TUE
+
+      • Interviewed Maya for FieldNote product designer role — super strong portfolio
+
+      • Pay credit card bill
+
+      • Pick up dry cleaning
+
+
+      10.01 THU
+
+      • Check side yard gate clearance for Jan 12 Powerwall 3 delivery'
+  - page_index: 27
+    page_id: P20261008080000D0028
+    text_content: '10.08 THU
+
+      • Elena poured concrete slab for 12x16 backyard studio! Framing starts next week.
+
+      • Groceries: salmon, asparagus, lemons, rice
+
+      • Walk dog 30min
+
+
+      10.10 SAT
+
+      • Robotics dress rehearsal w/ Priya — Sam nailed urban storm drains pitch'
+  - page_index: 28
+    page_id: P20261015080000D0029
+    text_content: '10.15 THU
+
+      • Hired Maya as FieldNote product designer (starts Nov 2) for Plugin SDK UX!
+
+      • Oil change reminder for Nov
+
+      • Watch movie w/ Mel
+
+
+      10.17 SAT
+
+      • 18mi trail run — longest run yet for Lake Sonoma 50K prep'
+  - page_index: 29
+    page_id: P20261024080000D0030
+    text_content: '10.24 SAT
+
+      • FIRST LEGO League Regional Tournament at Lincoln High: Leo & Sam scored 285 and WON Innovation
+      Award!
+
+      • Team advances to NorCal Championships in Feb; Coach Priya thrilled!
+
+      • Ice cream celebration
+
+
+      10.26 MON
+
+      • Quiet Monday; wrote Plugin SDK API draft w/ Sora'
+  - page_index: 30
+    page_id: P20261102080000D0031
+    text_content: '11.02 MON
+
+      • Maya''s first day! Onboarding on FieldNote Flutter + Plugin SDK specs.
+
+      • Dentist checkup for kids
+
+      • Laundry + groceries
+
+
+      11.04 WED
+
+      • Elena finished 12x16 studio framing & 60A subpanel rough-in inspection passed!'
+  - page_index: 31
+    page_id: P20261110080000D0032
+    text_content: '11.10 TUE
+
+      • Easy 5mi recovery jog
+
+      • Confirmed Pacific Solar Jan 12 install window & Powerwall 3 placement
+
+      • Read The Power Broker Ch 20
+
+
+      11.12 THU
+
+      • Thanksgiving menu planning w/ Mel (12 guests)'
+tasks: []
+expectations:
+  concepts:
+  - name: Project FieldNote
+    kind: project
+    keywords:
+    - fieldnote
+    - litestream
+    - plugin sdk
+  - name: Home Energy Upgrade
+    kind: project
+    keywords:
+    - solar
+    - powerwall
+    - pacific solar
+    - rheem
+  - name: Backyard Studio
+    kind: project
+    keywords:
+    - studio
+    - workshop
+    - 12x16
+    - subpanel
+  - name: Trail Running & Lake Sonoma 50K
+    kind: project
+    keywords:
+    - lake sonoma
+    - 50k
+    - marin
+    - running
+    - cascadia
+  - name: Kids Robotics Club
+    kind: project
+    keywords:
+    - robotics
+    - lego
+    - innovation award
+  - name: Reading Notes
+    kind: topic
+    keywords:
+    - reading
+    - four thousand weeks
+    - power broker
+    - pattern language
+    - ddia
+  - name: Personal Habits & Reflections
+    kind: topic
+    keywords:
+    - reflection
+    - habit
+    - 9pm
+    - sleep
+    - 3 active projects
+    - quarterly
+  - name: Sora
+    kind: entity
+    keywords:
+    - sora
+  - name: Devon
+    kind: entity
+    keywords:
+    - devon
+  - name: Maya
+    kind: entity
+    keywords:
+    - maya
+  - name: Elena
+    kind: entity
+    keywords:
+    - elena
+  - name: Coach Priya
+    kind: entity
+    keywords:
+    - priya
+  - name: Mel
+    kind: entity
+    keywords:
+    - mel
+  - name: Leo & Sam
+    kind: entity
+    keywords:
+    - leo
+    - sam
+  facts:
+  - name: FieldNote DB migrated to SQLite + Litestream on Fly.io ($18/mo)
+    keywords:
+    - litestream
+    - 18/mo
+  - name: FieldNote auth switched to self-hosted Keycloak
+    keywords:
+    - keycloak
+  - name: FieldNote mobile switched to Flutter (99.95% sync reliability)
+    keywords:
+    - flutter
+    - 99.95%
+  - name: FieldNote v1.0 shipped September 12 with Sora as Tech Lead
+    keywords:
+    - sep 12
+    - september 12
+  - name: Hired Maya as product designer for Offline-first Plugin SDK
+    keywords:
+    - plugin sdk
+  - name: 'Signed Pacific Solar ($19,500, permit #SOL-2026-441, Jan 12 install)'
+    keywords:
+    - 19,500
+    - sol-2026-441
+  - name: Installed Rheem hybrid heat-pump water heater ($3,400)
+    keywords:
+    - rheem
+    - 3,400
+  - name: Upgraded backyard shed to Elena's 12x16 insulated studio ($14,200, 60A subpanel)
+    keywords:
+    - 14,200
+    - 12x16
+    - 60a
+  - name: Finished Marin Half in 1:54:20 in Brooks Cascadia 18
+    keywords:
+    - '1:54:20'
+  - name: Registered for Lake Sonoma 50K (April 10)
+    keywords:
+    - lake sonoma
+    - 50k
+  - name: Robotics team won Innovation Award (285 pts, NorCal Champs Feb)
+    keywords:
+    - innovation award
+    - '285'
+  - name: 9pm phone-free cutoff improved sleep (14/31 -> 26/30)
+    keywords:
+    - 9pm
+    - 26/30
