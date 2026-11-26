@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from supernote.models.events import DomainEventType
+from supernote.models.wiki import WikiSourceRefDTO
 from supernote.server.components.wiki.source_service import WikiSourceService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
@@ -276,3 +277,75 @@ async def test_get_backfill_overview_lists_next_files_and_untranscribed_notes(
     done = await svc.get_backfill_overview(1, before_file_id=10, preview_limit=5)
     assert done.remaining_files == 0
     assert done.next_files == []
+
+
+async def test_resolve_source_metadata_returns_names_and_enforces_tenant_isolation(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=501,
+                    user_id=1,
+                    file_name="Aurora_Spec.note",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=502,
+                    user_id=2,
+                    file_name="Secret_Other_User.note",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+                NotePageContentDO(
+                    file_id=501,
+                    page_index=2,
+                    page_id="P501_2",
+                    text_content="Page 3 content",
+                ),
+                NotePageContentDO(
+                    file_id=502,
+                    page_index=0,
+                    page_id="P502_0",
+                    text_content="Other user content",
+                ),
+                ScheduleTaskDO(
+                    user_id=1,
+                    task_id="t-aurora",
+                    title="Install UPS",
+                    status="needsAction",
+                    update_time=1000,
+                ),
+                ScheduleTaskDO(
+                    user_id=2,
+                    task_id="t-secret",
+                    title="Other User Task",
+                    status="needsAction",
+                    update_time=1000,
+                ),
+            ]
+        )
+        await session.commit()
+
+    svc = WikiSourceService(session_manager)
+    meta = await svc.resolve_source_metadata(
+        1,
+        [
+            WikiSourceRefDTO(
+                source_type="note_page", source_key="501:P501_2", file_id=501
+            ),
+            WikiSourceRefDTO(
+                source_type="note_page", source_key="502:P502_0", file_id=502
+            ),
+            WikiSourceRefDTO(source_type="schedule_task", source_key="t-aurora"),
+            WikiSourceRefDTO(source_type="schedule_task", source_key="t-secret"),
+        ],
+    )
+    assert meta[("note_page", "501:P501_2")].file_name == "Aurora_Spec.note"
+    assert meta[("note_page", "501:P501_2")].page_index == 2
+    assert meta[("schedule_task", "t-aurora")].task_title == "Install UPS"
+    # Tenant isolation: user 2's file and task must not be resolved for user 1.
+    assert ("note_page", "502:P502_0") not in meta
+    assert ("schedule_task", "t-secret") not in meta

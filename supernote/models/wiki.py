@@ -46,6 +46,12 @@ class WikiSourceRefDTO(DataClassJSONMixin):
     """Latest incorporated `f_user_event.seq`."""
     is_source_deleted: bool = False
     """True when the backing note page, file, or task was deleted."""
+    file_name: str | None = None
+    """Resolved notebook filename for `note_page` citations, when active."""
+    page_index: int | None = None
+    """Resolved 0-based page index for `note_page` citations, when available."""
+    task_title: str | None = None
+    """Resolved schedule task title for `schedule_task` citations, when active."""
 
     def __post_init__(self) -> None:
         if not self.source_type.strip():

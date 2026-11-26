@@ -8,18 +8,29 @@ import foreign ORM models directly.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import Select, func, select
 
+from supernote.models.wiki import WikiSourceRefDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.schedule import ScheduleTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import DomainEventRecorded
 
-__all__ = ["BackfillOverview", "WikiSourceService"]
+__all__ = ["BackfillOverview", "SourceMetadata", "WikiSourceService"]
+
+
+@dataclass(frozen=True)
+class SourceMetadata:
+    """Resolved human-readable display metadata for one wiki source reference."""
+
+    file_name: str | None = None
+    page_index: int | None = None
+    task_title: str | None = None
 
 
 @dataclass(frozen=True)
@@ -299,6 +310,92 @@ class WikiSourceService:
             if not p.is_blank
         ]
         return synthetic_diffs, files[-1].id
+
+    async def resolve_source_metadata(
+        self, user_id: int, refs: Sequence[WikiSourceRefDTO]
+    ) -> dict[tuple[str, str], SourceMetadata]:
+        """Resolve display names and 0-based page indices for `refs` (tenant-scoped)."""
+        if not refs:
+            return {}
+
+        file_ids: set[int] = set()
+        note_pairs: list[tuple[int, str, str]] = []
+        task_ids: set[str] = set()
+
+        for ref in refs:
+            if ref.source_type == "note_page":
+                fid = ref.file_id
+                page_id = ""
+                if ":" in ref.source_key:
+                    raw_fid, page_id = ref.source_key.split(":", maxsplit=1)
+                    if fid is None and raw_fid.isdigit():
+                        fid = int(raw_fid)
+                if fid is not None:
+                    file_ids.add(fid)
+                    note_pairs.append((fid, page_id, ref.source_key))
+            elif ref.source_type == "schedule_task":
+                task_ids.add(ref.source_key)
+
+        file_names: dict[int, str] = {}
+        page_indices: dict[tuple[int, str], int] = {}
+        task_titles: dict[str, str] = {}
+
+        async with self._session_manager.session() as session:
+            if file_ids:
+                file_rows = (
+                    await session.execute(
+                        select(UserFileDO.id, UserFileDO.file_name).where(
+                            UserFileDO.user_id == user_id,
+                            UserFileDO.id.in_(file_ids),
+                        )
+                    )
+                ).all()
+                file_names = {int(fid): str(fname) for fid, fname in file_rows}
+
+                page_rows = (
+                    await session.execute(
+                        select(
+                            NotePageContentDO.file_id,
+                            NotePageContentDO.page_id,
+                            NotePageContentDO.page_index,
+                        )
+                        .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
+                        .where(
+                            UserFileDO.user_id == user_id,
+                            NotePageContentDO.file_id.in_(file_ids),
+                        )
+                    )
+                ).all()
+                page_indices = {
+                    (int(fid), str(pid)): int(pidx)
+                    for fid, pid, pidx in page_rows
+                    if pid is not None
+                }
+
+            if task_ids:
+                task_rows = (
+                    await session.execute(
+                        select(ScheduleTaskDO.task_id, ScheduleTaskDO.title).where(
+                            ScheduleTaskDO.user_id == user_id,
+                            ScheduleTaskDO.task_id.in_(task_ids),
+                        )
+                    )
+                ).all()
+                task_titles = {str(tid): str(title) for tid, title in task_rows}
+
+        resolved: dict[tuple[str, str], SourceMetadata] = {}
+        for fid, page_id, source_key in note_pairs:
+            fname = file_names.get(fid)
+            pidx = page_indices.get((fid, page_id)) if page_id else None
+            if fname is not None or pidx is not None:
+                resolved[("note_page", source_key)] = SourceMetadata(
+                    file_name=fname,
+                    page_index=pidx,
+                )
+        for tid in task_ids:
+            if title := task_titles.get(tid):
+                resolved[("schedule_task", tid)] = SourceMetadata(task_title=title)
+        return resolved
 
     async def list_task_snapshots(
         self, user_id: int, *, limit: int = 50

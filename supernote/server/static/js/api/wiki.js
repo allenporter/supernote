@@ -11,6 +11,9 @@ import { ApiError, apiRequest, getToken } from './http.js';
  * @property {number | null} [file_id]
  * @property {number | null} [last_event_seq]
  * @property {boolean} [is_source_deleted]
+ * @property {string | null} [file_name]
+ * @property {number | null} [page_index]
+ * @property {string | null} [task_title]
  */
 
 /**
@@ -237,6 +240,69 @@ export function formatPageKindLabel(kind) {
  */
 export function formatLintTypeLabel(issueType) {
     return String(issueType || '').replace(/_/g, ' ');
+}
+
+/**
+ * Format a `WikiSourceRef` into a human-readable label and navigation target,
+ * preserving full 64-bit VFS `file_id` precision from `source_key`.
+ *
+ * @param {WikiSourceRef} ref
+ * @returns {{
+ *   label: string,
+ *   tooltip: string,
+ *   clickable: boolean,
+ *   kind: 'note' | 'task' | 'other',
+ *   fileId: string | null,
+ *   pageIndex: number | null,
+ *   taskId: string | null,
+ * }}
+ */
+export function formatSourceRef(ref) {
+    const rawKey = String(ref?.source_key || '');
+    const deleted = Boolean(ref?.is_source_deleted);
+    if (ref?.source_type === 'note_page') {
+        const colonIdx = rawKey.indexOf(':');
+        const keyPrefix = colonIdx > 0 ? rawKey.slice(0, colonIdx) : rawKey;
+        const fileId = /^\d+$/.test(keyPrefix)
+            ? keyPrefix
+            : ref.file_id != null
+              ? String(ref.file_id)
+              : null;
+        const pageIndex = typeof ref.page_index === 'number' ? ref.page_index : null;
+        const baseName = ref.file_name?.trim() || (fileId ? `Notebook #${fileId}` : rawKey);
+        const label = pageIndex !== null ? `${baseName} · p.${pageIndex + 1}` : baseName;
+        return {
+            label,
+            tooltip: deleted ? `${label} (deleted)` : `Open ${label}`,
+            clickable: !deleted && Boolean(fileId),
+            kind: 'note',
+            fileId,
+            pageIndex,
+            taskId: null,
+        };
+    }
+    if (ref?.source_type === 'schedule_task') {
+        const label = ref.task_title?.trim() || `Task ${rawKey}`;
+        return {
+            label,
+            tooltip: deleted ? `${label} (deleted)` : `Open task: ${label}`,
+            clickable: !deleted && Boolean(rawKey),
+            kind: 'task',
+            fileId: null,
+            pageIndex: null,
+            taskId: rawKey || null,
+        };
+    }
+    const fallback = `${ref?.source_type || 'source'}:${rawKey}`;
+    return {
+        label: fallback,
+        tooltip: fallback,
+        clickable: false,
+        kind: 'other',
+        fileId: null,
+        pageIndex: null,
+        taskId: null,
+    };
 }
 
 /**

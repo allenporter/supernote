@@ -204,7 +204,17 @@ class WikiService:
             ).scalar_one_or_none()
             if page is None:
                 return None
-            return (await self._hydrate_pages(session, user_id, [page]))[0]
+            hydrated = (await self._hydrate_pages(session, user_id, [page]))[0]
+        if hydrated.source_refs:
+            meta_map = await self._source_service.resolve_source_metadata(
+                user_id, hydrated.source_refs
+            )
+            for ref in hydrated.source_refs:
+                if meta := meta_map.get((ref.source_type, ref.source_key)):
+                    ref.file_name = meta.file_name
+                    ref.page_index = meta.page_index
+                    ref.task_title = meta.task_title
+        return hydrated
 
     async def list_pages(
         self,

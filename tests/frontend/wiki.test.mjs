@@ -11,6 +11,7 @@ import {
     fetchWikiStatus,
     formatLintTypeLabel,
     formatPageKindLabel,
+    formatSourceRef,
     formatWikiActionResult,
     resolveWikiLintIssue,
     saveWikiPage,
@@ -252,4 +253,40 @@ test('formatPageKindLabel and formatLintTypeLabel produce readable labels', () =
     assert.equal(formatPageKindLabel('custom'), 'custom');
     assert.equal(formatLintTypeLabel('orphan_page'), 'orphan page');
     assert.equal(formatLintTypeLabel('broken_link'), 'broken link');
+});
+
+test('formatSourceRef resolves notebook filenames, 64-bit file IDs, tasks, and deleted sources', () => {
+    const note = formatSourceRef({
+        source_type: 'note_page',
+        source_key: '780925676306825948:P1',
+        // Simulate JSON.parse rounding a 64-bit integer; formatSourceRef must recover exact ID from source_key.
+        file_id: Number('780925676306825948'),
+        file_name: 'Aurora_Spec.note',
+        page_index: 2,
+        is_source_deleted: false,
+    });
+    assert.equal(note.label, 'Aurora_Spec.note · p.3');
+    assert.equal(note.clickable, true);
+    assert.equal(note.fileId, '780925676306825948');
+    assert.equal(note.pageIndex, 2);
+
+    const deletedNote = formatSourceRef({
+        source_type: 'note_page',
+        source_key: '101:P1',
+        file_name: 'Old.note',
+        page_index: 0,
+        is_source_deleted: true,
+    });
+    assert.equal(deletedNote.clickable, false);
+    assert.equal(deletedNote.label, 'Old.note · p.1');
+
+    const task = formatSourceRef({
+        source_type: 'schedule_task',
+        source_key: 'task-aurora-ups',
+        task_title: 'Install UPS',
+        is_source_deleted: false,
+    });
+    assert.equal(task.label, 'Install UPS');
+    assert.equal(task.clickable, true);
+    assert.equal(task.taskId, 'task-aurora-ups');
 });
