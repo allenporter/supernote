@@ -92,6 +92,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="http",
         import_path="supernote.server.components.http:HttpComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.http.config:HttpConfig",
     ),
     BuiltinComponentSpec(
         domain="integrity",

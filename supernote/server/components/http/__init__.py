@@ -33,6 +33,8 @@ from supernote.server.utils.request import (
     parse_query_dto,
 )
 
+from .config import HttpConfig
+
 __all__ = [
     "HTTP_REGISTRAR_KEY",
     "HttpComponent",
@@ -214,13 +216,14 @@ class HttpComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Configure reverse-proxy handling and initialize `HttpRegistrar` on ``core.app``."""
-        if core.config.proxy_mode == "strict":
-            trusted = [[ip] for ip in core.config.trusted_proxies]
+        cfg = HttpConfig.from_dict(dict(config))
+        if cfg.proxy_mode == "strict":
+            trusted = [[ip] for ip in cfg.trusted_proxies]
             await aiohttp_remotes.setup(
                 core.app,
                 aiohttp_remotes.XForwardedStrict(trusted),
             )
-        elif core.config.proxy_mode == "relaxed":
+        elif cfg.proxy_mode == "relaxed":
             await aiohttp_remotes.setup(core.app, aiohttp_remotes.XForwardedRelaxed())
 
         registrar = HttpRegistrar(core.app.router)

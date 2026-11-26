@@ -337,16 +337,24 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_EVENT_LOG_RETENTION_DAYS`
     """
 
-    proxy_mode: str | None = None
+    proxy_mode: str | None = field(
+        default=None,
+        metadata={"component": ("http", "proxy_mode")},
+    )
     """Proxy header handling mode: None/'disabled' (ignore proxy headers), 'relaxed' (trust immediate upstream), or 'strict' (require specific trusted IPs). Defaults to None for security.
+
+    Aliases `http.proxy_mode`.
 
     Env Var: `SUPERNOTE_PROXY_MODE`
     """
 
     trusted_proxies: list[str] = field(
-        default_factory=lambda: ["127.0.0.1", "::1", "172.17.0.0/16"]
+        default_factory=lambda: ["127.0.0.1", "::1", "172.17.0.0/16"],
+        metadata={"component": ("http", "trusted_proxies")},
     )
     """List of trusted proxy IPs/networks (used in strict mode). Supports CIDR notation.
+
+    Aliases `http.trusted_proxies`.
 
     Env Var: `SUPERNOTE_TRUSTED_PROXIES` (comma-separated)
     """
@@ -759,11 +767,13 @@ class ServerConfig(DataClassYAMLMixin):
 
         if os.getenv("SUPERNOTE_PROXY_MODE"):
             config.proxy_mode = os.getenv("SUPERNOTE_PROXY_MODE")
+            config._component_sources["http"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_PROXY_MODE: {config.proxy_mode}")
 
         if os.getenv("SUPERNOTE_TRUSTED_PROXIES"):
             val = os.getenv("SUPERNOTE_TRUSTED_PROXIES", "")
             config.trusted_proxies = [p.strip() for p in val.split(",") if p.strip()]
+            config._component_sources["http"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_TRUSTED_PROXIES: {config.trusted_proxies}")
 
         if gemini_api_key := os.getenv("SUPERNOTE_GEMINI_API_KEY"):
