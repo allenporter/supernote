@@ -380,7 +380,23 @@ async def test_legacy_and_root_yaml_resolve_identically(
     legacy_yaml: dict[str, object],
     root_yaml: dict[str, dict[str, object]],
 ) -> None:
-    """Legacy flat `config.yaml` fields and root `<domain>:` sections resolve to the same component config."""
+    """Every migrated component resolves `DEFAULT -> DATABASE -> YAML` and matches across legacy and root YAML."""
+    empty_cfg = ServerConfig.load(tmp_path / "empty")
+    default_resolved = (
+        await async_resolve_component_configs(empty_cfg, coordination_service)
+    )[domain]
+    assert default_resolved.source == ComponentConfigSource.DEFAULT
+
+    toggled_enabled = not default_resolved.enabled
+    await async_save_component_config(
+        coordination_service, domain, {"enabled": toggled_enabled}
+    )
+    db_resolved = (
+        await async_resolve_component_configs(empty_cfg, coordination_service)
+    )[domain]
+    assert db_resolved.source == ComponentConfigSource.DATABASE
+    assert db_resolved.enabled is toggled_enabled
+
     legacy_dir = tmp_path / "legacy"
     legacy_dir.mkdir()
     (legacy_dir / "config.yaml").write_text(yaml.safe_dump(legacy_yaml))
@@ -462,6 +478,24 @@ async def test_legacy_and_root_yaml_resolve_identically(
             {"enabled": True},
         ),
         (
+            "webhooks",
+            {"webhooks": {"enabled": False}},
+            {"SUPERNOTE_WEBHOOKS_ENABLED": "true"},
+            {"enabled": True},
+        ),
+        (
+            "wiki",
+            {"wiki": {"enabled": False, "debounce_seconds": 30.0}},
+            {"SUPERNOTE_WIKI_ENABLED": "true"},
+            {"enabled": True},
+        ),
+        (
+            "gemini",
+            {"gemini": {"enabled": True, "api_key": "yaml-gemini-key"}},
+            {"SUPERNOTE_GEMINI_API_KEY": "env-gemini-key"},
+            {"api_key": "env-gemini-key"},
+        ),
+        (
             "ai",
             {
                 "ai": {
@@ -470,6 +504,7 @@ async def test_legacy_and_root_yaml_resolve_identically(
                 }
             },
             {
+                "SUPERNOTE_GEMINI_API_KEY": "env-gemini-key",
                 "SUPERNOTE_PROMPTS_DIR": "/env/prompts",
                 "SUPERNOTE_GEMINI_OCR_MODEL": "gemini-2.5-pro",
                 "SUPERNOTE_GEMINI_MAX_CONCURRENCY": "9",
@@ -485,7 +520,7 @@ async def test_legacy_and_root_yaml_resolve_identically(
         ),
     ],
 )
-async def test_env_overrides_root_yaml_component_sections(
+async def test_env_overrides_root_yaml_and_database_tiers(
     tmp_path: Path,
     coordination_service: CoordinationService,
     domain: str,
@@ -493,16 +528,24 @@ async def test_env_overrides_root_yaml_component_sections(
     env_vars: dict[str, str],
     expected_subset: dict[str, object],
 ) -> None:
-    """`SUPERNOTE_*` environment variables override root `<domain>:` sections in `config.yaml`."""
-    (tmp_path / "config.yaml").write_text(yaml.safe_dump(root_yaml))
-    with patch.dict(os.environ, env_vars):
-        server_cfg = ServerConfig.load(tmp_path)
-    resolved = (
-        await async_resolve_component_configs(server_cfg, coordination_service)
-    )[domain]
-    assert resolved.source == ComponentConfigSource.ENV
-    for key, expected_val in expected_subset.items():
-        assert resolved.config[key] == expected_val
+    """`SUPERNOTE_*` environment variables override both database and root `<domain>:` YAML tiers."""
+    await async_save_component_config(coordination_service, domain, {"enabled": False})
+
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    yaml_dir = tmp_path / "yaml"
+    yaml_dir.mkdir()
+    (yaml_dir / "config.yaml").write_text(yaml.safe_dump(root_yaml))
+
+    for cfg_dir in (empty_dir, yaml_dir):
+        with patch.dict(os.environ, env_vars):
+            server_cfg = ServerConfig.load(cfg_dir)
+        resolved = (
+            await async_resolve_component_configs(server_cfg, coordination_service)
+        )[domain]
+        assert resolved.source == ComponentConfigSource.ENV
+        for key, expected_val in expected_subset.items():
+            assert resolved.config[key] == expected_val
 
 
 async def test_ai_and_provider_root_yaml_compatibility(

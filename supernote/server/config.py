@@ -794,9 +794,11 @@ class ServerConfig(DataClassYAMLMixin):
             config.ai.providers.setdefault(
                 "gemini", ProviderConfig()
             ).api_key = gemini_api_key
-            if "gemini" in config._root_component_configs:
-                config._root_component_configs["gemini"]["api_key"] = gemini_api_key
+            config._root_component_configs.setdefault("gemini", {})["api_key"] = (
+                gemini_api_key
+            )
             config._component_sources["gemini"] = ComponentConfigSource.ENV
+            config._component_sources.setdefault("ai", ComponentConfigSource.ENV)
             logger.info(
                 f"Using SUPERNOTE_GEMINI_API_KEY: xxx...{config.gemini_api_key[-3:]}"
             )
