@@ -574,11 +574,12 @@ async def test_ai_and_provider_root_yaml_compatibility(
     (root_dir / "config.yaml").write_text(
         yaml.safe_dump(
             {
-                "gemini": {"api_key": "root-gemini-key"},
+                "gemini": {"enabled": True, "api_key": "root-gemini-key"},
                 "openai": {
+                    "enabled": True,
                     "providers": {
                         "ollama": {"base_url": "http://localhost:11434/v1"},
-                    }
+                    },
                 },
                 "ai": {
                     "enabled": False,

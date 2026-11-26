@@ -76,12 +76,7 @@ class ConfigurationConflictError(SupernoteError):
 
 
 def _configured_ai_provider_domains(server_config: ServerConfig) -> set[str]:
-    active = set(server_config.ai.active_provider_types & _AI_PROVIDER_DOMAINS)
-    for domain in _AI_PROVIDER_DOMAINS:
-        raw_cfg = server_config.root_component_configs.get(domain)
-        if raw_cfg and raw_cfg.get("enabled", True):
-            active.add(domain)
-    return active
+    return server_config.ai.active_provider_types & _AI_PROVIDER_DOMAINS
 
 
 def _resolve_static_component_sources(
@@ -134,14 +129,9 @@ def build_static_component_configs(
             if server_config.ai.provider_type(name).strip().lower() == domain
         }
         raw_domain_cfg = configs.get(domain, {})
-        enabled = (
-            bool(raw_domain_cfg["enabled"])
-            if "enabled" in raw_domain_cfg
-            else (bool(raw_domain_cfg) or domain in ai_domains)
-        )
         domain_cfg: dict[str, Any] = {
             **raw_domain_cfg,
-            "enabled": enabled,
+            "enabled": bool(raw_domain_cfg.get("enabled", domain in ai_domains)),
         }
         if provider_entries:
             domain_cfg["providers"] = {
