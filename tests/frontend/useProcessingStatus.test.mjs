@@ -4,6 +4,10 @@ import { ref } from 'vue';
 
 import { logout, setToken } from '../../supernote/server/static/js/api/http.js';
 import { useProcessingStatus } from '../../supernote/server/static/js/composables/useProcessingStatus.js';
+import {
+    loadServerFeatures,
+    resetServerFeatures,
+} from '../../supernote/server/static/js/composables/useServerFeatures.js';
 import { mountComposable } from './helpers/vue_test_scope.mjs';
 
 async function flushAsync() {
@@ -119,6 +123,65 @@ test('useProcessingStatus.js: reacts to watchers, schedules 3s polls, queues for
         assert.equal(winListeners['supernote:digest-sync'], undefined);
         assert.equal(docListeners.visibilitychange, undefined);
     } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+        globalThis.window = origWindow;
+        if (origDocument) {
+            Object.defineProperty(globalThis, 'document', origDocument);
+        } else {
+            delete globalThis.document;
+        }
+    }
+});
+
+test('useProcessingStatus.js: skips polling when the processor component is disabled', async () => {
+    const origFetch = globalThis.fetch;
+    const origWindow = globalThis.window;
+    const origDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    /** @type {string[]} */
+    const urls = [];
+
+    try {
+        setToken('poll-disabled-tok');
+        globalThis.window = /** @type {any} */ ({
+            addEventListener() {},
+            removeEventListener() {},
+        });
+        Object.defineProperty(globalThis, 'document', {
+            configurable: true,
+            value: {
+                hidden: false,
+                addEventListener() {},
+                removeEventListener() {},
+            },
+        });
+        globalThis.fetch = async (url) => {
+            const urlStr = String(url);
+            urls.push(urlStr);
+            if (urlStr === '/api/extended/system/features') {
+                return new Response(
+                    JSON.stringify({ success: true, runningComponents: ['http', 'web_ui'] }),
+                );
+            }
+            return new Response('Not Found', { status: 404 });
+        };
+
+        await loadServerFeatures();
+        urls.length = 0;
+
+        const files = ref([{ id: '1', name: 'A.note', extension: 'note' }]);
+        const isLoggedIn = ref(true);
+        const activeTab = ref('files');
+        const view = ref('grid');
+
+        const { result, unmount } = await mountComposable(() =>
+            useProcessingStatus({ files, isLoggedIn, activeTab, view }),
+        );
+        await result.refreshProcessingStatuses({ force: true });
+        assert.deepEqual(urls, []);
+        unmount();
+    } finally {
+        resetServerFeatures();
         await logout({ reload: false });
         globalThis.fetch = origFetch;
         globalThis.window = origWindow;

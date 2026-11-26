@@ -1,5 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { downloadFile, fetchDownloadUrl, fetchNoteCover } from '../api/client.js';
+import { isComponentRunning } from '../composables/useServerFeatures.js';
 import { showToast } from '../composables/useToast.js';
 import { formatShortDate, formatSize, getErrorMessage, resolveFileExt } from '../utils/format.js';
 import { IMAGE_EXTENSIONS } from './viewer/noteMeta.js';
@@ -72,6 +73,10 @@ export default {
             }
             const ext = fileExt.value;
             if (ext !== 'note' && !IMAGE_EXTENSIONS.has(ext)) {
+                coverUrl.value = null;
+                return;
+            }
+            if (ext === 'note' && !isComponentRunning('conversion')) {
                 coverUrl.value = null;
                 return;
             }

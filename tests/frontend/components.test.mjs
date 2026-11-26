@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { logout, setToken } from '../../supernote/server/static/js/api/http.js';
 import { compareItems } from '../../supernote/server/static/js/components/FileBrowserPanel.js';
+import SearchModal from '../../supernote/server/static/js/components/SearchModal.js';
 import SystemPanel from '../../supernote/server/static/js/components/SystemPanel.js';
 import {
     parseLocalDateInputToEpochMs,
@@ -20,6 +21,10 @@ import {
     resolveFileExt,
 } from '../../supernote/server/static/js/components/viewer/noteMeta.js';
 import ViewerSidePanel from '../../supernote/server/static/js/components/viewer/ViewerSidePanel.js';
+import {
+    loadServerFeatures,
+    resetServerFeatures,
+} from '../../supernote/server/static/js/composables/useServerFeatures.js';
 import { mountComposable } from './helpers/vue_test_scope.mjs';
 
 test('noteMeta.js: parseSafeHttpUrl, categories, page styles, link labels, and merged transcript pages', () => {
@@ -367,6 +372,119 @@ test('SystemPanel.js: loads read-only system components, active counts, and conf
             delete (/** @type {any} */ (globalThis).window);
         }
     } finally {
+        resetServerFeatures();
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('SystemPanel.js: skips queue and AI status requests when processor and ai are disabled', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {string[]} */
+    const requestedUrls = [];
+
+    try {
+        setToken('sys-disabled-tok');
+        globalThis.fetch = async (url) => {
+            const urlStr = String(url);
+            requestedUrls.push(urlStr);
+            if (urlStr === '/api/extended/system/features') {
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        runningComponents: ['config', 'http', 'web_ui'],
+                    }),
+                );
+            }
+            if (urlStr === '/api/file/capacity/query') {
+                return new Response(
+                    JSON.stringify({ success: true, usedCapacity: 512, totalCapacity: 2048 }),
+                );
+            }
+            if (urlStr === '/api/extended/system/components') {
+                return new Response(JSON.stringify({ success: true, components: [] }));
+            }
+            return new Response('Not Found', { status: 404 });
+        };
+
+        await loadServerFeatures();
+        requestedUrls.length = 0;
+
+        globalThis.window = /** @type {any} */ ({
+            addEventListener() {},
+            removeEventListener() {},
+        });
+        const scope = await mountComposable(() => SystemPanel.setup());
+        try {
+            await scope.result.loadData();
+            assert.equal(scope.result.processorEnabled.value, false);
+            assert.equal(scope.result.aiEnabled.value, false);
+            assert.equal(scope.result.error.value, null);
+            assert.equal(scope.result.queueBadgeLabel.value, 'DISABLED');
+            assert.equal(scope.result.queueHeadline.value, 'Background processing is disabled');
+            assert.equal(scope.result.aiStatus.value, null);
+            assert.equal(scope.result.capacity.value?.usedCapacity, 512);
+            assert.ok(!requestedUrls.includes('/api/extended/system/tasks'));
+            assert.ok(!requestedUrls.includes('/api/extended/ai/status'));
+        } finally {
+            scope.unmount();
+            delete (/** @type {any} */ (globalThis).window);
+        }
+    } finally {
+        resetServerFeatures();
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('SearchModal.js: skips semantic and task requests when search and schedule are disabled', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {string[]} */
+    const requestedUrls = [];
+
+    try {
+        setToken('search-disabled-tok');
+        globalThis.fetch = async (url) => {
+            const urlStr = String(url);
+            requestedUrls.push(urlStr);
+            if (urlStr === '/api/extended/system/features') {
+                return new Response(
+                    JSON.stringify({ success: true, runningComponents: ['http', 'web_ui'] }),
+                );
+            }
+            if (urlStr === '/api/file/label/list/search') {
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        entries: [{ id: '1', fileName: 'Stroller.note', isFolder: 'N' }],
+                    }),
+                );
+            }
+            return new Response('Not Found', { status: 404 });
+        };
+
+        await loadServerFeatures();
+        requestedUrls.length = 0;
+
+        globalThis.window = /** @type {any} */ ({
+            addEventListener() {},
+            removeEventListener() {},
+        });
+        const scope = await mountComposable(() =>
+            SearchModal.setup({ initialQuery: 'stroller' }, { emit() {} }),
+        );
+        try {
+            await new Promise((resolve) => setImmediate(resolve));
+            assert.equal(scope.result.results.value.length, 1);
+            assert.deepEqual(scope.result.semanticResults.value, []);
+            assert.deepEqual(scope.result.taskResults.value, []);
+            assert.deepEqual(requestedUrls, ['/api/file/label/list/search']);
+        } finally {
+            scope.unmount();
+            delete (/** @type {any} */ (globalThis).window);
+        }
+    } finally {
+        resetServerFeatures();
         await logout({ reload: false });
         globalThis.fetch = origFetch;
     }

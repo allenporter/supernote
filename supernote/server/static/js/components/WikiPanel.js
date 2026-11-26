@@ -20,6 +20,7 @@ import {
     searchWikiPages,
     triggerWikiCompile,
 } from '../api/wiki.js';
+import { isComponentRunning } from '../composables/useServerFeatures.js';
 import { useToast } from '../composables/useToast.js';
 import { getErrorMessage } from '../utils/format.js';
 import { renderWikiMarkdown } from '../utils/markdown.js';
@@ -637,13 +638,24 @@ export default {
         }
 
         /**
+         * @param {import('../api/wiki.js').WikiSourceRef} ref
+         * @returns {boolean}
+         */
+        function isSourceClickable(ref) {
+            const info = formatSourceRef(ref);
+            if (!info.clickable) return false;
+            if (info.kind === 'task' && !isComponentRunning('schedule')) return false;
+            return true;
+        }
+
+        /**
          * Open a notebook page or schedule task cited in the active wiki page's Sources footer.
          *
          * @param {import('../api/wiki.js').WikiSourceRef} ref
          */
         function handleOpenSource(ref) {
+            if (!isSourceClickable(ref)) return;
             const info = formatSourceRef(ref);
-            if (!info.clickable) return;
             if (info.kind === 'note' && info.fileId) {
                 emit('open-file', { id: info.fileId, pageIndex: info.pageIndex });
             } else if (info.kind === 'task' && info.taskId) {
@@ -690,6 +702,7 @@ export default {
             formatPageKindLabel,
             formatLintTypeLabel,
             formatSourceRef,
+            isSourceClickable,
             isLoading,
             isDisabled,
             isBusy,
@@ -1144,7 +1157,7 @@ export default {
                                 <div class="text-[11px] font-semibold text-stone-500 uppercase tracking-wide mb-1">Sources</div>
                                 <div class="flex flex-wrap gap-1.5">
                                     <template v-for="ref in activePage.source_refs" :key="ref.source_type + ':' + ref.source_key">
-                                        <button v-if="formatSourceRef(ref).clickable" type="button"
+                                        <button v-if="isSourceClickable(ref)" type="button"
                                             @click="handleOpenSource(ref)"
                                             :title="formatSourceRef(ref).tooltip"
                                             class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-slate-700 hover:text-slate-900 text-[11px] font-medium transition-colors max-w-full">

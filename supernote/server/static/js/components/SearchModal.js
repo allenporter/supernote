@@ -1,7 +1,8 @@
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { searchFiles, searchSemantic } from '../api/client.js';
 import { fetchTasks } from '../api/schedule.js';
 import { useModalEscape } from '../composables/useModalEscape.js';
+import { isComponentRunning } from '../composables/useServerFeatures.js';
 
 export default {
     props: {
@@ -54,6 +55,9 @@ export default {
 
         useModalEscape(() => emit('close'));
 
+        const semanticSearchEnabled = computed(() => isComponentRunning('search'));
+        const taskSearchEnabled = computed(() => isComponentRunning('schedule'));
+
         /**
          * @param {string} trimmed
          * @param {number} seq
@@ -63,8 +67,8 @@ export default {
                 const qLower = trimmed.toLowerCase();
                 const [fileMatches, vectorMatches, allTasks] = await Promise.all([
                     searchFiles(trimmed).catch(() => []),
-                    searchSemantic(trimmed).catch(() => []),
-                    getModalTasks(),
+                    semanticSearchEnabled.value ? searchSemantic(trimmed).catch(() => []) : [],
+                    taskSearchEnabled.value ? getModalTasks() : [],
                 ]);
                 if (seq !== activeSearchSeq) return;
 
