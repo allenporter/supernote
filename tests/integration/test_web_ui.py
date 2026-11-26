@@ -881,3 +881,138 @@ async def test_web_ui_consent_card_shows_the_resolved_client(
             await browser.close()
 
     assert not errors, f"Unexpected browser errors: {errors}"
+
+
+async def test_web_ui_minimal_components_disabled(
+    tmp_path: Path,
+    aiohttp_client: Any,
+) -> None:
+    """Core Web UI flows work with zero 404s or runtime errors when optional components are disabled."""
+    import yaml  # noqa: PLC0415
+
+    from supernote.client.auth import ConstantAuth  # noqa: PLC0415
+    from supernote.client.login_client import LoginClient  # noqa: PLC0415
+    from supernote.server.app import bootstrap_ephemeral_user, create_app  # noqa: PLC0415
+    from supernote.server.config import AuthConfig, ServerConfig  # noqa: PLC0415
+
+    playwright_async = pytest.importorskip("playwright.async_api")
+
+    disabled_domains = (
+        "ai",
+        "conversion",
+        "mcp",
+        "processor",
+        "schedule",
+        "search",
+        "summary",
+        "transcript",
+        "wiki",
+    )
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        yaml.safe_dump({domain: {"enabled": False} for domain in disabled_domains})
+    )
+    cfg = ServerConfig.load(config_file=cfg_file)
+    cfg.storage_dir = str(tmp_path / "storage")
+    cfg.auth = AuthConfig(
+        enable_registration=True,
+        secret_key="minimal-ui-test-secret-key-32-bytes!",
+    )
+
+    app = create_app(cfg)
+    minimal_client: TestClient = await aiohttp_client(app)
+    await bootstrap_ephemeral_user(app)
+    base_url = str(minimal_client.make_url("")).rstrip("/")
+
+    login_client = LoginClient(Client(minimal_client.session, host=base_url))
+    token = await login_client.login("debug@example.com", "password")
+    wc = WebClient(
+        Client(minimal_client.session, auth=ConstantAuth(token), host=base_url)
+    )
+    root = await wc.list_query(0)
+    note_dir_id = next(
+        int(item.id)
+        for item in root.user_file_vo_list
+        if item.is_folder == "Y" and item.file_name == "Note"
+    )
+    await wc.upload_file(note_dir_id, "Minimal_Test.note", SAMPLE_UI_NOTE.read_bytes())
+
+    errors: list[str] = []
+
+    def attach_listeners(page: Any) -> None:
+        page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+        page.on(
+            "console",
+            lambda msg: (
+                errors.append(f"console.error: {msg.text}")
+                if msg.type == "error"
+                else None
+            ),
+        )
+        page.on(
+            "response",
+            lambda resp: (
+                errors.append(f"HTTP {resp.status}: {resp.request.method} {resp.url}")
+                if resp.status >= 400
+                else None
+            ),
+        )
+
+    async with playwright_async.async_playwright() as p:
+        try:
+            browser = await p.chromium.launch()
+        except playwright_async.Error as exc:
+            pytest.skip(f"Chromium browser binary not installed: {exc}")
+        try:
+            context = await browser.new_context(viewport={"width": 1360, "height": 860})
+            await context.add_init_script(
+                f"localStorage.setItem('supernote_token', {token!r});"
+            )
+            page = await context.new_page()
+            attach_listeners(page)
+
+            # 1. Unavailable tab deep link redirects to Files and hides optional tabs.
+            await page.goto(f"{base_url}/#/wiki/projects/alpha")
+            await page.get_by_role("button", name="Files", exact=True).wait_for()
+            await page.wait_for_function("() => window.location.hash === '#/files'")
+            for hidden_tab in ("Digests", "Tasks", "Wiki"):
+                assert (
+                    await page.locator(
+                        f"header button:has-text('{hidden_tab}')"
+                    ).count()
+                    == 0
+                )
+
+            # 2. Browse Note folder and open a notebook in FileViewer.
+            await page.goto(f"{base_url}/#/files/{note_dir_id}")
+            await page.get_by_text("Minimal_Test.note").wait_for()
+            await page.get_by_text("Minimal_Test.note").click()
+            await page.get_by_text(
+                "Page rendering is disabled on this server."
+            ).wait_for()
+            await page.get_by_text(
+                "Handwriting transcription is disabled on this server."
+            ).wait_for()
+            assert await page.locator("button:has-text('Summaries')").count() == 0
+
+            # 3. Global Search finds files by name without hitting semantic or schedule APIs.
+            await page.goto(f"{base_url}/#/files")
+            await page.keyboard.press("Control+k")
+            search_input = page.get_by_role("textbox", name="Global Search")
+            await search_input.wait_for()
+            await search_input.fill("Minimal_Test")
+            await page.get_by_text("Minimal_Test.note", exact=True).wait_for()
+            await page.keyboard.press("Escape")
+
+            # 4. System panel shows DISABLED queue banner and hides AI/activity sections.
+            await page.goto(f"{base_url}/#/system")
+            await page.get_by_text("Background processing is disabled").wait_for()
+            await page.get_by_text("Storage Usage").wait_for()
+            assert await page.get_by_text("AI Processing Pipeline").count() == 0
+            assert await page.get_by_text("Recent Notebook Activity").count() == 0
+
+            await context.close()
+        finally:
+            await browser.close()
+
+    assert not errors, f"Unexpected errors with optional components disabled: {errors}"
