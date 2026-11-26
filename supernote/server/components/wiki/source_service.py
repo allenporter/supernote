@@ -39,6 +39,8 @@ class BackfillOverview:
 
     remaining_files: int
     total_files: int
+    remaining_pages: int = 0
+    total_pages: int = 0
     untranscribed_files: int = 0
     next_files: list[str] = field(default_factory=list)
 
@@ -191,13 +193,44 @@ class WikiSourceService:
                     )
                 ).scalar_one()
             )
+            non_blank_page_stmt = (
+                select(NotePageContentDO.id)
+                .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
+                .where(
+                    UserFileDO.user_id == user_id,
+                    UserFileDO.is_active == "Y",
+                    UserFileDO.is_folder == "N",
+                    NotePageContentDO.text_content.is_not(None),
+                    func.length(func.trim(NotePageContentDO.text_content, " \t\n\r"))
+                    > 0,
+                )
+            )
+            total_pages = int(
+                (
+                    await session.execute(
+                        select(func.count()).select_from(non_blank_page_stmt.subquery())
+                    )
+                ).scalar_one()
+            )
             if before_file_id is None:
                 remaining = total
+                remaining_pages = total_pages
             else:
                 remaining = int(
                     (
                         await session.execute(
                             select(func.count()).select_from(remaining_stmt.subquery())
+                        )
+                    ).scalar_one()
+                )
+                remaining_pages = int(
+                    (
+                        await session.execute(
+                            select(func.count()).select_from(
+                                non_blank_page_stmt.where(
+                                    UserFileDO.id < before_file_id
+                                ).subquery()
+                            )
                         )
                     ).scalar_one()
                 )
@@ -224,6 +257,8 @@ class WikiSourceService:
         return BackfillOverview(
             remaining_files=remaining,
             total_files=total,
+            remaining_pages=remaining_pages,
+            total_pages=total_pages,
             untranscribed_files=untranscribed,
             next_files=next_files,
         )
