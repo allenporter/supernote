@@ -359,7 +359,7 @@ export function formatWikiActionResult(mode, result) {
         const remaining = result?.remaining_files ?? 0;
         if (result?.status === 'backfilling') {
             return {
-                message: `Started background backfill (${remaining} ${remaining === 1 ? 'notebook' : 'notebooks'} queued, 1 per turn). You can safely leave this tab.`,
+                message: `Started background backfill (${remaining} ${remaining === 1 ? 'notebook' : 'notebooks'} queued, chronological page windows). You can safely leave this tab.`,
                 type: 'success',
             };
         }
@@ -372,7 +372,7 @@ export function formatWikiActionResult(mode, result) {
         return {
             message:
                 result?.status === 'stopping'
-                    ? 'Stopping backfill after the current notebook finishes.'
+                    ? 'Stopping backfill after the current page window finishes.'
                     : 'Background backfill is not running.',
             type: 'info',
         };
