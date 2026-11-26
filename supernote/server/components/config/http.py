@@ -19,6 +19,12 @@ import json
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 
+from supernote.models.config import (
+    ComponentListResponseVO,
+    ComponentStatusResponseVO,
+    ServerFeaturesVO,
+    UpdateComponentConfigDTO,
+)
 from supernote.server.components.http import HttpRegistrar
 from supernote.server.core import ServerCore
 from supernote.server.exceptions import (
@@ -27,12 +33,6 @@ from supernote.server.exceptions import (
 )
 from supernote.server.routes.decorators import require_admin
 
-from .models import (
-    ComponentListResponseVO,
-    ComponentStatusResponseVO,
-    ServerFeaturesVO,
-    UpdateComponentConfigDTO,
-)
 from .service import CONFIG_SERVICE_KEY
 
 __all__ = [

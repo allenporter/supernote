@@ -10,11 +10,12 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from supernote.server.components import BuiltinComponentSpec
-from supernote.server.components.config.models import (
+from supernote.models.config import (
+    ComponentConfigSource,
     ComponentFieldSpecVO,
     ComponentFieldType,
 )
+from supernote.server.components import BuiltinComponentSpec
 from supernote.server.components.config.service import (
     _COMPONENT_CONFIG_KEY_PREFIX,
     ConfigService,
@@ -26,7 +27,7 @@ from supernote.server.components.config.service import (
 )
 from supernote.server.components.webhooks.config import WebhookConfig
 from supernote.server.components.wiki.config import WikiConfig
-from supernote.server.config import ComponentConfigSource, ServerConfig
+from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentError, ComponentLoader, ServerCore
 from supernote.server.services.coordination import CoordinationService
 

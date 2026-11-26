@@ -21,20 +21,24 @@ from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mashumaro.mixins.dict import DataClassDictMixin
 
 from supernote.models.base import ErrorCode
+from supernote.models.config import (
+    ComponentConfigSource,
+    ComponentFieldSpecVO,
+    ComponentFieldType,
+    ComponentStatusVO,
+)
 from supernote.server.components import (
     BUILTIN_COMPONENTS,
     BuiltinComponentSpec,
     is_component_enabled,
     load_component_from_spec,
 )
-from supernote.server.config import ComponentConfigSource, ServerConfig
+from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentError, ComponentLoader, ServerCore
 from supernote.server.exceptions import (
     InvalidInputError,
     SupernoteError,
 )
-
-from .models import ComponentFieldSpecVO, ComponentFieldType, ComponentStatusVO
 
 if TYPE_CHECKING:
     from supernote.server.services.coordination import CoordinationService

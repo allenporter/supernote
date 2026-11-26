@@ -1,105 +1,47 @@
-"""Integration tests for `GET` and `PUT /api/extended/system/components` HTTP routes."""
+"""Integration tests for the `config` component HTTP routes via `ConfigClient`."""
 
 from __future__ import annotations
 
-import hashlib
 import os
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
-from sqlalchemy import delete
 
 from supernote.client.config import ConfigClient
-from supernote.models.config import ServerFeaturesVO
-from supernote.models.user import UserRegisterDTO
+from supernote.client.exceptions import (
+    BadRequestException,
+    ConflictException,
+    ForbiddenException,
+)
+from supernote.client.extended import ExtendedClient
+from supernote.models.config import (
+    ComponentConfigSource,
+    ComponentFieldSpecVO,
+    ComponentFieldType,
+    ComponentStatusVO,
+    ServerFeaturesVO,
+)
 from supernote.server.components.config.service import CONFIG_SERVICE_KEY
-from supernote.server.config import ComponentConfigSource, ServerConfig
-from supernote.server.db.models.user import UserDO
-from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.config import ServerConfig
 from supernote.server.keys import COMPONENT_LOADER_KEY, CONFIG_KEY
-from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.user import UserService
+
+WEBHOOK_FIELDS = [
+    ComponentFieldSpecVO(
+        name="enabled", type=ComponentFieldType.BOOLEAN, default=False
+    ),
+    ComponentFieldSpecVO(name="endpoints", type=ComponentFieldType.ARRAY, default=[]),
+]
 
 
 @pytest.fixture
-async def setup_users(
-    session_manager: DatabaseSessionManager,
-    coordination_service: CoordinationService,
-    server_config: ServerConfig,
-) -> tuple[str, str]:
-    """Create an admin user and a regular user and return their session tokens."""
-    async with session_manager.session() as session:
-        await session.execute(delete(UserDO))
-        await session.commit()
-
-    service = UserService(server_config.auth, coordination_service, session_manager)
-    pw_md5 = hashlib.md5(b"pw").hexdigest()
-    await service.register(
-        UserRegisterDTO(email="admin@example.com", password=pw_md5, user_name="Admin")
-    )
-    await service.register(
-        UserRegisterDTO(email="user@example.com", password=pw_md5, user_name="User")
-    )
-    admin_token = await service.create_session("admin@example.com")
-    user_token = await service.create_session("user@example.com")
-    return admin_token, user_token
-
-
-@pytest.fixture
-def admin_headers(setup_users: tuple[str, str]) -> dict[str, str]:
-    """Interactive session headers for an admin user."""
-    admin_token, _ = setup_users
-    return {"x-access-token": admin_token}
-
-
-@pytest.fixture
-def user_headers(setup_users: tuple[str, str]) -> dict[str, str]:
-    """Interactive session headers for a non-admin user."""
-    _, user_token = setup_users
-    return {"x-access-token": user_token}
-
-
-async def test_list_system_components_as_admin(
-    client: TestClient,
-    admin_headers: dict[str, str],
-) -> None:
-    """Admins see full effective config and field specs for all built-in components."""
-    resp = await client.get("/api/extended/system/components", headers=admin_headers)
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-
-    by_domain = {c["domain"]: c for c in data["components"]}
-    assert "webhooks" in by_domain
-    assert "wiki" in by_domain
-    assert "config" in by_domain
-    assert by_domain["webhooks"] == {
-        "domain": "webhooks",
-        "enabled": False,
-        "running": False,
-        "source": "default",
-        "readOnly": False,
-        "runtimeConfigurable": True,
-        "restartRequired": False,
-        "config": {"enabled": False},
-        "fields": [
-            {"name": "enabled", "type": "boolean", "default": False},
-            {"name": "endpoints", "type": "array", "default": []},
-        ],
-    }
-
-
-async def test_list_system_components_rejects_non_admin(
-    client: TestClient,
-    user_headers: dict[str, str],
-) -> None:
-    """Non-admin interactive sessions receive 403 Forbidden when listing components."""
-    member_resp = await client.get(
-        "/api/extended/system/components", headers=user_headers
-    )
-    assert member_resp.status == 403
+def admin_config_client(
+    config_client: ConfigClient, admin_user_id: int
+) -> ConfigClient:
+    """`ConfigClient` whose session user has been promoted to admin."""
+    del admin_user_id
+    return config_client
 
 
 async def test_get_features_as_non_admin(
@@ -132,11 +74,36 @@ async def test_get_features_requires_auth(client: TestClient) -> None:
     assert resp.status == 401
 
 
-async def test_update_system_component_live_reconfigures(
-    client: TestClient,
-    admin_headers: dict[str, str],
+async def test_list_components_as_admin(admin_config_client: ConfigClient) -> None:
+    """Admins see full effective config and field specs for all built-in components."""
+    by_domain = {c.domain: c for c in await admin_config_client.list_components()}
+    assert "wiki" in by_domain
+    assert "config" in by_domain
+    assert by_domain["webhooks"] == ComponentStatusVO(
+        domain="webhooks",
+        enabled=False,
+        running=False,
+        source=ComponentConfigSource.DEFAULT,
+        read_only=False,
+        runtime_configurable=True,
+        restart_required=False,
+        config={"enabled": False},
+        fields=WEBHOOK_FIELDS,
+    )
+
+
+async def test_admin_endpoints_reject_non_admin(config_client: ConfigClient) -> None:
+    """Non-admin interactive sessions receive 403 Forbidden on admin endpoints."""
+    with pytest.raises(ForbiddenException):
+        await config_client.list_components()
+    with pytest.raises(ForbiddenException):
+        await config_client.update_component("webhooks", {"enabled": True})
+
+
+async def test_update_component_live_reconfigures(
+    admin_config_client: ConfigClient,
 ) -> None:
-    """PUT /api/extended/system/components/webhooks live-starts and stops webhooks."""
+    """Updating `webhooks` live-starts and stops the runtime-configurable component."""
     endpoints = [
         {
             "url": "http://127.0.0.1:9999/live-hook",
@@ -145,166 +112,118 @@ async def test_update_system_component_live_reconfigures(
             "events": ["*"],
         }
     ]
-    put_resp = await client.put(
-        "/api/extended/system/components/webhooks",
-        headers=admin_headers,
-        json={"config": {"enabled": True, "endpoints": endpoints}},
+    enabled = await admin_config_client.update_component(
+        "webhooks", {"enabled": True, "endpoints": endpoints}
     )
-    assert put_resp.status == 200
-    assert (await put_resp.json())["component"] == {
-        "domain": "webhooks",
-        "enabled": True,
-        "running": True,
-        "source": "database",
-        "readOnly": False,
-        "runtimeConfigurable": True,
-        "restartRequired": False,
-        "config": {"enabled": True, "endpoints": endpoints},
-        "fields": [
-            {"name": "enabled", "type": "boolean", "default": False},
-            {"name": "endpoints", "type": "array", "default": []},
-        ],
-    }
-
-    disable_resp = await client.put(
-        "/api/extended/system/components/webhooks",
-        headers=admin_headers,
-        json={"config": {"enabled": False, "endpoints": []}},
+    assert enabled == ComponentStatusVO(
+        domain="webhooks",
+        enabled=True,
+        running=True,
+        source=ComponentConfigSource.DATABASE,
+        read_only=False,
+        runtime_configurable=True,
+        restart_required=False,
+        config={"enabled": True, "endpoints": endpoints},
+        fields=WEBHOOK_FIELDS,
     )
-    assert disable_resp.status == 200
-    assert (await disable_resp.json())["component"] == {
-        "domain": "webhooks",
-        "enabled": False,
-        "running": False,
-        "source": "database",
-        "readOnly": False,
-        "runtimeConfigurable": True,
-        "restartRequired": False,
-        "config": {"enabled": False, "endpoints": []},
-        "fields": [
-            {"name": "enabled", "type": "boolean", "default": False},
-            {"name": "endpoints", "type": "array", "default": []},
-        ],
-    }
 
-
-async def test_update_system_component_rejects_non_admin(
-    client: TestClient,
-    user_headers: dict[str, str],
-) -> None:
-    """Non-admin interactive sessions receive 403 Forbidden on component updates."""
-    forbidden = await client.put(
-        "/api/extended/system/components/webhooks",
-        headers=user_headers,
-        json={"config": {"enabled": True}},
+    disabled = await admin_config_client.update_component(
+        "webhooks", {"enabled": False, "endpoints": []}
     )
-    assert forbidden.status == 403
+    assert disabled == ComponentStatusVO(
+        domain="webhooks",
+        enabled=False,
+        running=False,
+        source=ComponentConfigSource.DATABASE,
+        read_only=False,
+        runtime_configurable=True,
+        restart_required=False,
+        config={"enabled": False, "endpoints": []},
+        fields=WEBHOOK_FIELDS,
+    )
 
 
 @pytest.mark.parametrize(
-    ("domain", "payload"),
+    ("domain", "config"),
     [
-        ("nonexistent", {"config": {"enabled": True}}),
-        ("webhooks", {"config": {"enabled": "not-a-bool"}}),
-        ("webhooks", {"config": {"enabled": True, "unknown_field": 1}}),
-        ("wiki", {"config": {"enabled": True, "auto_compile": "not-a-bool"}}),
+        ("nonexistent", {"enabled": True}),
+        ("webhooks", {"enabled": "not-a-bool"}),
+        ("webhooks", {"enabled": True, "unknown_field": 1}),
+        ("wiki", {"enabled": True, "auto_compile": "not-a-bool"}),
     ],
 )
-async def test_update_system_component_rejects_invalid_payloads(
-    client: TestClient,
-    admin_headers: dict[str, str],
+async def test_update_component_rejects_invalid_payloads(
+    admin_config_client: ConfigClient,
     domain: str,
-    payload: dict[str, Any],
+    config: dict[str, Any],
 ) -> None:
     """Unknown domains, non-boolean flags, and unknown fields return 400 Bad Request."""
-    resp = await client.put(
-        f"/api/extended/system/components/{domain}",
-        headers=admin_headers,
-        json=payload,
-    )
-    assert resp.status == 400
+    with pytest.raises(BadRequestException):
+        await admin_config_client.update_component(domain, config)
 
 
-async def test_update_system_component_marks_restart_required(
-    client: TestClient,
-    admin_headers: dict[str, str],
+async def test_update_component_marks_restart_required(
+    admin_config_client: ConfigClient,
 ) -> None:
-    """Non-runtime-configurable components set `restartRequired=True` when enabled differs from running."""
-    toggle_metrics = await client.put(
-        "/api/extended/system/components/metrics",
-        headers=admin_headers,
-        json={"config": {"enabled": False}},
-    )
-    assert toggle_metrics.status == 200
-    assert (await toggle_metrics.json())["component"] == {
-        "domain": "metrics",
-        "enabled": False,
-        "running": True,
-        "source": "database",
-        "readOnly": False,
-        "runtimeConfigurable": False,
-        "restartRequired": True,
-        "config": {"enabled": False, "path": "/metrics"},
-        "fields": [
-            {"name": "enabled", "type": "boolean", "default": True},
-            {"name": "path", "type": "string", "default": "/metrics"},
+    """Non-runtime-configurable components set `restart_required` when enabled differs from running."""
+    assert await admin_config_client.update_component(
+        "metrics", {"enabled": False}
+    ) == ComponentStatusVO(
+        domain="metrics",
+        enabled=False,
+        running=True,
+        source=ComponentConfigSource.DATABASE,
+        read_only=False,
+        runtime_configurable=False,
+        restart_required=True,
+        config={"enabled": False, "path": "/metrics"},
+        fields=[
+            ComponentFieldSpecVO(
+                name="enabled", type=ComponentFieldType.BOOLEAN, default=True
+            ),
+            ComponentFieldSpecVO(
+                name="path", type=ComponentFieldType.STRING, default="/metrics"
+            ),
         ],
-    }
+    )
 
 
-async def test_update_system_component_blocks_env_pinned(
+async def test_update_component_blocks_env_pinned(
     client: TestClient,
-    admin_headers: dict[str, str],
+    admin_config_client: ConfigClient,
 ) -> None:
     """Updating a component pinned by environment variables returns 409 Conflict."""
-    assert client.app is not None
     server_cfg: ServerConfig = client.app[CONFIG_KEY]
     with patch.dict(os.environ, {"SUPERNOTE_WEBHOOKS_ENABLED": "true"}):
         server_cfg._component_sources["webhooks"] = ComponentConfigSource.ENV
         try:
-            conflict_resp = await client.put(
-                "/api/extended/system/components/webhooks",
-                headers=admin_headers,
-                json={"config": {"enabled": False}},
-            )
-            assert conflict_resp.status == 409
+            with pytest.raises(ConflictException):
+                await admin_config_client.update_component(
+                    "webhooks", {"enabled": False}
+                )
         finally:
             server_cfg._component_sources.pop("webhooks", None)
 
 
-async def test_update_system_component_blocks_protected_and_dependent_components(
-    client: TestClient,
-    admin_headers: dict[str, str],
+async def test_update_component_blocks_protected_and_dependent_components(
+    admin_config_client: ConfigClient,
 ) -> None:
     """Disabling `web_ui` or disabling `conversion` while `summary` is enabled returns 409 Conflict."""
-    web_ui_resp = await client.put(
-        "/api/extended/system/components/web_ui",
-        headers=admin_headers,
-        json={"config": {"enabled": False}},
-    )
-    assert web_ui_resp.status == 409
-
-    conversion_resp = await client.put(
-        "/api/extended/system/components/conversion",
-        headers=admin_headers,
-        json={"config": {"enabled": False}},
-    )
-    assert conversion_resp.status == 409
+    with pytest.raises(ConflictException):
+        await admin_config_client.update_component("web_ui", {"enabled": False})
+    with pytest.raises(ConflictException):
+        await admin_config_client.update_component("conversion", {"enabled": False})
 
 
-async def test_update_system_component_rejects_static_api_key(
+async def test_admin_endpoints_reject_static_api_key(
     client: TestClient,
-    admin_headers: dict[str, str],
+    admin_config_client: ConfigClient,
+    extended_client: ExtendedClient,
 ) -> None:
     """Static API keys are blocked by @require_admin on component config endpoints."""
-    key_resp = await client.post(
-        "/api/extended/keys",
-        json={"name": "Component Test Key"},
-        headers=admin_headers,
-    )
-    assert key_resp.status == 200
-    raw_key: Any = (await key_resp.json())["key"]
-    api_key_headers = {"Authorization": f"Bearer {raw_key}"}
+    del admin_config_client
+    created = await extended_client.create_api_key("Component Test Key")
+    api_key_headers = {"Authorization": f"Bearer {created.key}"}
 
     get_resp = await client.get(
         "/api/extended/system/components", headers=api_key_headers
