@@ -9,6 +9,7 @@ from supernote.server.ai.prompts import (
     format_image_ocr_prompt,
     format_ocr_prompt,
     format_summary_prompt,
+    format_title_ocr_prompt,
     get_summary_json_schema,
 )
 from supernote.server.utils.prompt_loader import PromptLoader
@@ -172,3 +173,14 @@ def test_format_image_ocr_prompt_excludes_rapid_logging_legend() -> None:
     assert "Image Filename: whiteboard.jpg" in prompt
     assert "Visual Scene / Photo Summary" in prompt
     assert "Rapid Logging" not in prompt
+
+
+def test_format_title_ocr_prompt() -> None:
+    with_name = format_title_ocr_prompt("Journal.note")
+    assert "Notebook Filename: Journal.note" in with_name
+    assert "Notebook Heading Transcription Instruction" in with_name
+    assert "Single-Line Plain Text" in with_name
+
+    without_name = format_title_ocr_prompt()
+    assert "Notebook Filename:" not in without_name
+    assert "Notebook Heading Transcription Instruction" in without_name

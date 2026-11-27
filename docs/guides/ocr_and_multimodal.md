@@ -20,6 +20,23 @@ In the Web UI, those Mermaid blocks render directly as diagrams inside the trans
   <img src="../static-assets/guides/web-mermaid-diagram.png" alt="Hand-drawn sketch side-by-side with rendered Mermaid diagram and page keyword tags in the OCR transcript viewer" width="840">
 </p>
 
+## Notebook outlines (Supernote headings)
+
+When you mark headings on your Supernote, the Web UI viewer adds an **Outline** tab in the side panel listing every heading in reading order (by page and position on the page) with its style swatch and page number. Click any heading to jump straight to that page. Notebooks without headings keep the standard **OCR Transcript** and **Summaries** tabs.
+
+Outlines work whether or not you configure AI:
+
+- When an OCR provider is enabled, each heading crop is transcribed into a single line of text and cached by its handwriting, so unchanged headings are not re-transcribed when you edit or reorder pages.
+- When AI is disabled, transcription is still running, or a heading cannot be read, the Outline falls back to showing the cropped handwritten heading image directly from your `.note` file.
+
+## Searchable PDF export
+
+Click **Export PDF** in the notebook viewer toolbar (or call `POST /api/file/note/to/pdf`) to download any `.note` file as a multi-page PDF.
+
+- **Zero configuration**: Works out of the box even without an AI provider (exporting a clean raster PDF). When OCR is enabled, each exported page automatically embeds an invisible searchable text layer (including CJK via built-in PDF CID fonts) and native PDF Table of Contents bookmarks from transcribed Supernote headings.
+- **Clean search text**: Markdown formatting and Mermaid diagram syntax (` ```mermaid `, `flowchart TD`, arrows) are stripped before embedding while keeping your diagram labels and prose searchable.
+- **Page-level indexing**: The invisible text layer is embedded per page rather than word-aligned over individual handwritten strokes, so macOS Spotlight, Preview, Obsidian, Zotero, and mobile PDF readers find the right notebook and page via search, though `Cmd+F` highlights will not line up directly over your strokes.
+
 ## Standalone images (screenshots, whiteboards, and photos)
 
 You can also sync `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, and `.bmp` files into your cloud folders. The pipeline transcribes visible text, tables, and whiteboard diagrams (including Mermaid blocks), and writes a short scene description for photos and illustrations so they show up in natural-language search.
@@ -64,6 +81,8 @@ config/prompts/
 ├── summary/
 │   ├── common/                    # Always prepended to every summary prompt
 │   └── meeting_notes/prompt.md    # Custom summary format for meeting notebooks
+├── title/
+│   └── default/prompt.md          # Custom single-line prompt for notebook headings
 └── image/
     └── default/prompt.md          # Custom prompt for standalone images
 ```

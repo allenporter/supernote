@@ -281,6 +281,8 @@ class WebTranscriptResponseVO(BaseResponse):
     """Response VO for transcript retrieval (Web Extension)."""
 
     pages: list[PageTranscriptVO] = field(default_factory=list)
+    titles: dict[str, str] = field(default_factory=dict)
+    """Transcribed title text keyed by `<TITLEBITMAP>` MD5."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -459,8 +461,6 @@ class NoteTitleVO(DataClassJSONMixin):
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
     level: int = 1
-    text: str | None = None
-    """Transcribed heading text, or `None` until transcription is available."""
     style: str | None = None
     """Raw `<TITLESTYLE>` code for the background the user picked on the device."""
     rect: list[int] | None = None

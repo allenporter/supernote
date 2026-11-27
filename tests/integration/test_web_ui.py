@@ -235,6 +235,16 @@ async def test_web_ui_desktop_and_mobile_smoke(
                 "linkRel": "noopener noreferrer",
                 "scriptCount": 0,
             }
+            export_pdf_btn = page.get_by_role("button", name="Export PDF")
+            await export_pdf_btn.wait_for(state="visible")
+            async with page.expect_download(timeout=15000) as download_info:
+                await export_pdf_btn.click()
+            pdf_download = await download_info.value
+            assert pdf_download.suggested_filename == "Numbered_1to10.pdf"
+            pdf_download_path = await pdf_download.path()
+            assert pdf_download_path is not None
+            assert Path(pdf_download_path).read_bytes().startswith(b"%PDF-")
+
             await page.get_by_role("button", name="Back to files").click()
 
             # Recycle Bin E2E: create folder -> soft-delete -> open #/recycle -> restore -> delete again -> empty

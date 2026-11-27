@@ -10,6 +10,7 @@ import logging
 
 from aiohttp import web
 
+from supernote.models.base import create_error_response
 from supernote.models.extended import (
     PageTranscriptVO,
     WebTranscriptRequestDTO,
@@ -38,13 +39,15 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
     try:
         req_dto = await parse_json_dto(request, WebTranscriptRequestDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     transcript_service: TranscriptService = request.app[TRANSCRIPT_SERVICE_KEY]
 
     if not (user_id := await user_service.get_user_id(user_email)):
-        return web.json_response({"error": "User not found"}, status=404)
+        return web.json_response(
+            create_error_response("User not found").to_dict(), status=404
+        )
 
     try:
         page_transcripts = await transcript_service.get_page_transcripts(
@@ -53,10 +56,19 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
             start_index=req_dto.start_index,
             end_index=req_dto.end_index,
         )
+        title_transcripts = await transcript_service.get_title_transcripts(
+            user_id=user_id,
+            file_id=req_dto.file_id,
+        )
 
-        if not page_transcripts:
+        has_page_range = (
+            req_dto.start_index is not None or req_dto.end_index is not None
+        )
+        if not page_transcripts and (has_page_range or not title_transcripts):
             return web.json_response(
-                {"error": f"No transcript found for notebook {req_dto.file_id}"},
+                create_error_response(
+                    f"No transcript found for notebook {req_dto.file_id}"
+                ).to_dict(),
                 status=404,
             )
 
@@ -70,7 +82,12 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
             for p in page_transcripts
         ]
 
-        return web.json_response(WebTranscriptResponseVO(pages=vo_pages).to_dict())
+        return web.json_response(
+            WebTranscriptResponseVO(
+                pages=vo_pages,
+                titles=title_transcripts,
+            ).to_dict()
+        )
     except Exception as err:
         logger.exception("Error fetching notebook transcript")
         return SupernoteError.uncaught(err).to_response()

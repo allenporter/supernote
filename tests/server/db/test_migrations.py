@@ -97,7 +97,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "c9d0e1f2a3b4"
+        assert version == "e1f2a3b4c5d6"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -193,7 +193,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "c9d0e1f2a3b4"
+        assert version == "e1f2a3b4c5d6"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -1321,4 +1321,80 @@ def test_add_user_id_to_system_task_migration(
         if con.name == "uq_system_task"
     }
     assert uq_cols_down == {("file_id", "task_type", "key")}
+    engine.dispose()
+
+
+def test_note_title_transcript_migration_upgrade_and_downgrade(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration d0e1f2a3b4c5 creates f_note_title_transcript and drops/restores f_note_title.text_content."""
+    db_path = tmp_path / "title_transcript_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "c9d0e1f2a3b4")
+    engine = create_engine(url)
+    reflected_before = MetaData()
+    reflected_before.reflect(bind=engine)
+    assert "f_note_title_transcript" not in reflected_before.tables
+    assert "text_content" in reflected_before.tables["f_note_title"].c
+
+    command.upgrade(alembic_config, "d0e1f2a3b4c5")
+    reflected_up = MetaData()
+    reflected_up.reflect(bind=engine)
+    assert "text_content" not in reflected_up.tables["f_note_title"].c
+    tbl = reflected_up.tables["f_note_title_transcript"]
+    assert {c.name for c in tbl.primary_key.columns} == {
+        "user_id",
+        "file_id",
+        "bitmap_md5",
+    }
+    assert any(idx.name == "ix_f_note_title_transcript_file_id" for idx in tbl.indexes)
+
+    command.downgrade(alembic_config, "c9d0e1f2a3b4")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_note_title_transcript" not in reflected_down.tables
+    assert "text_content" in reflected_down.tables["f_note_title"].c
+    engine.dispose()
+
+
+def test_summary_transcript_migration_upgrade_and_downgrade(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration e1f2a3b4c5d6 creates and drops f_summary_transcript with composite PK."""
+    db_path = tmp_path / "summary_transcript_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "d0e1f2a3b4c5")
+    engine = create_engine(url)
+    reflected_before = MetaData()
+    reflected_before.reflect(bind=engine)
+    assert "f_summary_transcript" not in reflected_before.tables
+
+    command.upgrade(alembic_config, "e1f2a3b4c5d6")
+    reflected_up = MetaData()
+    reflected_up.reflect(bind=engine)
+    tbl = reflected_up.tables["f_summary_transcript"]
+    assert {c.name for c in tbl.primary_key.columns} == {"user_id", "summary_id"}
+    assert {c.name for c in tbl.columns} == {
+        "user_id",
+        "summary_id",
+        "handwrite_md5",
+        "text_content",
+        "model_id",
+        "create_time",
+        "update_time",
+    }
+    assert tbl.c["model_id"].nullable
+    assert not tbl.c["handwrite_md5"].nullable
+    assert not tbl.c["text_content"].nullable
+
+    command.downgrade(alembic_config, "d0e1f2a3b4c5")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_summary_transcript" not in reflected_down.tables
     engine.dispose()

@@ -2,6 +2,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
     convertNoteToPng,
     downloadFile,
+    exportNoteToPdf,
     fetchAiStatus,
     fetchDownloadUrl,
     fetchNoteMetadata,
@@ -15,6 +16,7 @@ import { showToast } from '../composables/useToast.js';
 import { getErrorMessage, getFileExtension } from '../utils/format.js';
 import {
     buildDisplayTranscriptPages,
+    buildOutlineItems,
     formatPageStyle,
     MAX_TEXT_PREVIEW_BYTES,
     parseSafeHttpUrl,
@@ -49,14 +51,17 @@ export default {
         /** @type {import('vue').Ref<string | null>} */
         const error = ref(null);
         const downloading = ref(false);
+        const exportingPdf = ref(false);
 
-        const activeRightTab = ref('transcription'); // 'transcription' | 'insights'
+        const activeRightTab = ref('transcription'); // 'outline' | 'transcription' | 'insights'
         const transcriptEnabled = computed(() => isComponentRunning('transcript'));
         const summariesEnabled = computed(() => isComponentRunning('summary'));
         const previewsEnabled = computed(() => isComponentRunning('conversion'));
         const isMobileSidePanelOpen = ref(false);
         /** @type {import('vue').Ref<TranscriptPage[]>} */
         const transcriptPages = ref([]);
+        /** @type {import('vue').Ref<Record<string, string>>} */
+        const titleTranscripts = ref({});
         /** @type {import('vue').Ref<NoteMetadata | null>} */
         const noteMetadata = ref(null);
         /** @type {import('vue').Ref<NoteSummary[]>} */
@@ -174,6 +179,19 @@ export default {
             ),
         );
 
+        const outlineItems = computed(() =>
+            buildOutlineItems(noteMetadata.value, titleTranscripts.value),
+        );
+
+        /**
+         * @param {number} pageIndex
+         */
+        const handleSelectSidePanelPage = (pageIndex) => {
+            scrollToCanvasPage(pageIndex);
+            scrollTranscriptToPage(pageIndex);
+            isMobileSidePanelOpen.value = false;
+        };
+
         /**
          * @param {string} keyword
          */
@@ -277,6 +295,18 @@ export default {
             }
         };
 
+        const handleExportPdf = async () => {
+            if (!props.file || exportingPdf.value) return;
+            exportingPdf.value = true;
+            try {
+                await exportNoteToPdf(props.file.id);
+            } catch (e) {
+                showToast(`Failed to export PDF: ${getErrorMessage(e)}`);
+            } finally {
+                exportingPdf.value = false;
+            }
+        };
+
         /**
          * @param {string | number} fileId
          * @param {number} seq
@@ -290,9 +320,13 @@ export default {
         ) => {
             const id = String(fileId);
             isLoadingTranscript.value = true;
-            /** @type {[TranscriptPage[], NoteSummary[], NoteMetadata | null]} */
-            const [pagesData, summariesData, metaData] = await Promise.all([
-                transcriptEnabled.value ? fetchTranscript(id).catch(() => []) : [],
+            /** @type {TranscriptResult} */
+            const emptyTranscript = { pages: [], titles: {} };
+            /** @type {[TranscriptResult, NoteSummary[], NoteMetadata | null]} */
+            const [transcriptData, summariesData, metaData] = await Promise.all([
+                transcriptEnabled.value
+                    ? fetchTranscript(id).catch(() => emptyTranscript)
+                    : emptyTranscript,
                 summariesEnabled.value ? fetchSummaries(id).catch(() => []) : [],
                 isComponentRunning('note_metadata')
                     ? fetchNoteMetadata(id).catch(() => null)
@@ -300,7 +334,8 @@ export default {
             ]);
             if (seq !== activeLoadSeq) return false;
 
-            transcriptPages.value = pagesData;
+            transcriptPages.value = transcriptData.pages;
+            titleTranscripts.value = transcriptData.titles;
             if (!preserveMetaOnNull || metaData) {
                 noteMetadata.value = metaData;
             }
@@ -320,6 +355,7 @@ export default {
             textContent.value = '';
             isTextTooLarge.value = false;
             transcriptPages.value = [];
+            titleTranscripts.value = {};
             noteMetadata.value = null;
             activePageIndex.value =
                 typeof props.initialPage === 'number' && props.initialPage >= 0
@@ -338,15 +374,17 @@ export default {
                     pages.value = pngPages;
                 } else if (category === 'image') {
                     isLoadingTranscript.value = true;
-                    const [signedUrl, pagesData] = await Promise.all([
+                    /** @type {TranscriptResult} */
+                    const emptyTranscript = { pages: [], titles: {} };
+                    const [signedUrl, transcriptData] = await Promise.all([
                         fetchDownloadUrl(props.file.id),
                         transcriptEnabled.value
-                            ? fetchTranscript(String(props.file.id)).catch(() => [])
-                            : [],
+                            ? fetchTranscript(String(props.file.id)).catch(() => emptyTranscript)
+                            : emptyTranscript,
                     ]);
                     if (seq !== activeLoadSeq) return;
                     previewUrl.value = signedUrl;
-                    transcriptPages.value = pagesData;
+                    transcriptPages.value = transcriptData.pages;
                 } else if (category === 'pdf') {
                     const signedUrl = await fetchDownloadUrl(props.file.id);
                     if (seq !== activeLoadSeq) return;
@@ -384,12 +422,20 @@ export default {
                 if (category === 'note') {
                     const applied = await fetchAndApplyNoteInsights(props.file.id, seq);
                     if (!applied) return;
-                    activeRightTab.value =
+                    if (
                         summariesEnabled.value &&
                         displayTranscriptPages.value.length === 0 &&
                         realSummaries.value.length > 0
-                            ? 'insights'
-                            : 'transcription';
+                    ) {
+                        activeRightTab.value = 'insights';
+                    } else if (
+                        displayTranscriptPages.value.length === 0 &&
+                        outlineItems.value.length > 0
+                    ) {
+                        activeRightTab.value = 'outline';
+                    } else {
+                        activeRightTab.value = 'transcription';
+                    }
                 } else {
                     activeRightTab.value = 'transcription';
                 }
@@ -428,9 +474,9 @@ export default {
                 const seq = activeLoadSeq;
                 isLoadingTranscript.value = true;
                 try {
-                    const pagesData = await fetchTranscript(String(props.file.id));
+                    const transcriptData = await fetchTranscript(String(props.file.id));
                     if (seq === activeLoadSeq) {
-                        transcriptPages.value = pagesData;
+                        transcriptPages.value = transcriptData.pages;
                     }
                 } catch {
                     // Preserve any already-rendered image analysis on transient refresh failure.
@@ -443,6 +489,7 @@ export default {
             }
             if (fileCategory.value !== 'note') {
                 transcriptPages.value = [];
+                titleTranscripts.value = {};
                 realSummaries.value = [];
                 noteMetadata.value = null;
                 return;
@@ -549,6 +596,8 @@ export default {
             error,
             downloading,
             handleDownload,
+            exportingPdf,
+            handleExportPdf,
             isLoadingTranscript,
             activeRightTab,
             transcriptEnabled,
@@ -557,6 +606,7 @@ export default {
             isMobileSidePanelOpen,
             transcriptPages,
             displayTranscriptPages,
+            outlineItems,
             noteMetadata,
             pageMetaByIndex,
             linksByPageIndex,
@@ -564,6 +614,7 @@ export default {
             getPageRightMeta,
             handleKeywordClick,
             handleNoteLinkClick,
+            handleSelectSidePanelPage,
             activePageIndex,
             leftScrollPane,
             sidePanelRef,
@@ -585,6 +636,8 @@ export default {
             :active-page-index="activePageIndex"
             :zoom-percent="zoomPercent"
             :downloading="downloading"
+            :can-export-pdf="previewsEnabled"
+            :exporting-pdf="exportingPdf"
             :show-side-panel="showSidePanel"
             :is-mobile-side-panel-open="isMobileSidePanelOpen"
             @close="$emit('close')"
@@ -594,6 +647,7 @@ export default {
             @zoom-out="zoomOut"
             @reset-zoom="resetZoom"
             @download="handleDownload"
+            @export-pdf="handleExportPdf"
             @toggle-side-panel="isMobileSidePanelOpen = !isMobileSidePanelOpen"
         />
 
@@ -676,6 +730,7 @@ export default {
                 :is-loading-transcript="isLoadingTranscript"
                 :transcript-pages="transcriptPages"
                 :display-transcript-pages="displayTranscriptPages"
+                :outline-items="outlineItems"
                 :page-meta-by-index="pageMetaByIndex"
                 :links-by-page-index="linksByPageIndex"
                 :summaries="realSummaries"
@@ -684,7 +739,7 @@ export default {
                 :summaries-enabled="summariesEnabled"
                 @update:active-tab="activeRightTab = $event"
                 @close-mobile="isMobileSidePanelOpen = false"
-                @select-page="scrollToCanvasPage"
+                @select-page="handleSelectSidePanelPage"
                 @keyword-click="handleKeywordClick"
                 @link-click="handleNoteLinkClick"
             />

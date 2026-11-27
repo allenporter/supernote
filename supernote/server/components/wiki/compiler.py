@@ -43,6 +43,11 @@ from aiohttp import web
 from sqlalchemy import select, update
 
 from supernote.models.events import DomainEventType
+from supernote.models.wiki import (
+    WikiDryRunOpDTO,
+    WikiDryRunPageDTO,
+    WikiDryRunResponseVO,
+)
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.text import TextGenerationModel
 from supernote.server.components.events.service import EventLogService
@@ -69,6 +74,7 @@ from .prompts import (
     WikiCompilePlan,
     WikiLintIssueOp,
     WikiLintProposalOp,
+    WikiSourceRefOp,
     build_compile_prompt,
     build_lint_prompt,
     get_compile_json_schema,
@@ -437,23 +443,7 @@ class WikiCompilerWorker:
                 if next_cursor is None:
                     break
                 if linked_context is None:
-                    task_rows = await self._source_service.list_task_snapshots(
-                        user_id, limit=50
-                    )
-                    linked_context = {}
-                    if task_rows:
-                        linked_context["tasks"] = [
-                            {
-                                "task_id": t.task_id,
-                                "title": t.title,
-                                "detail": t.detail,
-                                "status": t.status,
-                                "importance": t.importance,
-                                "due_time": t.due_time,
-                                "completed_time": t.completed_time,
-                            }
-                            for t in task_rows
-                        ]
+                    linked_context = await self._load_task_linked_context(user_id)
                 files_processed.extend(
                     str(diff["payload"]["file_path"])
                     for diff in window_diffs
@@ -545,6 +535,205 @@ class WikiCompilerWorker:
         return user_id in self._backfill_starting or (
             task is not None and not task.done()
         )
+
+    async def dry_run_compile(
+        self,
+        user_id: int,
+        *,
+        file_id: int | None = None,
+        start_date: str | None = None,
+        offset_pages: int = 0,
+        max_pages: int = 8,
+    ) -> WikiDryRunResponseVO:
+        """Run the production compile pipeline read-only on a page slice for live debugging."""
+        if self._text_model is None:
+            raise AIError("Text generation model not configured")
+
+        t0 = time.monotonic()
+        window_diffs = await self._source_service.list_dry_run_pages(
+            user_id,
+            file_id=file_id,
+            start_date=start_date,
+            offset_pages=offset_pages,
+            max_pages=max_pages,
+        )
+        if not window_diffs:
+            return WikiDryRunResponseVO(elapsed_ms=int((time.monotonic() - t0) * 1000))
+
+        all_pages = await self._wiki_service.list_pages(user_id, limit=500)
+        linked_context = await self._load_task_linked_context(user_id)
+
+        page_budget = max(self._config.max_pages_per_batch, 10)
+        built = build_compile_prompt(
+            all_pages,
+            window_diffs,
+            linked_context=linked_context,
+            max_pages_per_batch=page_budget,
+        )
+        raw_plan = await self._text_model.generate_json(
+            built.prompt,
+            response_schema=get_compile_json_schema(),
+            schema_name="wiki_compile_plan",
+            stage=AIStage.WIKI_COMPILE,
+        )
+        plan = parse_compile_plan(raw_plan)
+
+        # Build reverse handle map for reporting the exact pages sent.
+        handle_by_key = {
+            target.source_key: handle for handle, target in built.source_handles.items()
+        }
+        pages_sent = [
+            WikiDryRunPageDTO(
+                source_id=handle_by_key.get(str(diff["entity_id"]), ""),
+                source_key=str(diff["entity_id"]),
+                file_id=str(diff["payload"]["file_id"]),
+                file_path=str(diff["payload"]["file_path"]),
+                page_index=int(diff["payload"]["page_index"]),
+                page_date=str(diff["payload"].get("page_date") or ""),
+                chars=len(str(diff["payload"].get("text_content") or "")),
+                snippet=str(diff["payload"].get("text_content") or "")[:160].strip(),
+                text_content=str(diff["payload"].get("text_content") or ""),
+            )
+            for diff in window_diffs
+        ]
+
+        existing_policy = {p.slug: p.edit_policy for p in all_pages}
+        normalized_handles, known_raw = self._index_source_handles(built.source_handles)
+        ops_report: list[WikiDryRunOpDTO] = []
+        applied_non_index = 0
+        for op in plan.page_ops:
+            slug = op.slug.strip()
+            title = op.title.strip()
+            drop_reason: str | None = None
+            if slug.lower() == "index" or op.page_kind == "index":
+                drop_reason = "index_auto_maintained"
+            elif not slug or not title:
+                drop_reason = "missing_slug_or_title"
+            elif applied_non_index >= page_budget:
+                drop_reason = "page_cap_exceeded"
+            elif existing_policy.get(slug) in ("protected_prose", "locked"):
+                drop_reason = f"edit_policy:{existing_policy[slug]}"
+            else:
+                applied_non_index += 1
+
+            resolved_refs, dropped_keys = self._resolve_op_source_refs(
+                op.source_refs,
+                slug=slug,
+                normalized_handles=normalized_handles,
+                known_raw_targets=known_raw,
+                validate_handles=True,
+                source_event_seq=None,
+            )
+            ops_report.append(
+                WikiDryRunOpDTO(
+                    slug=slug,
+                    title=title,
+                    page_kind=op.page_kind
+                    if op.page_kind in VALID_PAGE_KINDS
+                    else "topic",
+                    summary=op.summary,
+                    body_chars=len(op.body_md),
+                    body_md=op.body_md,
+                    resolved_source_keys=[r.source_key for r in resolved_refs],
+                    dropped_source_keys=dropped_keys,
+                    drop_reason=drop_reason,
+                )
+            )
+
+        return WikiDryRunResponseVO(
+            pages_sent=pages_sent,
+            candidate_slugs=list(built.candidate_slugs),
+            ops=ops_report,
+            lint_proposals_count=len(plan.lint_proposals),
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+        )
+
+    async def _load_task_linked_context(self, user_id: int) -> dict[str, object]:
+        """Load recent schedule tasks formatted for `<linked_context>`."""
+        task_rows = await self._source_service.list_task_snapshots(user_id, limit=50)
+        if not task_rows:
+            return {}
+        return {
+            "tasks": [
+                {
+                    "task_id": t.task_id,
+                    "title": t.title,
+                    "detail": t.detail,
+                    "status": t.status,
+                    "importance": t.importance,
+                    "due_time": t.due_time,
+                    "completed_time": t.completed_time,
+                }
+                for t in task_rows
+            ]
+        }
+
+    @staticmethod
+    def _index_source_handles(
+        source_handles: Mapping[str, SourceRefTarget] | None,
+    ) -> tuple[dict[str, SourceRefTarget], dict[tuple[str, str], SourceRefTarget]]:
+        normalized: dict[str, SourceRefTarget] = {}
+        known_raw: dict[tuple[str, str], SourceRefTarget] = {}
+        if source_handles:
+            for handle, target in source_handles.items():
+                normalized[handle.lower()] = target
+                known_raw[(str(target.source_type), target.source_key)] = target
+        return normalized, known_raw
+
+    @staticmethod
+    def _resolve_op_source_refs(
+        op_refs: Sequence[WikiSourceRefOp],
+        *,
+        slug: str,
+        normalized_handles: Mapping[str, SourceRefTarget],
+        known_raw_targets: Mapping[tuple[str, str], SourceRefTarget],
+        validate_handles: bool,
+        source_event_seq: int | None,
+    ) -> tuple[list[WikiSourceRefDTO], list[str]]:
+        """Resolve short prompt handles to authoritative source refs and report dropped keys."""
+        resolved: list[WikiSourceRefDTO] = []
+        dropped: list[str] = []
+        seen: set[tuple[str, str]] = set()
+        for ref in op_refs:
+            if not ref.source_type or not ref.source_key:
+                continue
+            clean_key = ref.source_key.strip()
+            redundant_prefix = f"{ref.source_type}:"
+            if clean_key.startswith(redundant_prefix):
+                clean_key = clean_key[len(redundant_prefix) :]
+            if not clean_key:
+                continue
+            resolved_type = ref.source_type
+            resolved_key = clean_key
+            resolved_file_id = ref.file_id
+            if validate_handles:
+                target = normalized_handles.get(
+                    clean_key.lower()
+                ) or known_raw_targets.get((str(ref.source_type), clean_key))
+                if target is None:
+                    logger.debug(
+                        "Dropping unrecognized source_ref %r on %r",
+                        ref.source_key,
+                        slug,
+                    )
+                    dropped.append(ref.source_key)
+                    continue
+                resolved_type = target.source_type
+                resolved_key = target.source_key
+                resolved_file_id = target.file_id
+            dedup_key = (str(resolved_type), resolved_key)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            resolved.append(
+                WikiSourceRefDTO(
+                    source_type=resolved_type,
+                    source_key=resolved_key,
+                    file_id=resolved_file_id,
+                    last_event_seq=source_event_seq,
+                )
+            )
+        return resolved, dropped
 
     async def start_backfill_job(
         self, user_id: int, *, max_files_per_turn: int = 1
@@ -759,12 +948,9 @@ class WikiCompilerWorker:
         page_cap = (
             max_pages if max_pages is not None else self._config.max_pages_per_batch
         )
-        normalized_handles: dict[str, SourceRefTarget] = {}
-        known_raw_targets: dict[tuple[str, str], SourceRefTarget] = {}
-        if source_handles:
-            for handle, target in source_handles.items():
-                normalized_handles[handle.lower()] = target
-                known_raw_targets[(str(target.source_type), target.source_key)] = target
+        normalized_handles, known_raw_targets = self._index_source_handles(
+            source_handles
+        )
 
         non_index_ops = [
             op
@@ -777,46 +963,14 @@ class WikiCompilerWorker:
             if not slug or not title:
                 continue
             page_kind = op.page_kind if op.page_kind in VALID_PAGE_KINDS else "topic"
-            source_refs: list[WikiSourceRefDTO] = []
-            seen_refs: set[tuple[str, str]] = set()
-            for ref in op.source_refs:
-                if not ref.source_type or not ref.source_key:
-                    continue
-                clean_key = ref.source_key.strip()
-                redundant_prefix = f"{ref.source_type}:"
-                if clean_key.startswith(redundant_prefix):
-                    clean_key = clean_key[len(redundant_prefix) :]
-                if not clean_key:
-                    continue
-                resolved_type = ref.source_type
-                resolved_key = clean_key
-                resolved_file_id = ref.file_id
-                if source_handles is not None:
-                    target = normalized_handles.get(
-                        clean_key.lower()
-                    ) or known_raw_targets.get((str(ref.source_type), clean_key))
-                    if target is None:
-                        logger.debug(
-                            "Dropping unrecognized source_ref %r on %r",
-                            ref.source_key,
-                            slug,
-                        )
-                        continue
-                    resolved_type = target.source_type
-                    resolved_key = target.source_key
-                    resolved_file_id = target.file_id
-                dedup_key = (str(resolved_type), resolved_key)
-                if dedup_key in seen_refs:
-                    continue
-                seen_refs.add(dedup_key)
-                source_refs.append(
-                    WikiSourceRefDTO(
-                        source_type=resolved_type,
-                        source_key=resolved_key,
-                        file_id=resolved_file_id,
-                        last_event_seq=source_event_seq,
-                    )
-                )
+            source_refs, _ = self._resolve_op_source_refs(
+                op.source_refs,
+                slug=slug,
+                normalized_handles=normalized_handles,
+                known_raw_targets=known_raw_targets,
+                validate_handles=source_handles is not None,
+                source_event_seq=source_event_seq,
+            )
             resolved_claims: list[dict[str, object]] = []
             for claim in op.claims:
                 claim_dict = claim.to_dict()

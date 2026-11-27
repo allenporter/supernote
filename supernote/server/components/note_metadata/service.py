@@ -285,7 +285,6 @@ class NoteMetadataService:
                 NoteTitleVO(
                     page_index=t.page_index,
                     level=t.level,
-                    text=t.text_content,
                     style=t.style,
                     rect=t.rect,
                     bitmap_md5=t.bitmap_md5,

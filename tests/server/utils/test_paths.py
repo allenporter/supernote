@@ -13,6 +13,7 @@ from supernote.server.utils.paths import (
     get_file_chunk_path,
     get_full_conversion_pdf_path,
     get_page_png_path,
+    get_summary_conversion_prefix,
     get_summary_handwriting_prefix,
     get_summary_handwriting_prefix_of,
     get_summary_id,
@@ -129,8 +130,10 @@ def test_generate_inner_name() -> None:
 
 
 def test_get_summary_handwriting_prefix() -> None:
+    assert get_summary_conversion_prefix(1, 2) == "conversions/1/summary_2/"
     prefix = get_summary_handwriting_prefix(1, 2, "md5hash")
     assert prefix == "conversions/1/summary_2/handwrite_md5hash"
+    assert prefix.startswith(get_summary_conversion_prefix(1, 2))
 
     for bad_md5 in ("", "../etc", "a/b", "a.b"):
         with pytest.raises(ValueError, match="handwrite_md5"):

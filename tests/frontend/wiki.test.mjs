@@ -5,15 +5,18 @@ import { logout, setToken } from '../../supernote/server/static/js/api/http.js';
 import {
     deleteWikiPage,
     encodeSlugPath,
+    fetchWikiDiagnostics,
     fetchWikiLintIssues,
     fetchWikiPage,
     fetchWikiPages,
     fetchWikiStatus,
+    formatDryRunDropReason,
     formatLintTypeLabel,
     formatPageKindLabel,
     formatSourceRef,
     formatWikiActionResult,
     resolveWikiLintIssue,
+    runWikiDryRun,
     saveWikiPage,
     searchWikiPages,
     triggerWikiCompile,
@@ -190,7 +193,7 @@ for (const { name, mode, result, expected } of [
         result: { mode: 'backfill_start', status: 'backfilling', remaining_files: 7 },
         expected: {
             message:
-                'Started background backfill (7 notebooks queued, 1 per turn). You can safely leave this tab.',
+                'Started background backfill (7 notebooks queued, chronological page windows). You can safely leave this tab.',
             type: 'success',
         },
     },
@@ -199,7 +202,7 @@ for (const { name, mode, result, expected } of [
         mode: 'backfill_stop',
         result: { mode: 'backfill_stop', status: 'stopping', remaining_files: 5 },
         expected: {
-            message: 'Stopping backfill after the current notebook finishes.',
+            message: 'Stopping backfill after the current page window finishes.',
             type: 'info',
         },
     },
@@ -305,4 +308,95 @@ test('formatSourceRef resolves notebook filenames, 64-bit file IDs, tasks, and d
         is_source_deleted: false,
     });
     assert.equal(unresolvedTask.clickable, false);
+});
+
+test('fetchWikiDiagnostics and runWikiDryRun unwrap payloads and send expected body', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {Array<{ url: string, init: RequestInit }>} */
+    const calls = [];
+    setToken('test-token');
+    globalThis.fetch = async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (String(url) === '/api/extended/wiki/diagnostics') {
+            return jsonResponse({
+                success: true,
+                notebooks: [
+                    {
+                        file_id: '1042',
+                        file_name: 'Daily.note',
+                        ocr_pages: 10,
+                        cited_pages: 0,
+                        avg_chars_per_page: 280,
+                        cited_slugs: [],
+                    },
+                ],
+            });
+        }
+        return jsonResponse({
+            success: true,
+            pages_sent: [
+                {
+                    source_id: 'page01',
+                    file_id: '1042',
+                    file_path: 'Daily.note',
+                    page_index: 0,
+                    page_date: '2026-04-01',
+                    chars: 280,
+                    snippet: 'Morning notes',
+                },
+            ],
+            candidate_slugs: ['projects/solar'],
+            ops: [],
+            lint_proposals_count: 0,
+            elapsed_ms: 420,
+        });
+    };
+
+    try {
+        const notebooks = await fetchWikiDiagnostics();
+        assert.equal(notebooks.length, 1);
+        assert.equal(notebooks[0].file_id, '1042');
+        assert.equal(notebooks[0].cited_pages, 0);
+
+        const report = await runWikiDryRun({
+            fileId: '1042',
+            startDate: '2026-04-01',
+            offsetPages: 8,
+            maxPages: 4,
+        });
+        assert.equal(report.pages_sent.length, 1);
+        assert.equal(report.candidate_slugs[0], 'projects/solar');
+        assert.equal(report.elapsed_ms, 420);
+
+        assert.equal(calls.length, 2);
+        assert.equal(calls[1].url, '/api/extended/wiki/diagnostics/dry-run');
+        assert.equal(calls[1].init.method, 'POST');
+        assert.deepEqual(JSON.parse(String(calls[1].init.body)), {
+            file_id: '1042',
+            start_date: '2026-04-01',
+            offset_pages: 8,
+            max_pages: 4,
+        });
+    } finally {
+        globalThis.fetch = origFetch;
+        logout();
+    }
+});
+
+test('formatDryRunDropReason maps internal codes to plain-English explanations', () => {
+    assert.equal(formatDryRunDropReason(null), '');
+    assert.equal(
+        formatDryRunDropReason('edit_policy:protected_prose'),
+        'Skipped: human-edited page is protected',
+    );
+    assert.equal(formatDryRunDropReason('edit_policy:locked'), 'Skipped: page is locked');
+    assert.equal(
+        formatDryRunDropReason('index_auto_maintained'),
+        'Skipped: index page is auto-generated',
+    );
+    assert.equal(
+        formatDryRunDropReason('page_cap_exceeded'),
+        'Skipped: per-turn page limit reached',
+    );
+    assert.equal(formatDryRunDropReason('custom_reason'), 'Skipped: custom_reason');
 });

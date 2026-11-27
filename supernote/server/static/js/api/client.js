@@ -378,16 +378,38 @@ export function normalizeTranscriptPages(rawPages) {
 }
 
 /**
- * Fetch per-page OCR transcripts for a notebook file.
+ * Normalize a `titles` bitmap-MD5 -> text map returned by `/api/extended/transcript`.
+ * @param {unknown} rawTitles
+ * @returns {Record<string, string>}
+ */
+export function normalizeTitleTranscripts(rawTitles) {
+    /** @type {Record<string, string>} */
+    const result = {};
+    if (!rawTitles || typeof rawTitles !== 'object' || Array.isArray(rawTitles)) {
+        return result;
+    }
+    for (const [md5, text] of Object.entries(rawTitles)) {
+        if (typeof text === 'string' && text.trim()) {
+            result[md5] = text.trim();
+        }
+    }
+    return result;
+}
+
+/**
+ * Fetch per-page OCR transcripts and title transcripts for a notebook file.
  * @param {string | number} fileId
- * @returns {Promise<TranscriptPage[]>}
+ * @returns {Promise<TranscriptResult>}
  */
 export async function fetchTranscript(fileId) {
     const data = await apiRequest('/api/extended/transcript', {
         body: { fileId: String(fileId) },
         fallbackValue: null,
     });
-    return normalizeTranscriptPages(data?.pages);
+    return {
+        pages: normalizeTranscriptPages(data?.pages),
+        titles: normalizeTitleTranscripts(data?.titles),
+    };
 }
 
 /**
@@ -836,6 +858,19 @@ export async function fetchDownloadUrl(fileId) {
 }
 
 /**
+ * Trigger a browser download for a signed OSS URL via a temporary anchor element.
+ * @param {string} url
+ */
+function triggerBrowserDownload(url) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+/**
  * Trigger a browser download of a stored file.
  *
  * Navigates to the signed URL rather than fetching the bytes into a Blob the
@@ -848,12 +883,31 @@ export async function fetchDownloadUrl(fileId) {
  */
 export async function downloadFile(fileId) {
     const url = await fetchDownloadUrl(fileId);
-    const link = document.createElement('a');
-    link.href = url;
-    link.rel = 'noopener';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    triggerBrowserDownload(url);
+}
+
+/**
+ * Convert a `.note` file to PDF on the server and return its signed download URL.
+ * @param {string | number} fileId
+ * @param {number[]} [pageNoList=[]]
+ * @returns {Promise<string>}
+ */
+export async function fetchNotePdfUrl(fileId, pageNoList = []) {
+    const data = await apiRequest('/api/file/note/to/pdf', {
+        body: { id: String(fileId), pageNoList },
+        errorPrefix: 'PDF export failed',
+    });
+    if (!data?.url) throw new Error('No PDF download URL returned');
+    return data.url;
+}
+
+/**
+ * Convert a `.note` file to PDF and trigger a browser download of the signed URL.
+ * @param {string | number} fileId
+ */
+export async function exportNoteToPdf(fileId) {
+    const url = await fetchNotePdfUrl(fileId);
+    triggerBrowserDownload(url);
 }
 
 /**

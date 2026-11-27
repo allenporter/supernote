@@ -247,7 +247,7 @@ Endpoints for managing document summaries, digests, tags, and summary blobs. See
 Models in `supernote.models.extended` power the custom `/api/extended/*` endpoints on the self-hosted server, consumed by `supernote.client.extended.ExtendedClient` and `supernote.client.admin.AdminClient`. See `supernote.guides.note_processing_design` for the background pipeline architecture.
 
 * **Hybrid Semantic Search** (`POST /api/extended/search`): `WebSearchRequestDTO` (`query`, `top_n`, `name_filter`, `date_after`, `date_before`) -> `WebSearchResponseVO` (list of `SearchResultVO` with stringified `file_id`, `file_name`, `page_index`, `page_id`, `score`, `text_preview`, `date`).
-* **OCR Page Transcripts** (`POST /api/extended/transcript`): `WebTranscriptRequestDTO` (stringified `file_id`, optional `start_index` / `end_index`) -> `WebTranscriptResponseVO` (`pages: list[PageTranscriptVO]`).
+* **OCR Page & Title Transcripts** (`POST /api/extended/transcript`): `WebTranscriptRequestDTO` (stringified `file_id`, optional `start_index` / `end_index`) -> `WebTranscriptResponseVO` (`pages: list[PageTranscriptVO]`, `titles: dict[str, str]` keyed by `bitmapMd5`).
 * **Web Summaries, Structured Notebook Metadata & Note Cover Previews**:
   * `POST /api/extended/file/summary/list`: `WebSummaryListRequestDTO` -> `WebSummaryListVO`
   * `POST /api/extended/file/summary/to/pdf`: `DownloadSummaryDTO` -> `PdfVO` (signed `GET /api/oss/summary/pdf/{id}` URL for the rendered handwriting)

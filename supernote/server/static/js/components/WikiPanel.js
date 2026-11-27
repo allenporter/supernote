@@ -24,6 +24,7 @@ import { isComponentRunning } from '../composables/useServerFeatures.js';
 import { useToast } from '../composables/useToast.js';
 import { getErrorMessage } from '../utils/format.js';
 import { renderWikiMarkdown } from '../utils/markdown.js';
+import WikiDiagnosticsPanel from './WikiDiagnosticsPanel.js';
 
 const KIND_FILTERS = [
     { id: '', label: 'All' },
@@ -35,6 +36,9 @@ const KIND_FILTERS = [
 
 export default {
     name: 'WikiPanel',
+    components: {
+        WikiDiagnosticsPanel,
+    },
     props: {
         initialSlug: {
             type: String,
@@ -77,6 +81,7 @@ export default {
         const searchQuery = ref('');
         const showLintPanel = ref(false);
         const showBackfillPanel = ref(false);
+        const showDiagnosticsPanel = ref(false);
         const backfillBannerDismissed = ref(false);
         const stopBackfillRequested = ref(false);
         /** @type {import('vue').Ref<string[]>} */
@@ -722,6 +727,7 @@ export default {
             clearSearch,
             showLintPanel,
             showBackfillPanel,
+            showDiagnosticsPanel,
             isBackfillBannerVisible,
             isServerBackfilling,
             isBackfillActive,
@@ -777,7 +783,12 @@ export default {
                         <template v-if="status">
                             {{ status.page_count }} {{ status.page_count === 1 ? 'page' : 'pages' }}
                             <template v-if="backfillTotal > 0">
-                                · {{ backfillCompleted }}/{{ backfillTotal }} notebooks compiled
+                                <template v-if="backfillTotalPages > 0">
+                                    · {{ backfillCompletedPages }}/{{ backfillTotalPages }} pages compiled
+                                </template>
+                                <template v-else>
+                                    · {{ backfillCompleted }}/{{ backfillTotal }} notebooks compiled
+                                </template>
                             </template>
                             <template v-if="status.status && status.status !== 'idle'">
                                 · {{ status.status }}
@@ -796,7 +807,7 @@ export default {
                         :class="isBackfillBannerVisible ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-stone-200 text-slate-700 hover:bg-stone-50'"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors">
                         <template v-if="isBackfillActive">Backfilling…</template>
-                        <template v-else-if="backfillRemaining > 0">Backfill ({{ backfillRemaining }} left)</template>
+                        <template v-else-if="backfillRemaining > 0">Backfill ({{ backfillRemainingPages > 0 ? backfillRemainingPages + 'p' : backfillRemaining }} left)</template>
                         <template v-else>Backfill</template>
                     </button>
                     <button type="button" @click="handleRunAction('incremental')" :disabled="isDisabled || isBusy"
@@ -814,6 +825,11 @@ export default {
                             {{ lintIssues.length }}
                         </span>
                     </button>
+                    <button type="button" @click="showDiagnosticsPanel = !showDiagnosticsPanel" :disabled="isDisabled"
+                        :class="showDiagnosticsPanel ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-stone-200 text-slate-700 hover:bg-stone-50'"
+                        class="px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors">
+                        Diagnostics
+                    </button>
                     <button type="button" @click="handleExportZip" :disabled="isDisabled || pages.length === 0"
                         title="Download Obsidian-compatible Markdown vault (.zip)"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
@@ -828,6 +844,12 @@ export default {
                 <span class="font-semibold">Wiki compiler {{ status.status }}:</span>
                 {{ status.last_error }}
             </div>
+
+            <!-- Live Wiki Diagnostics & Dry-Run Compile Inspector -->
+            <WikiDiagnosticsPanel v-if="showDiagnosticsPanel && !isDisabled"
+                @close="showDiagnosticsPanel = false"
+                @select-slug="selectSlug"
+                @open-file="emit('open-file', $event)" />
 
             <!-- Notebook Backfill Progress & Queue Panel -->
             <section v-if="isBackfillBannerVisible" aria-label="Notebook Backfill"
@@ -844,7 +866,7 @@ export default {
                                 :class="isBackfillDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-stone-100 text-stone-700 border-stone-200'"
                                 class="text-[11px] font-medium px-2 py-0.5 rounded-full border">
                                 <template v-if="backfillTotalPages > 0">
-                                    {{ backfillCompletedPages }} / {{ backfillTotalPages }} pages · {{ backfillCompleted }} / {{ backfillTotal }} {{ backfillTotal === 1 ? 'notebook' : 'notebooks' }} ({{ backfillPercent }}%)
+                                    {{ backfillCompletedPages }} / {{ backfillTotalPages }} pages ({{ backfillPercent }}%)<template v-if="status?.backfill_current_date"> · {{ status.backfill_current_date }}</template>
                                 </template>
                                 <template v-else>
                                     {{ backfillCompleted }} of {{ backfillTotal }} compiled ({{ backfillPercent }}%)
@@ -856,9 +878,9 @@ export default {
                         </div>
                         <p class="text-xs text-stone-500">
                             <template v-if="isServerBackfilling">
-                                Running on the server (1 notebook per turn) — safe to switch tabs or reload.
+                                Running chronologically on the server in small page windows — safe to switch tabs or reload.
                                 <template v-if="backfillNextFiles.length > 0">
-                                    Compiling: <span class="font-medium text-slate-700">{{ backfillNextFiles[0] }}</span>
+                                    Up next: <span class="font-medium text-slate-700">{{ backfillNextFiles.slice(0, 3).join(', ') }}</span>
                                 </template>
                             </template>
                             <template v-else-if="runningAction === 'backfill' && activeBatchFiles.length > 0">
@@ -866,13 +888,13 @@ export default {
                                 <span class="font-medium text-slate-700">{{ activeBatchFiles.join(', ') }}</span>
                             </template>
                             <template v-else-if="runningAction === 'backfill'">
-                                Compiling next batch of notebooks…
+                                Compiling next batch of pages…
                             </template>
                             <template v-else-if="isBackfillDone">
                                 All {{ backfillTotal }} OCR’d {{ backfillTotal === 1 ? 'notebook has' : 'notebooks have' }} been compiled into your wiki. New edits update automatically.
                             </template>
                             <template v-else>
-                                Compiles OCR’d notebooks newest-first on the server (1 notebook per turn for rich synthesis), or run a single 5-notebook batch.
+                                Compiles OCR’d notebook pages chronologically on the server in small page windows for rich synthesis.
                             </template>
                         </p>
                     </div>
@@ -921,7 +943,7 @@ export default {
                 <div v-if="backfillRemaining > 0 || isBackfillDone" class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pt-0.5">
                     <div v-if="backfillRemaining > 0 && backfillNextFiles.length > 0 && !isBackfillActive" class="min-w-0 flex-1 space-y-1">
                         <div class="text-[11px] font-medium text-stone-500">
-                            Up next (newest first):
+                            Up next (oldest first):
                         </div>
                         <div class="flex flex-wrap gap-1.5">
                             <span v-for="fname in backfillNextFiles" :key="fname"
@@ -936,18 +958,18 @@ export default {
                             <button v-if="isServerBackfilling" type="button" @click="requestStopBackfill"
                                 :disabled="stopBackfillRequested"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50 transition-colors">
-                                {{ stopBackfillRequested ? 'Stopping after notebook…' : 'Stop After Current Notebook' }}
+                                {{ stopBackfillRequested ? 'Stopping after current batch…' : 'Stop After Current Batch' }}
                             </button>
                             <span v-else class="text-xs text-stone-500">Running single batch…</span>
                         </template>
                         <template v-else-if="backfillRemaining > 0">
                             <button type="button" @click="handleBackfill(true)" :disabled="isBusy"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
-                                Backfill All Remaining ({{ backfillRemaining }})
+                                Backfill All Remaining ({{ backfillRemainingPages > 0 ? backfillRemainingPages + ' pages' : backfillRemaining }})
                             </button>
                             <button v-if="backfillRemaining > nextBatchCount" type="button" @click="handleBackfill(false)" :disabled="isBusy"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
-                                Next {{ nextBatchCount }} Only
+                                Next Batch
                             </button>
                             <button v-if="backfillCompleted > 0" type="button" @click="handleResetBackfill(false)" :disabled="isBusy"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors">
@@ -1195,7 +1217,7 @@ export default {
                             <h3 class="text-sm font-semibold text-slate-900">Build your personal wiki</h3>
                             <p class="text-xs text-stone-500 max-w-lg mx-auto leading-relaxed">
                                 <template v-if="backfillRemaining > 0">
-                                    Compile your {{ backfillRemaining }} OCR’d {{ backfillRemaining === 1 ? 'notebook' : 'notebooks' }} newest-first in batches of 5. Early batches create source digests; cross-notebook topics, projects, and entities emerge as more notebooks are compiled.
+                                    Compile your {{ backfillRemainingPages > 0 ? backfillRemainingPages + ' OCR’d pages across ' : '' }}{{ backfillRemaining }} {{ backfillRemaining === 1 ? 'notebook' : 'notebooks' }} chronologically in small page windows so projects, topics, and entities build cleanly over time.
                                 </template>
                                 <template v-else-if="backfillUntranscribed > 0">
                                     {{ backfillUntranscribed }} {{ backfillUntranscribed === 1 ? 'notebook does' : 'notebooks do' }} not have OCR transcripts yet. Process your notebooks with OCR first, then return here to build your wiki—or create a page manually.
@@ -1211,7 +1233,7 @@ export default {
                             class="max-w-lg mx-auto rounded-lg bg-stone-50 border border-stone-200/80 p-3 space-y-2">
                             <div class="flex items-center justify-between gap-2 text-[11px]">
                                 <span class="font-medium text-slate-700">
-                                    First batch ({{ backfillNextFiles.length }} newest {{ backfillNextFiles.length === 1 ? 'notebook' : 'notebooks' }})
+                                    Up next ({{ backfillNextFiles.length }} earliest {{ backfillNextFiles.length === 1 ? 'notebook' : 'notebooks' }})
                                 </span>
                                 <span v-if="backfillUntranscribed > 0" class="text-stone-500">
                                     {{ backfillUntranscribed }} awaiting OCR

@@ -584,13 +584,16 @@ async def handle_create_api_key(request: web.Request) -> web.Response:
     try:
         req_dto = await parse_json_dto(request, CreateApiKeyDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
 
     expires_at: int | None = None
     if req_dto.expires_in_days is not None:
         if req_dto.expires_in_days <= 0 or req_dto.expires_in_days > 3650:
             return web.json_response(
-                {"error": "expiresInDays must be between 1 and 3650"}, status=400
+                create_error_response(
+                    "expiresInDays must be between 1 and 3650"
+                ).to_dict(),
+                status=400,
             )
         expires_at = int(time.time()) + req_dto.expires_in_days * 86400
 
@@ -601,7 +604,7 @@ async def handle_create_api_key(request: web.Request) -> web.Response:
             user_id, req_dto.name, expires_at=expires_at
         )
     except ValueError as err:
-        return web.json_response({"error": str(err)}, status=400)
+        return web.json_response(create_error_response(str(err)).to_dict(), status=400)
 
     return web.json_response(
         CreateApiKeyResponseVO(
@@ -626,7 +629,8 @@ async def handle_delete_api_key(request: web.Request) -> web.Response:
     revoked = await user_service.revoke_api_key(user_id, key_id)
     if not revoked:
         return web.json_response(
-            {"error": "API key not found or already revoked"}, status=404
+            create_error_response("API key not found or already revoked").to_dict(),
+            status=404,
         )
 
     return web.json_response(BaseResponse(success=True).to_dict())
@@ -655,7 +659,8 @@ async def handle_revoke_oauth_grant(request: web.Request) -> web.Response:
     revoked = await user_service.revoke_oauth_grant(user_id, grant_id)
     if not revoked:
         return web.json_response(
-            {"error": "OAuth grant not found or already revoked"}, status=404
+            create_error_response("OAuth grant not found or already revoked").to_dict(),
+            status=404,
         )
 
     return web.json_response(BaseResponse(success=True).to_dict())

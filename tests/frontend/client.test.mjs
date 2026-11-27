@@ -8,9 +8,11 @@ import {
     createApiKey,
     deleteRecycleItems,
     disconnectSocket,
+    exportNoteToPdf,
     fetchAiStatus,
     fetchApiKeys,
     fetchFiles,
+    fetchNotePdfUrl,
     fetchOAuthBridgeClient,
     fetchOAuthGrants,
     fetchProcessingStatus,
@@ -936,5 +938,75 @@ test('client.js: fetchSystemComponents and updateSystemComponent normalize compo
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: fetchNotePdfUrl posts /api/file/note/to/pdf and exportNoteToPdf triggers download', async () => {
+    const origFetch = globalThis.fetch;
+    const origDocument = globalThis.document;
+    /** @type {Array<[string, Record<string, unknown>]>} */
+    const requests = [];
+    /** @type {Array<{ href: string, rel: string, clicked: boolean, appended: boolean, removed: boolean }>} */
+    const createdLinks = [];
+
+    try {
+        setToken('pdf-tok');
+        globalThis.fetch = async (url, init) => {
+            requests.push([String(url), JSON.parse(String(init?.body || '{}'))]);
+            return new Response(
+                JSON.stringify({ success: true, url: 'http://localhost/api/oss/pdf/9001?sig=abc' }),
+                { status: 200 },
+            );
+        };
+        globalThis.document = /** @type {any} */ ({
+            createElement(tag) {
+                assert.equal(tag, 'a');
+                const link = {
+                    href: '',
+                    rel: '',
+                    clicked: false,
+                    appended: false,
+                    removed: false,
+                    click() {
+                        this.clicked = true;
+                    },
+                };
+                createdLinks.push(link);
+                return link;
+            },
+            body: {
+                appendChild(el) {
+                    el.appended = true;
+                },
+                removeChild(el) {
+                    el.removed = true;
+                },
+            },
+        });
+
+        assert.equal(
+            await fetchNotePdfUrl(9001, [0, 2]),
+            'http://localhost/api/oss/pdf/9001?sig=abc',
+        );
+        await exportNoteToPdf('9001');
+
+        assert.deepEqual(requests, [
+            ['/api/file/note/to/pdf', { id: '9001', pageNoList: [0, 2] }],
+            ['/api/file/note/to/pdf', { id: '9001', pageNoList: [] }],
+        ]);
+        assert.equal(createdLinks.length, 1);
+        assert.equal(createdLinks[0].href, 'http://localhost/api/oss/pdf/9001?sig=abc');
+        assert.equal(createdLinks[0].rel, 'noopener');
+        assert.equal(createdLinks[0].clicked, true);
+        assert.equal(createdLinks[0].appended, true);
+        assert.equal(createdLinks[0].removed, true);
+
+        globalThis.fetch = async () =>
+            new Response(JSON.stringify({ success: true, url: null }), { status: 200 });
+        await assert.rejects(() => fetchNotePdfUrl('9001'), /No PDF download URL returned/);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+        globalThis.document = origDocument;
     }
 });

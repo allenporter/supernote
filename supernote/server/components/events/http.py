@@ -30,6 +30,7 @@ import logging
 
 from aiohttp import web
 
+from supernote.models.base import create_error_response
 from supernote.models.events import (
     EventFeedListVO,
     EventFeedRequestDTO,
@@ -62,14 +63,16 @@ async def handle_list_events(request: web.Request) -> web.Response:
     try:
         req_dto = parse_query_dto(request, EventFeedRequestDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     event_log_service: EventLogService = request.app[EVENT_LOG_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
-        return web.json_response({"error": "User not found"}, status=404)
+        return web.json_response(
+            create_error_response("User not found").to_dict(), status=404
+        )
 
     caller_actor = request[REQUEST_ACTOR_KEY]
     exclude_actors = (
@@ -100,7 +103,9 @@ async def handle_list_events(request: web.Request) -> web.Response:
         return err.to_response()
     except Exception:
         logger.exception("Error listing domain events")
-        return web.json_response({"error": "Internal server error"}, status=500)
+        return web.json_response(
+            create_error_response("Internal server error").to_dict(), status=500
+        )
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:

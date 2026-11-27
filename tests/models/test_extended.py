@@ -191,7 +191,10 @@ def test_web_transcript_models() -> None:
         "date": "2023-10-27",
     }
 
-    vo = WebTranscriptResponseVO(pages=[page])
+    vo = WebTranscriptResponseVO(
+        pages=[page],
+        titles={"b094a9f71c442cf2a0544d737603b0dc": "Sprint goals"},
+    )
     data = vo.to_dict()
     assert data == {
         "success": True,
@@ -205,6 +208,7 @@ def test_web_transcript_models() -> None:
                 "date": "2023-10-27",
             }
         ],
+        "titles": {"b094a9f71c442cf2a0544d737603b0dc": "Sprint goals"},
     }
     parsed = WebTranscriptResponseVO.from_dict(data)
     assert parsed == vo
@@ -371,7 +375,6 @@ def test_web_note_metadata_models() -> None:
             NoteTitleVO(
                 page_index=0,
                 level=2,
-                text="Sprint goals",
                 style="1157254",
                 rect=[480, 691, 582, 178],
                 bitmap_md5="b094a9f71c442cf2a0544d737603b0dc",
@@ -412,7 +415,6 @@ def test_web_note_metadata_models() -> None:
             {
                 "pageIndex": 0,
                 "level": 2,
-                "text": "Sprint goals",
                 "style": "1157254",
                 "rect": [480, 691, 582, 178],
                 "bitmapMd5": "b094a9f71c442cf2a0544d737603b0dc",

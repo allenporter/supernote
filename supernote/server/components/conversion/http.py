@@ -52,7 +52,7 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
     try:
         req_dto = await parse_json_dto(request, WebNoteCoverRequestDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
 
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     web_ui_loaded = request.app[COMPONENT_LOADER_KEY].get("web_ui") is not None

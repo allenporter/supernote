@@ -354,10 +354,25 @@ interface TranscriptPage {
     hasTranscript?: boolean;
 }
 
+interface TranscriptResult {
+    pages: TranscriptPage[];
+    titles: Record<string, string>;
+}
+
+interface OutlineItem {
+    key: string;
+    pageIndex: number;
+    level: number;
+    style: string | null;
+    styleLabel: string | null;
+    styleBadgeClass: string;
+    text: string | null;
+    imageUrl: string | null;
+}
+
 interface NoteTitle {
     pageIndex: number;
     level: number;
-    text: string | null;
     style: string | null;
     rect: [number, number, number, number] | null;
     bitmapMd5: string | null;

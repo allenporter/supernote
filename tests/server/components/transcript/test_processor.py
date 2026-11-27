@@ -1,18 +1,28 @@
+import asyncio
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import undefer
 
 from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.conversion.processor import PngConversionModule
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.note_metadata import NoteMetadataService
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
+from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.components.transcript.processor import OcrModule
-from supernote.server.constants import CACHE_BUCKET
+from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
     NotePageMetadataDO,
+    NoteTitleDO,
+    NoteTitleTranscriptDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -728,3 +738,327 @@ async def test_transcript_component_registers_ocr_stage_via_processor_platform(
         "PNG_CONVERSION",
         "NOTE_METADATA",
     )
+
+
+async def test_ocr_module_transcribes_title_crops_skips_cached_and_prunes_stale(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """OcrModule transcribes uncached title crops once, normalizes single-line text, and prunes stale titles."""
+    user_id = 42
+    file_id = 2050
+    note_path = (
+        Path(__file__).parents[3]
+        / "testdata"
+        / "philips"
+        / "heading-n5-20260016-backgrounds-marker.note"
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "headings_ocr_key", note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="headings_ocr_key",
+                file_name="Headings.note",
+                directory_id=0,
+                is_active="Y",
+            )
+        )
+        await session.commit()
+
+    # Run upstream stages so NotePageContentDO, NoteTitleDO, and page PNG exist.
+    hashing = PageHashingModule(file_service=file_service)
+    metadata = NoteMetadataModule(file_service=file_service)
+    png = PngConversionModule(file_service=file_service)
+    assert await hashing.run(file_id, session_manager, user_id=user_id) is True
+    assert await metadata.run(file_id, session_manager, user_id=user_id) is True
+
+    async with session_manager.session() as session:
+        page_1 = (
+            await session.execute(
+                select(NotePageContentDO).where(
+                    NotePageContentDO.file_id == file_id,
+                    NotePageContentDO.page_index == 1,
+                )
+            )
+        ).scalar_one()
+        page_1_id = page_1.page_id
+        # Seed a stale title transcript that no longer matches any NoteTitleDO.
+        session.add(
+            NoteTitleTranscriptDO(
+                user_id=user_id,
+                file_id=file_id,
+                bitmap_md5="stale_deleted_title_md5",
+                text_content="Old Heading",
+            )
+        )
+        await session.commit()
+
+    assert (
+        await png.run(
+            file_id, session_manager, page_index=1, page_id=page_1_id, user_id=user_id
+        )
+        is True
+    )
+
+    class _TitleAwareOcrModel(OcrModel):
+        def __init__(self) -> None:
+            self.calls: list[tuple[bytes, str]] = []
+            self._title_counter = 0
+
+        @property
+        def provider(self) -> str:
+            return "fake"
+
+        @property
+        def model_id(self) -> str:
+            return "title-aware-ocr"
+
+        async def extract_text(self, png_data: bytes, prompt: str) -> str:
+            assert png_data.startswith(b"\x89PNG\r\n\x1a\n")
+            self.calls.append((png_data, prompt))
+            if "Notebook Heading Transcription Instruction" in prompt:
+                self._title_counter += 1
+                return f"  Heading  \n  #{self._title_counter}  "
+            return "Full page transcript"
+
+    model = _TitleAwareOcrModel()
+    note_metadata_service = NoteMetadataService(
+        session_manager=session_manager, blob_storage=blob_storage
+    )
+    ocr = OcrModule(
+        file_service=file_service,
+        ocr_model=model,
+        note_metadata_service=note_metadata_service,
+    )
+
+    assert (
+        await ocr.run(
+            file_id, session_manager, page_index=1, page_id=page_1_id, user_id=user_id
+        )
+        is True
+    )
+    # 1 page OCR call + 4 title crop OCR calls.
+    assert len(model.calls) == 5
+    assert all(
+        "Notebook Filename: Headings.note" in prompt for _, prompt in model.calls[1:]
+    )
+
+    async with session_manager.session() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(NoteTitleTranscriptDO).where(
+                        NoteTitleTranscriptDO.user_id == user_id,
+                        NoteTitleTranscriptDO.file_id == file_id,
+                    )
+                )
+            ).scalars()
+        )
+    by_md5 = {r.bitmap_md5: r.text_content for r in rows}
+    assert "stale_deleted_title_md5" not in by_md5
+    assert by_md5 == {
+        "4f60eac0ba701b4983269a55649430ad": "Heading #1",
+        "b094a9f71c442cf2a0544d737603b0dc": "Heading #2",
+        "f14caee340e90ceab17cad156682ca9c": "Heading #3",
+        "63bcfe0053116378ededa5038ba7e389": "Heading #4",
+    }
+
+    # All titles on page 1 are cached -> run_if_needed returns False.
+    assert (
+        await ocr.run_if_needed(
+            file_id, session_manager, page_index=1, page_id=page_1_id, user_id=user_id
+        )
+        is False
+    )
+
+    # Simulate deleting one title transcript AND evicting the cached page PNG:
+    # title-only backfill should skip full-page OCR and succeed without the page PNG.
+    await blob_storage.delete(CACHE_BUCKET, get_page_png_path(file_id, page_1_id))
+    async with session_manager.session() as session:
+        row = await session.get(
+            NoteTitleTranscriptDO,
+            (user_id, file_id, "63bcfe0053116378ededa5038ba7e389"),
+        )
+        assert row is not None
+        await session.delete(row)
+        await session.commit()
+
+    assert (
+        await ocr.run_if_needed(
+            file_id, session_manager, page_index=1, page_id=page_1_id, user_id=user_id
+        )
+        is True
+    )
+    model.calls.clear()
+    assert (
+        await ocr.run(
+            file_id, session_manager, page_index=1, page_id=page_1_id, user_id=user_id
+        )
+        is True
+    )
+    # Only 1 missing title crop call — 0 full-page OCR calls, 3 cached titles skipped.
+    assert len(model.calls) == 1
+    assert "Notebook Heading Transcription Instruction" in model.calls[0][1]
+
+
+async def test_ocr_module_concurrent_duplicate_title_md5_and_unrenderable_crop(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Concurrent pages sharing a title bitmap_md5 upsert cleanly, and unrenderable crops settle to empty string."""
+    user_id = 43
+    file_id = 2051
+    shared_md5 = "1" * 32
+    corrupt_md5 = "2" * 32
+
+    await blob_storage.put(
+        CACHE_BUCKET, f"{file_id}/titles/{shared_md5}.png", b"\x89PNG\r\n\x1a\n"
+    )
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="dup_titles_key",
+                file_name="Dup.note",
+                directory_id=0,
+                is_active="Y",
+            )
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    text_content="Already OCRd",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    content_hash="h1",
+                    text_content="Already OCRd",
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    bitmap_md5=shared_md5,
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=1,
+                    page_index=1,
+                    bitmap_md5=shared_md5,
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=2,
+                    page_index=1,
+                    bitmap_md5=corrupt_md5,
+                ),
+                SystemTaskDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    task_type=TaskType.OCR_EXTRACTION,
+                    key="page_p0",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    task_type=TaskType.OCR_EXTRACTION,
+                    key="page_p1",
+                    status="COMPLETED",
+                ),
+            ]
+        )
+        await session.commit()
+
+    note_metadata_service = NoteMetadataService(
+        session_manager=session_manager, blob_storage=blob_storage
+    )
+
+    async def _fake_get_title_png_key(
+        *, user_id: int, file_id: int, bitmap_md5: str
+    ) -> str | None:
+        if bitmap_md5 == shared_md5:
+            return f"{file_id}/titles/{shared_md5}.png"
+        return None
+
+    ocr = OcrModule(
+        file_service=file_service,
+        ocr_model=FakeOcrModel(),
+        note_metadata_service=note_metadata_service,
+    )
+    with patch.object(
+        note_metadata_service,
+        "get_title_png_key",
+        new=AsyncMock(side_effect=_fake_get_title_png_key),
+    ):
+        r0, r1 = await asyncio.gather(
+            ocr.run(
+                file_id, session_manager, page_index=0, page_id="p0", user_id=user_id
+            ),
+            ocr.run(
+                file_id, session_manager, page_index=1, page_id="p1", user_id=user_id
+            ),
+        )
+    assert r0 is True and r1 is True
+
+    async with session_manager.session() as session:
+        shared_row = await session.get(
+            NoteTitleTranscriptDO, (user_id, file_id, shared_md5)
+        )
+        corrupt_row = await session.get(
+            NoteTitleTranscriptDO, (user_id, file_id, corrupt_md5)
+        )
+    assert shared_row is not None and shared_row.text_content.startswith("Transcribed")
+    assert corrupt_row is not None and corrupt_row.text_content == ""
+    # Corrupt title recorded as "" so run_if_needed settles instead of looping.
+    assert (
+        await ocr.run_if_needed(
+            file_id, session_manager, page_index=1, page_id="p1", user_id=user_id
+        )
+        is False
+    )
+
+
+async def test_ocr_module_cleanup_file_deletes_title_transcripts_for_owner_only(
+    ocr_module: OcrModule,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """cleanup_file removes NoteTitleTranscriptDO rows only for target (user_id, file_id)."""
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                NoteTitleTranscriptDO(
+                    user_id=7, file_id=2060, bitmap_md5="md5_1", text_content="Mine"
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=8, file_id=2060, bitmap_md5="md5_1", text_content="Other"
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=7, file_id=2061, bitmap_md5="md5_1", text_content="Keep"
+                ),
+            ]
+        )
+        await session.commit()
+
+    await ocr_module.cleanup_file(
+        file_id=2060, user_id=7, session_manager=session_manager
+    )
+
+    async with session_manager.session() as session:
+        assert await session.get(NoteTitleTranscriptDO, (7, 2060, "md5_1")) is None
+        assert await session.get(NoteTitleTranscriptDO, (8, 2060, "md5_1")) is not None
+        assert await session.get(NoteTitleTranscriptDO, (7, 2061, "md5_1")) is not None

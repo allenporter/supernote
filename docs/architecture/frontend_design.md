@@ -43,7 +43,7 @@ supernote/server/static/
         │   ├── noteMeta.js           # Pure file category, page style, link & transcript helpers
         │   ├── ViewerToolbar.js      # Header bar, page stepper & zoom controls
         │   ├── ViewerMediaPreview.js # Inline image, PDF, text & unsupported fallback views
-        │   └── ViewerSidePanel.js    # Responsive OCR transcript & summaries drawer
+        │   └── ViewerSidePanel.js    # Responsive outline, OCR transcript & summaries drawer
         ├── TaskPanel.js              # Tasks & Schedule workspace coordinator
         ├── tasks/
         │   ├── TaskSidebar.js        # Quick views, task lists & .ics export trigger

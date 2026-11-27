@@ -61,7 +61,7 @@ A `UniqueConstraint("user_id", "file_id", "task_type", "key")` ensures each stag
 
 ### `NoteMetadataDO` (`f_note_metadata` — Notebook Header & Footer Cache)
 
-Persisted by `PageHashingModule` (`version="v2"`) to expose parsed `.note` header/footer fields without re-reading the binary blob:
+Persisted by `NoteMetadataModule` (`TaskType.NOTE_METADATA`, `version="v1"`) to expose parsed `.note` header/footer fields without re-reading the binary blob (1 row per notebook):
 
 | Column | Type | Description |
 | :--- | :--- | :--- |
@@ -91,8 +91,48 @@ Stores per-page structural metadata, ink/drawable flags, and native `.note` anno
 | `has_drawables` | `Boolean` | `True` when the page has foreground strokes/bitmaps (`MAINLAYER` or `LAYER1..3`), a `TEXTBOX`, or `GARBAGE` vector shapes (`page_has_drawables`). `False` indicates a blank page. |
 | `page_json` | `Text` | Full `PageMetadata` dictionary serialized as JSON. |
 | `keywords_json` | `Text` | JSON list of footer `KEYWORD_*` dictionaries matching this page (`keyword_texts` property returns deduplicated keyword strings). |
-| `titles_json` | `Text` | JSON list of footer `TITLE_*` heading dictionaries matching this page. |
+| `titles_json` | `Text` | JSON list of raw footer `TITLE_*` wire dictionaries matching this page (projected into `f_note_title` with computed `bitmap_md5`). |
 | `links_json` | `Text` | JSON list of footer `LINK_*` hyperlink dictionaries matching this page. |
+
+### `NoteTitleDO` (`f_note_title` — Relational Notebook Outline)
+
+1-to-many per page (0, 1, or more headings per page), owned by `note_metadata` and populated by `NoteMetadataModule`. Stored as a dedicated relational table rather than only inside `f_note_page_metadata.titles_json` because `bitmap_md5` is computed from the binary `<TITLEBITMAP>` bytes (not present in the raw footer wire dict) and is indexed/joined directly by title crop authorization (`GET /api/oss/title/{file_id}/{bitmap_md5}`), integrity checks, and title OCR:
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `user_id` | `BigInteger` (PK) | Owner user ID. |
+| `file_id` | `BigInteger` (PK, indexed) | Numeric VFS file ID (`UserFileDO.id`). |
+| `title_index` | `Integer` (PK) | 0-based position in notebook reading order `(page_index, rect_top, rect_left)`. |
+| `page_index` | `Integer` | 0-based page the title is anchored to. |
+| `rect_left` / `rect_top` / `rect_width` / `rect_height` | `Integer` (nullable) | `<TITLERECT>` bounding box in page pixels. |
+| `level` | `Integer` | Normalized `1..4` level from `TitleMetadata.heading_level`. |
+| `style` | `String` (nullable) | Raw `<TITLESTYLE>` code for the visual background style picked on the device. |
+| `bitmap_md5` | `String` (nullable) | MD5 of the raw `<TITLEBITMAP>` bytes (`None` if the title has no bitmap). |
+
+### `NoteTitleTranscriptDO` (`f_note_title_transcript` — Title Crop OCR Cache)
+
+Owned by `transcript` and populated by `OcrModule`. Mirrors the page-level split between `f_note_page_metadata` (structure) and `f_note_page_content` (OCR text): keyed by `bitmap_md5` rather than `title_index` so transcriptions follow identical handwriting across page reorders and edits without coupling `note_metadata` to AI:
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `user_id` | `BigInteger` (PK) | Owner user ID. |
+| `file_id` | `BigInteger` (PK, indexed) | Numeric VFS file ID (`UserFileDO.id`). |
+| `bitmap_md5` | `String` (PK) | MD5 of the raw `<TITLEBITMAP>` bytes (joins to `NoteTitleDO.bitmap_md5`). |
+| `text_content` | `Text` | Single-line transcribed heading text (`""` when blank or unrenderable; omitted by `TranscriptService.get_title_transcripts()` so clients fall back to the crop image). |
+| `create_time` / `update_time` | `BigInteger` | Epoch timestamps in milliseconds. |
+
+### `SummaryTranscriptDO` (`f_summary_transcript` — Digest Handwriting OCR Cache)
+
+Owned by `transcript` (`supernote/server/db/models/summary.py`). Stores OCR transcripts for handwritten `.mark` annotations attached to Supernote Digest entries (`SummaryDO`), keeping AI transcription state decoupled from `SummaryDO` synchronization and cleaning up automatically on `SummaryDeletedEvent`:
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `user_id` | `BigInteger` (PK) | Owner user ID. |
+| `summary_id` | `BigInteger` (PK) | Numeric ID of the `SummaryDO` whose handwriting was transcribed. |
+| `handwrite_md5` | `String` | MD5 hash of the `.mark` handwriting blob used to detect stale transcripts on re-sync. |
+| `text_content` | `Text` | Extracted OCR transcript text (`""` when blank or illegible). |
+| `model_id` | `String` (nullable) | Identifier of the OCR model that produced `text_content`. |
+| `create_time` / `update_time` | `BigInteger` | Epoch timestamps in milliseconds. |
 
 ### `NotePageContentDO` (`f_note_page_content` — Page Text & Vector Cache)
 

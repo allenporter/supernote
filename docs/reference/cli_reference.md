@@ -458,6 +458,41 @@ supernote cloud socket --duration 0
 
 ---
 
+### `supernote cloud wiki` (`diagnostics`, `dry-run`)
+
+Inspect LLM Wiki citation coverage across transcribed notebooks and run read-only compile dry-runs using `supernote.client.wiki.WikiClient`.
+
+```bash
+supernote cloud wiki diagnostics [--json] [--url URL] [--api-key KEY] [-v]
+supernote cloud wiki dry-run [--file-id ID] [--start-date YYYY-MM-DD] [--offset N] [--max-pages N] [--json] [--url URL] [-v]
+```
+
+| Subcommand / Option | Default | Description |
+| :--- | :--- | :--- |
+| `diagnostics` | — | List per-notebook OCR page counts, wiki-cited page counts, average OCR characters per page, and cited wiki slugs, sorted lowest coverage first (`GET /api/extended/wiki/diagnostics`). |
+| `dry-run` | — | Run the production compile pipeline read-only on a slice of OCR pages without mutating wiki storage or cursors (`POST /api/extended/wiki/diagnostics/dry-run`; requires an interactive session login). |
+| `--file-id ID` | None | Filter `dry-run` to a single notebook file ID (from `wiki diagnostics`). |
+| `--start-date YYYY-MM-DD` | None | Start `dry-run` from pages dated on or after `YYYY-MM-DD` (can be combined with `--file-id`). |
+| `--offset N` | `0` | Number of matching pages to skip before taking the slice (`>= 0`). |
+| `--max-pages N` | `8` | Maximum OCR pages included in the dry-run slice (`1`–`20`). |
+| `--json` | `False` | Print the raw JSON response for scripting or `jq`. |
+| `-v`, `--verbose` | `False` | Enable debug logging. |
+
+**Examples:**
+
+```bash
+# Find notebooks with OCR text that are rarely or never cited by the wiki
+supernote cloud wiki diagnostics
+
+# Dry-run the production compiler on a specific notebook starting from April 2026
+supernote cloud wiki dry-run --file-id 1042 --start-date 2026-04-01 --max-pages 8
+
+# Pipe dry-run output as JSON
+supernote cloud wiki dry-run --file-id 1042 --json | jq '.ops'
+```
+
+---
+
 ### `supernote cloud seed`
 
 Populate a local development server with standard Supernote directories (`/NOTE`, `/DOCUMENT`, `/EXPORT`, `/SCREENSHOT`, `/INBOX`), sample `.note` files from `tests/testdata/`, and sample schedule task groups and tasks via `supernote.client.schedule.ScheduleClient`.

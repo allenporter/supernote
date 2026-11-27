@@ -16,6 +16,8 @@ export default {
         activePageIndex: { type: Number, default: 0 },
         zoomPercent: { type: Number, default: 100 },
         downloading: { type: Boolean, default: false },
+        canExportPdf: { type: Boolean, default: false },
+        exportingPdf: { type: Boolean, default: false },
         showSidePanel: { type: Boolean, default: false },
         isMobileSidePanelOpen: { type: Boolean, default: false },
     },
@@ -27,6 +29,7 @@ export default {
         'zoom-out',
         'reset-zoom',
         'download',
+        'export-pdf',
         'toggle-side-panel',
     ],
     /**
@@ -109,8 +112,19 @@ export default {
                 </div>
             </div>
 
-            <!-- Right: Download & Mobile Insights Toggle -->
+            <!-- Right: Export PDF, Download & Mobile Insights Toggle -->
             <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <button v-if="fileCategory === 'note' && canExportPdf" @click="$emit('export-pdf')"
+                    :disabled="exportingPdf" :aria-busy="exportingPdf" type="button"
+                    :aria-label="exportingPdf ? 'Exporting PDF…' : 'Export PDF'"
+                    :title="exportingPdf ? 'Exporting PDF…' : 'Export PDF'"
+                    class="flex items-center gap-1.5 p-2 md:px-3 md:py-1.5 bg-stone-100 hover:bg-stone-200/80 text-slate-800 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-wait">
+                    <svg aria-hidden="true" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6M9 17h4"></path>
+                    </svg>
+                    <span class="hidden md:inline">{{ exportingPdf ? 'Exporting…' : 'Export PDF' }}</span>
+                </button>
                 <button @click="$emit('download')" :disabled="downloading" type="button"
                     aria-label="Download file"
                     :title="downloading ? 'Downloading…' : 'Download'"

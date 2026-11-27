@@ -15,24 +15,18 @@ from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.summary import QuerySummaryDTO
 from supernote.server.app import create_app
-from supernote.server.components.conversion.processor import (
-    PngConversionModule,
-)
+from supernote.server.components.ai import SUMMARY_MODEL_KEY
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
-from supernote.server.components.note_metadata.processor import NoteMetadataModule
-from supernote.server.components.processor import ProcessorService
-from supernote.server.components.processor.page_hashing import PageHashingModule
-from supernote.server.components.summary import SUMMARY_SERVICE_KEY
-from supernote.server.components.summary.processor import SummaryModule
-from supernote.server.components.transcript.processor import OcrModule
-from supernote.server.config import AuthConfig, ServerConfig
-from supernote.server.db.migrations import run_migrations
-from supernote.server.keys import (
-    EVENT_BUS_KEY,
-    FILE_SERVICE_KEY,
-    SESSION_MANAGER_KEY,
-    USER_SERVICE_KEY,
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
+from supernote.server.config import (
+    AiConfig,
+    AuthConfig,
+    ModelConfig,
+    ProviderConfig,
+    ServerConfig,
 )
+from supernote.server.db.migrations import run_migrations
+from supernote.server.keys import USER_SERVICE_KEY
 from supernote.server.utils.paths import get_ai_summaries_group_id, get_summary_id
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent.parent / "fixtures"
@@ -43,7 +37,10 @@ LEGACY_USER_EMAIL = "legacy_summary@example.com"
 
 @asynccontextmanager
 async def _open_legacy_db(
-    tmp_path: Path, revision: str
+    tmp_path: Path,
+    revision: str,
+    *,
+    ai: AiConfig | None = None,
 ) -> AsyncGenerator[tuple[web.Application, int, SummaryClient, ExtendedClient]]:
     storage_dir = tmp_path / "storage"
     db_file = storage_dir / "system" / "supernote.db"
@@ -55,6 +52,7 @@ async def _open_legacy_db(
         ServerConfig(
             storage_dir=str(storage_dir),
             auth=AuthConfig(secret_key="test-secret-key-32-characters-long!!"),
+            ai=ai or AiConfig(),
             mcp_enabled=False,
             mcp_port=0,
         )
@@ -134,27 +132,24 @@ async def test_unmigrated_legacy_generated_summaries_api_query(tmp_path: Path) -
 
 async def test_migrated_legacy_generated_summaries_api_query(tmp_path: Path) -> None:
     """Verify upgrading the pre-#635 database to head migrates summaries to AI Summaries and serves all APIs cleanly."""
-    async with _open_legacy_db(tmp_path, "head") as (
+    async with _open_legacy_db(
+        tmp_path,
+        "head",
+        ai=AiConfig(
+            providers={"fake_ai": ProviderConfig()},
+            summary=ModelConfig(provider="fake_ai", model="fake-summary-v1"),
+        ),
+    ) as (
         app,
         user_id,
         summary_client,
         extended_client,
     ):
-        fake_summary_model = FakeSummaryModel()
-        processor = ProcessorService(
-            event_bus=app[EVENT_BUS_KEY],
-            session_manager=app[SESSION_MANAGER_KEY],
-            file_service=app[FILE_SERVICE_KEY],
-        )
-        processor.register_modules(
-            hashing=PageHashingModule(app[FILE_SERVICE_KEY]),
-            metadata=NoteMetadataModule(app[FILE_SERVICE_KEY]),
-            png=PngConversionModule(app[FILE_SERVICE_KEY]),
-            ocr=OcrModule(app[FILE_SERVICE_KEY], ocr_model=None),
-            summary=SummaryModule(
-                app[FILE_SERVICE_KEY], app[SUMMARY_SERVICE_KEY], fake_summary_model
-            ),
-        )
+        fake_summary_model: object = app[SUMMARY_MODEL_KEY]
+        while hasattr(fake_summary_model, "_model"):
+            fake_summary_model = fake_summary_model._model
+        assert isinstance(fake_summary_model, FakeSummaryModel)
+        processor = app[PROCESSOR_SERVICE_KEY]
         await processor.recover_missing_tasks(user_id=user_id)
         assert fake_summary_model.calls == []
 
