@@ -121,6 +121,19 @@ Owned by `transcript` and populated by `OcrModule`. Mirrors the page-level split
 | `text_content` | `Text` | Single-line transcribed heading text (`""` when blank or unrenderable; omitted by `TranscriptService.get_title_transcripts()` so clients fall back to the crop image). |
 | `create_time` / `update_time` | `BigInteger` | Epoch timestamps in milliseconds. |
 
+### `SummaryTranscriptDO` (`f_summary_transcript` — Digest Handwriting OCR Cache)
+
+Owned by `transcript` (`supernote/server/db/models/summary.py`). Stores OCR transcripts for handwritten `.mark` annotations attached to Supernote Digest entries (`SummaryDO`), keeping AI transcription state decoupled from `SummaryDO` synchronization and cleaning up automatically on `SummaryDeletedEvent`:
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `user_id` | `BigInteger` (PK) | Owner user ID. |
+| `summary_id` | `BigInteger` (PK) | Numeric ID of the `SummaryDO` whose handwriting was transcribed. |
+| `handwrite_md5` | `String` | MD5 hash of the `.mark` handwriting blob used to detect stale transcripts on re-sync. |
+| `text_content` | `Text` | Extracted OCR transcript text (`""` when blank or illegible). |
+| `model_id` | `String` (nullable) | Identifier of the OCR model that produced `text_content`. |
+| `create_time` / `update_time` | `BigInteger` | Epoch timestamps in milliseconds. |
+
 ### `NotePageContentDO` (`f_note_page_content` — Page Text & Vector Cache)
 
 Stores per-page change hashes, extracted OCR text, and vector embeddings:

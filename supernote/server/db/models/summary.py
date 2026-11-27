@@ -1,10 +1,13 @@
-"""ORM models (`SummaryDO` and `SummaryTagDO`) for AI and handwritten notebook summaries.
+"""ORM models (`SummaryDO`, `SummaryTagDO`, and `SummaryTranscriptDO`) for AI and handwritten notebook summaries.
 
 `SummaryDO` (`f_summary`) represents both summary groups (`is_summary_group=True`) and
 individual summary/transcript items linked to a `UserFileDO.id`, storing Markdown text,
 structured segment metadata (`metadata_str`), and optional handwriting blob references
 (`handwrite_inner_name`). `SummaryTagDO` (`f_summary_tag`) stores user-defined tags.
-Managed by `supernote.server.components.summary.service.SummaryService`. See `supernote.guides.summary_api`.
+`SummaryTranscriptDO` (`f_summary_transcript`, owned by `transcript`) stores OCR
+transcripts for handwritten Digest `.mark` annotations keyed by `(user_id, summary_id)`.
+Managed by `supernote.server.components.summary.service.SummaryService` and
+`supernote.server.components.transcript.service.TranscriptService`. See `supernote.guides.summary_api`.
 """
 
 import time
@@ -138,3 +141,44 @@ class SummaryTagDO(Base):
         BigInteger, default=lambda: int(time.time() * 1000)
     )
     """Creation timestamp."""
+
+
+class SummaryTranscriptDO(Base):
+    """OCR transcript for a Digest summary's handwritten `.mark` annotation (`f_summary_transcript`).
+
+    Keyed by `(user_id, summary_id)` and owned by the `transcript` component.
+    Stores `handwrite_md5` alongside `text_content` so callers can detect stale
+    transcripts when a summary's handwriting blob changes without coupling
+    `SummaryDO` synchronization to AI OCR state.
+    """
+
+    __tablename__ = "f_summary_transcript"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
+    """Owner user ID."""
+
+    summary_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False
+    )
+    """Numeric ID of the `SummaryDO` whose handwriting was transcribed."""
+
+    handwrite_md5: Mapped[str] = mapped_column(String, nullable=False)
+    """MD5 hash of the `.mark` handwriting blob that produced `text_content`."""
+
+    text_content: Mapped[str] = mapped_column(Text, nullable=False)
+    """Extracted OCR transcript text (empty string if blank or illegible)."""
+
+    model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Identifier of the OCR model that produced `text_content`."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp in milliseconds."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp in milliseconds."""
