@@ -38,7 +38,13 @@ Setting `SUPERNOTE_WIKI_ENABLED=true` (or `wiki.enabled: true`) turns on the **W
 
 ### Backfill existing notebooks
 
-When you first turn the wiki on, open the **Wiki** tab (`#/wiki`) and click **Build Wiki from Existing Notebooks** (or **Backfill Notebooks** in the header) to compile older OCR'd notebooks. Each click processes the next 5 notebooks newest-first so you can build up your wiki in controlled batches.
+When you first turn the wiki on, open the **Wiki** tab (`#/wiki`) and start a backfill to compile your older OCR'd notebooks. Backfill runs on the server in chronological order by page date, working through small windows of pages (8 pages per turn by default) so multi-month journals and evolving projects build up in the order you wrote them. You can leave the tab or reload while it runs, pause it at any time, or use **Reset & Rebuild** to replay your notebooks from the beginning after changing models or prompts.
+
+### Inspect coverage and debug compile quality
+
+If a notebook did not produce the wiki pages you expected, open the **Diagnostics** panel in the Wiki header. It lists your transcribed notebooks with the lowest citation coverage first, alongside each notebook's average OCR character count so you can tell right away whether handwriting recognition was sparse or whether the compiler skipped the notebook.
+
+Click **Dry-Run** on any notebook (or pick a start date and page offset) to run the exact production compile pipeline read-only without saving anything. The inspector summarizes what happened in plain English and lets you expand the full OCR text sent to the AI as well as the Markdown draft the AI would write, plus any updates or citations the server would skip. You can run the same checks from the terminal with `supernote cloud wiki diagnostics` and `supernote cloud wiki dry-run`; see the [CLI Reference](../reference/cli_reference.md#supernote-cloud-wiki-diagnostics-dry-run) for flags.
 
 ### Browse, edit, and triage lint issues
 

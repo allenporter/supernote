@@ -299,6 +299,7 @@ wiki:
   auto_compile: true
   debounce_seconds: 15.0
   max_pages_per_batch: 5
+  max_source_pages_per_turn: 8
   daily_token_budget: 200000
 ```
 
@@ -308,6 +309,7 @@ wiki:
 | `wiki.auto_compile` | — | `bool` | `true` | Automatically runs incremental wiki compilation in the background when notebook or task domain events arrive. Set to `false` for manual or MCP-only updates. |
 | `wiki.debounce_seconds` | — | `float` | `15.0` | Per-user debounce window (seconds) coalescing multi-page sync bursts (`>= 0`). |
 | `wiki.max_pages_per_batch` | — | `int` | `5` | Maximum wiki pages modified per single compilation turn (`>= 1`). |
+| `wiki.max_source_pages_per_turn` | — | `int` | `8` | Maximum OCR notebook pages sent to the LLM in a single backfill turn (`>= 1`). |
 | `wiki.daily_token_budget` | — | `int` | `200000` | Per-user UTC daily LLM token cap across compile and lint passes (`>= 0`). |
 | `wiki.lint_event_threshold` | — | `int` | `10` | Minimum compiled events before triggering a thresholded LLM semantic lint pass (`>= 1`). |
 | `wiki.lint_interval_days` | — | `int` | `7` | Maximum days between thresholded LLM semantic lint passes when dirty (`>= 1`). |
