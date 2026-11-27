@@ -3,13 +3,14 @@
 This module implements the `supernote cloud` command group, including authentication (`login`,
 `sms-login`, `register`), file operations (`ls`, `mkdir`, `upload`, `download`, `rm`, `mv`, `cp`,
 `info`, `recycle`), server-side conversions (`png`, `pdf`), search and AI insights (`search`,
-`transcript`, `summary`), schedule tasks (`schedule`), and real-time event streaming (`listen`,
+`transcript`, `summary`, `wiki`), schedule tasks (`schedule`), and real-time event streaming (`listen`,
 `ping-socket`) via `supernote.client`. See `supernote.cli` and `supernote.guides.cli_reference`.
 """
 
 import argparse
 import asyncio
 import getpass
+import json
 import logging
 import os
 import sys
@@ -27,6 +28,7 @@ from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.client.exceptions import SmsVerificationRequired, SupernoteException
 from supernote.client.schedule import ScheduleClient
 from supernote.client.socket import SupernoteSocketClient
+from supernote.client.wiki import WikiClient
 from supernote.models.extended import WebSummaryListVO
 from supernote.models.socket import SocketHandshakeParams
 from supernote.server.socket_auth import compute_handshake_signature
@@ -769,6 +771,125 @@ def subcommand_cloud_keys_revoke(args: argparse.Namespace) -> None:
     _run_cloud(args, async_cloud_keys_revoke(args.key_id, verbose=args.verbose))
 
 
+async def async_cloud_wiki_diagnostics(
+    as_json: bool = False, verbose: bool = False
+) -> None:
+    """Show per-notebook OCR vs. wiki citation coverage."""
+    setup_logging(verbose)
+    try:
+        async with create_session() as sn:
+            notebooks = await WikiClient(sn.client).get_diagnostics()
+            if as_json:
+                print(json.dumps([nb.to_dict() for nb in notebooks], indent=2))
+                return
+            if not notebooks:
+                print("No transcribed notebooks found.")
+                return
+            print(
+                f"{'File ID':<10}  {'Cited/OCR':>9}  {'Pct':>4}  {'Avg Chars':>9}  {'Notebook':<30}  Cited Wiki Pages"
+            )
+            print("-" * 92)
+            for nb in notebooks:
+                pct = round((nb.cited_pages / max(1, nb.ocr_pages)) * 100)
+                ratio = f"{nb.cited_pages}/{nb.ocr_pages}"
+                slugs = ", ".join(nb.cited_slugs[:5])
+                if len(nb.cited_slugs) > 5:
+                    slugs += f" (+{len(nb.cited_slugs) - 5} more)"
+                print(
+                    f"{nb.file_id:<10}  {ratio:>9}  {pct:>3}%  {nb.avg_chars_per_page:>9}  {nb.file_name:<30}  {slugs or '-'}"
+                )
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+
+
+async def async_cloud_wiki_dry_run(
+    file_id: int | None = None,
+    start_date: str | None = None,
+    offset_pages: int = 0,
+    max_pages: int = 8,
+    as_json: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Run the production wiki compile pipeline read-only on a page slice."""
+    setup_logging(verbose)
+    try:
+        async with create_session() as sn:
+            report = await WikiClient(sn.client).dry_run_compile(
+                file_id=file_id,
+                start_date=start_date,
+                offset_pages=offset_pages,
+                max_pages=max_pages,
+            )
+            if as_json:
+                print(json.dumps(report.to_dict(), indent=2))
+                return
+            print(
+                f"Dry-run compile: {len(report.pages_sent)} page(s) sent, "
+                f"{len(report.candidate_slugs)} candidate wiki page(s), "
+                f"{len(report.ops)} op(s), "
+                f"{report.lint_proposals_count} lint proposal(s) "
+                f"({report.elapsed_ms} ms)"
+            )
+            if report.pages_sent:
+                print("\nPages sent:")
+                for page in report.pages_sent:
+                    snippet = " ".join(page.snippet.split())
+                    print(
+                        f"  [{page.source_id or '?'}] {page.page_date or 'undated':<10} "
+                        f"{page.file_path} p.{page.page_index} ({page.chars} chars) — {snippet}"
+                    )
+            else:
+                print("\nNo matching OCR pages found for the selected slice.")
+            if report.candidate_slugs:
+                print(f"\nCandidate wiki pages: {', '.join(report.candidate_slugs)}")
+            if report.ops:
+                print("\nPlanned ops:")
+                for op in report.ops:
+                    status = f"DROP:{op.drop_reason}" if op.drop_reason else "KEEP"
+                    print(
+                        f"  [{status}] {op.slug} ({op.page_kind}) — {op.title} ({op.body_chars} chars)"
+                    )
+                    if op.summary:
+                        print(f"      summary: {op.summary}")
+                    if op.resolved_source_keys:
+                        print(
+                            f"      resolved refs: {', '.join(op.resolved_source_keys)}"
+                        )
+                    if op.dropped_source_keys:
+                        print(
+                            f"      dropped refs:  {', '.join(op.dropped_source_keys)}"
+                        )
+            elif report.pages_sent:
+                print("\nPlanned ops: (none — LLM returned 0 page_ops)")
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+
+
+def subcommand_cloud_wiki_diagnostics(args: argparse.Namespace) -> None:
+    """Handler for cloud wiki diagnostics subcommand."""
+    _run_cloud(
+        args,
+        async_cloud_wiki_diagnostics(as_json=args.json, verbose=args.verbose),
+    )
+
+
+def subcommand_cloud_wiki_dry_run(args: argparse.Namespace) -> None:
+    """Handler for cloud wiki dry-run subcommand."""
+    _run_cloud(
+        args,
+        async_cloud_wiki_dry_run(
+            file_id=args.file_id,
+            start_date=args.start_date,
+            offset_pages=args.offset,
+            max_pages=args.max_pages,
+            as_json=args.json,
+            verbose=args.verbose,
+        ),
+    )
+
+
 async def async_cloud_seed(
     url: str = "http://127.0.0.1:8080",
     email: str = "debug@example.com",
@@ -1169,3 +1290,61 @@ def add_parser(subparsers: Any) -> None:
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     parser_socket.set_defaults(func=subcommand_cloud_socket)
+
+    # 'cloud wiki' subcommand group
+    parser_wiki = cloud_subparsers.add_parser(
+        "wiki",
+        help="Inspect LLM wiki coverage and dry-run compile slices",
+        parents=[auth_subparser],
+    )
+    wiki_subparsers = parser_wiki.add_subparsers(dest="wiki_command", required=True)
+
+    parser_wiki_diag = wiki_subparsers.add_parser(
+        "diagnostics",
+        help="Show per-notebook OCR vs. wiki citation coverage",
+        parents=[auth_subparser],
+    )
+    parser_wiki_diag.add_argument(
+        "--json", action="store_true", help="Output raw JSON payload"
+    )
+    parser_wiki_diag.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_wiki_diag.set_defaults(func=subcommand_cloud_wiki_diagnostics)
+
+    parser_wiki_dry_run = wiki_subparsers.add_parser(
+        "dry-run",
+        help="Run the production wiki compile pipeline read-only on a page slice",
+        parents=[url_subparser],
+    )
+    parser_wiki_dry_run.add_argument(
+        "--file-id",
+        type=int,
+        default=None,
+        help="Filter to a single notebook file ID (from 'wiki diagnostics')",
+    )
+    parser_wiki_dry_run.add_argument(
+        "--start-date",
+        type=str,
+        default=None,
+        help="Start from pages on or after YYYY-MM-DD",
+    )
+    parser_wiki_dry_run.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Number of matching pages to skip (default: 0)",
+    )
+    parser_wiki_dry_run.add_argument(
+        "--max-pages",
+        type=int,
+        default=8,
+        help="Maximum pages to include in the slice (1-20, default: 8)",
+    )
+    parser_wiki_dry_run.add_argument(
+        "--json", action="store_true", help="Output raw JSON payload"
+    )
+    parser_wiki_dry_run.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_wiki_dry_run.set_defaults(func=subcommand_cloud_wiki_dry_run)
