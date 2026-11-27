@@ -43,6 +43,7 @@ from supernote.server.db.models.note_processing import (
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
 from supernote.server.services.file import FileService
+from supernote.server.services.vocabulary import notebook_terms
 from supernote.server.utils.image import is_image_filename
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
@@ -293,11 +294,11 @@ class OcrModule(ProcessorModule):
                 if page_meta is not None:
                     page_metadata.page_style = page_meta.page_style
                     page_metadata.keywords = page_meta.keyword_texts
-                prompt = (
-                    format_image_ocr_prompt(page_metadata)
-                    if is_image_filename(file_name)
-                    else format_ocr_prompt(page_metadata)
-                )
+                if is_image_filename(file_name):
+                    prompt = format_image_ocr_prompt(page_metadata)
+                else:
+                    vocabulary = await notebook_terms(session, user_id, file_id)
+                    prompt = format_ocr_prompt(page_metadata, vocabulary=vocabulary)
 
         if title_only:
             await self._transcribe_page_titles(

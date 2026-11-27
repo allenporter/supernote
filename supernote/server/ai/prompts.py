@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,15 @@ __all__ = [
     "get_summary_json_schema",
     "parse_summary_response",
 ]
+
+# The writer's own spellings, from keywords marked on the device: the first
+# sentence gives the model names it has no prior for, and the second stops the
+# list from becoming a source of inserted words.
+_VOCABULARY_CLAUSE = (
+    "These names and terms may appear in the text: {terms}. "
+    "If a handwritten word closely matches one of them, prefer that spelling. "
+    "Never insert one of these terms where the handwriting does not support it."
+)
 
 _CODE_FENCE = re.compile(r"^```[a-zA-Z]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
 
@@ -102,9 +112,13 @@ def format_ocr_prompt(
     page_metadata: PageMetadata,
     *,
     custom_type: str | None = None,
+    vocabulary: Sequence[str] = (),
     prompt_loader: PromptLoader = PROMPT_LOADER,
 ) -> str:
-    """Format the full OCR prompt including page metadata header and template."""
+    """Format the full OCR prompt including page metadata header and template.
+
+    `vocabulary` lists spellings the writer uses, nearest scope first.
+    """
     if custom_type is not None:
         resolved_custom_type: str | None = custom_type
     elif prompt_loader.has_custom_prompt(
@@ -129,7 +143,12 @@ def format_ocr_prompt(
         keywords=page_metadata.keywords,
         include_section_divider=True,
     )
-    return f"{metadata_block}\n\n{prompt}"
+    on_page = {keyword.casefold() for keyword in page_metadata.keywords}
+    terms = [term for term in vocabulary if term.casefold() not in on_page]
+    if not terms:
+        return f"{metadata_block}\n\n{prompt}"
+    clause = _VOCABULARY_CLAUSE.format(terms=", ".join(terms))
+    return f"{metadata_block}\n\n{prompt}\n\n{clause}"
 
 
 def format_image_ocr_prompt(
