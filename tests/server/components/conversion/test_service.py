@@ -8,13 +8,19 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from supernote.models.summary import SummaryItem
+from supernote.models.summary import (
+    AddSummaryDTO,
+    AddSummaryGroupDTO,
+    SummaryItem,
+    UpdateSummaryDTO,
+)
 from supernote.server.components.conversion import (
     CONVERSION_SERVICE_KEY,
     ConversionService,
     ConvertedBlob,
 )
 from supernote.server.components.conversion.service import _clean_markdown_for_pdf_text
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
@@ -24,9 +30,13 @@ from supernote.server.db.models.note_processing import (
     NoteTitleTranscriptDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import SummaryDeletedEvent, SummaryUpdatedEvent
 from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
-from supernote.server.utils.paths import get_conversion_pdf_path
+from supernote.server.utils.paths import (
+    get_conversion_pdf_path,
+    get_summary_handwriting_prefix,
+)
 from tests.server.components.conftest import LoadComponents
 
 
@@ -614,3 +624,223 @@ async def test_convert_note_to_pdf_handles_missing_title_transcript_table(
                 )
             )
             await session.commit()
+
+
+async def test_summary_updated_event_cleans_stale_renders(
+    conversion_service: ConversionService,
+    component_core: ServerCore,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+) -> None:
+    """Updating a summary removes stale handwrite_md5 renders while preserving current and unrelated ones."""
+    summary_id = 7101
+    # Use prefix-overlapping MD5s ("hwmd5" vs "hwmd5_v2") to verify exact prefix matching.
+    old_prefix = get_summary_handwriting_prefix(test_user_id, summary_id, "hwmd5_v2")
+    new_prefix = get_summary_handwriting_prefix(test_user_id, summary_id, "hwmd5")
+    sibling_summary_prefix = get_summary_handwriting_prefix(
+        test_user_id, 71010, "hwmd5_v2"
+    )
+    other_user_prefix = get_summary_handwriting_prefix(
+        test_user_id + 1, summary_id, "hwmd5_v2"
+    )
+
+    old_pdf = f"{old_prefix}.pdf"
+    old_png = f"{old_prefix}_page_0.png"
+    new_pdf = f"{new_prefix}.pdf"
+    new_png = f"{new_prefix}_page_0.png"
+    sibling_pdf = f"{sibling_summary_prefix}.pdf"
+    other_user_pdf = f"{other_user_prefix}.pdf"
+
+    for key in (old_pdf, old_png, new_pdf, new_png, sibling_pdf, other_user_pdf):
+        await blob_storage.put(CACHE_BUCKET, key, b"render")
+
+    await component_core.event_bus.publish(
+        SummaryUpdatedEvent(
+            user_id=test_user_id,
+            summary=SummaryItem(
+                id=summary_id,
+                handwrite_inner_name="digest.mark",
+                handwrite_md5="hwmd5",
+            ),
+        )
+    )
+    await component_core.event_bus.wait_idle()
+
+    assert await blob_storage.exists(CACHE_BUCKET, old_pdf) is False
+    assert await blob_storage.exists(CACHE_BUCKET, old_png) is False
+    assert await blob_storage.exists(CACHE_BUCKET, new_pdf) is True
+    assert await blob_storage.exists(CACHE_BUCKET, new_png) is True
+    assert await blob_storage.exists(CACHE_BUCKET, sibling_pdf) is True
+    assert await blob_storage.exists(CACHE_BUCKET, other_user_pdf) is True
+
+
+@pytest.mark.parametrize(
+    ("handwrite_inner_name", "handwrite_md5"),
+    [
+        (None, None),
+        ("digest.mark", None),
+        ("digest.mark", "../escape"),
+    ],
+)
+async def test_summary_updated_event_without_valid_handwriting_cleans_all_renders(
+    conversion_service: ConversionService,
+    component_core: ServerCore,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+    handwrite_inner_name: str | None,
+    handwrite_md5: str | None,
+) -> None:
+    """Clearing or invalidating handwriting metadata removes all cached renders for that summary."""
+    summary_id = 7103
+    prefix = get_summary_handwriting_prefix(test_user_id, summary_id, "hwmd5")
+    sibling_prefix = get_summary_handwriting_prefix(test_user_id, 71030, "hwmd5")
+    for key in (f"{prefix}.pdf", f"{prefix}_page_0.png", f"{sibling_prefix}.pdf"):
+        await blob_storage.put(CACHE_BUCKET, key, b"render")
+
+    await component_core.event_bus.publish(
+        SummaryUpdatedEvent(
+            user_id=test_user_id,
+            summary=SummaryItem(
+                id=summary_id,
+                handwrite_inner_name=handwrite_inner_name,
+                handwrite_md5=handwrite_md5,
+            ),
+        )
+    )
+    await component_core.event_bus.wait_idle()
+
+    assert await blob_storage.exists(CACHE_BUCKET, f"{prefix}.pdf") is False
+    assert await blob_storage.exists(CACHE_BUCKET, f"{prefix}_page_0.png") is False
+    assert await blob_storage.exists(CACHE_BUCKET, f"{sibling_prefix}.pdf") is True
+
+
+async def test_summary_deleted_event_cleans_all_renders(
+    conversion_service: ConversionService,
+    component_core: ServerCore,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+) -> None:
+    """Deleting a summary removes all cached renders for that summary only."""
+    summary_id = 7102
+    v1_prefix = get_summary_handwriting_prefix(test_user_id, summary_id, "md5_v1")
+    v2_prefix = get_summary_handwriting_prefix(test_user_id, summary_id, "md5_v2")
+    other_prefix = get_summary_handwriting_prefix(test_user_id, 71020, "md5_v1")
+
+    for key in (
+        f"{v1_prefix}.pdf",
+        f"{v1_prefix}_page_0.png",
+        f"{v2_prefix}.pdf",
+        f"{other_prefix}.pdf",
+    ):
+        await blob_storage.put(CACHE_BUCKET, key, b"render")
+
+    await component_core.event_bus.publish(
+        SummaryDeletedEvent(user_id=test_user_id, summary_id=summary_id)
+    )
+    await component_core.event_bus.wait_idle()
+
+    assert await blob_storage.exists(CACHE_BUCKET, f"{v1_prefix}.pdf") is False
+    assert await blob_storage.exists(CACHE_BUCKET, f"{v1_prefix}_page_0.png") is False
+    assert await blob_storage.exists(CACHE_BUCKET, f"{v2_prefix}.pdf") is False
+    assert await blob_storage.exists(CACHE_BUCKET, f"{other_prefix}.pdf") is True
+
+
+@pytest.fixture
+async def rendered_summary_fixture(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    blob_storage: BlobStorage,
+    create_test_user: None,
+    test_data_dir: Path,
+) -> tuple[int, int, str, str]:
+    """Create a group and summary with rendered PDF and PNG cached in CACHE_BUCKET."""
+    await load_components("conversion", "summary", "web_ui", start=False)
+    conversion_service = component_core.app[CONVERSION_SERVICE_KEY]
+    summary_service = component_core.app[SUMMARY_SERVICE_KEY]
+    user_email = "test@example.com"
+    mark_bytes = (test_data_dir / DIGEST_MARK).read_bytes()
+    await blob_storage.put(USER_DATA_BUCKET, "hw_v1.mark", mark_bytes)
+    await blob_storage.put(USER_DATA_BUCKET, "hw_v2.mark", mark_bytes)
+
+    group = await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier="grp-cache-1", name="Digest Group", md5_hash="grp-md5"
+        ),
+    )
+    summary = await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            unique_identifier="sum-cache-1",
+            parent_unique_identifier="grp-cache-1",
+            content="Digest v1",
+            handwrite_inner_name="hw_v1.mark",
+            handwrite_md5="md5_v1",
+        ),
+    )
+    assert group.id is not None and summary.id is not None
+
+    await conversion_service.convert_summary_to_pdf(user_email, summary)
+    await conversion_service.convert_summary_to_png(user_email, summary)
+    pdf_blob = await conversion_service.get_summary_pdf(user_email, summary)
+    png_blob = await conversion_service.get_summary_png_page(user_email, summary, 0)
+    assert pdf_blob is not None and png_blob is not None
+    return group.id, summary.id, pdf_blob.storage_key, png_blob.storage_key
+
+
+async def test_summary_text_update_preserves_cached_handwriting_renders(
+    component_core: ServerCore,
+    blob_storage: BlobStorage,
+    rendered_summary_fixture: tuple[int, int, str, str],
+) -> None:
+    """Editing summary text without changing handwrite_md5 preserves cached renders."""
+    _, summary_id, pdf_key, png_key = rendered_summary_fixture
+    summary_service = component_core.app[SUMMARY_SERVICE_KEY]
+
+    await summary_service.update_summary(
+        "test@example.com",
+        UpdateSummaryDTO(id=summary_id, content="Digest v1 edited"),
+    )
+    await component_core.event_bus.wait_idle()
+
+    assert await blob_storage.exists(CACHE_BUCKET, pdf_key) is True
+    assert await blob_storage.exists(CACHE_BUCKET, png_key) is True
+
+
+async def test_summary_handwriting_update_removes_stale_cached_renders(
+    component_core: ServerCore,
+    blob_storage: BlobStorage,
+    rendered_summary_fixture: tuple[int, int, str, str],
+) -> None:
+    """Updating a summary's handwrite_md5 deletes prior cached renders."""
+    _, summary_id, pdf_key, png_key = rendered_summary_fixture
+    summary_service = component_core.app[SUMMARY_SERVICE_KEY]
+
+    await summary_service.update_summary(
+        "test@example.com",
+        UpdateSummaryDTO(
+            id=summary_id,
+            handwrite_inner_name="hw_v2.mark",
+            handwrite_md5="md5_v2",
+        ),
+    )
+    await component_core.event_bus.wait_idle()
+
+    assert await blob_storage.exists(CACHE_BUCKET, pdf_key) is False
+    assert await blob_storage.exists(CACHE_BUCKET, png_key) is False
+
+
+async def test_summary_group_delete_cascades_cached_render_cleanup(
+    component_core: ServerCore,
+    blob_storage: BlobStorage,
+    rendered_summary_fixture: tuple[int, int, str, str],
+) -> None:
+    """Deleting a summary group cascades cache cleanup to its child summaries' renders."""
+    group_id, _, pdf_key, png_key = rendered_summary_fixture
+    summary_service = component_core.app[SUMMARY_SERVICE_KEY]
+
+    await summary_service.delete_group("test@example.com", group_id)
+    await component_core.event_bus.wait_idle()
+
+    assert await blob_storage.exists(CACHE_BUCKET, pdf_key) is False
+    assert await blob_storage.exists(CACHE_BUCKET, png_key) is False

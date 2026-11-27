@@ -48,6 +48,7 @@ class ConversionComponent:
             blob_storage=core.blob_storage,
             user_service=core.user_service,
             processor_service=core.app[PROCESSOR_SERVICE_KEY],
+            event_bus=core.event_bus,
             notebook_preview=cfg.notebook_preview,
         )
 
