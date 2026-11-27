@@ -10,6 +10,7 @@ import logging
 
 from aiohttp import web
 
+from supernote.models.base import create_error_response
 from supernote.models.extended import (
     SearchResultVO,
     WebSearchRequestDTO,
@@ -38,13 +39,15 @@ async def handle_extended_search(request: web.Request) -> web.Response:
     try:
         req_dto = await parse_json_dto(request, WebSearchRequestDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     search_service: SearchService = request.app[SEARCH_SERVICE_KEY]
 
     if not (user_id := await user_service.get_user_id(user_email)):
-        return web.json_response({"error": "User not found"}, status=404)
+        return web.json_response(
+            create_error_response("User not found").to_dict(), status=404
+        )
 
     try:
         results = await search_service.search_chunks(

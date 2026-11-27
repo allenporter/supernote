@@ -46,7 +46,7 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
     try:
         req_dto = await parse_json_dto(request, WebNoteMetadataRequestDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     metadata_service: NoteMetadataService = request.app[NOTE_METADATA_SERVICE_KEY]
@@ -54,7 +54,9 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
     try:
         user_id = await user_service.get_user_id(user_email)
     except ValueError:
-        return web.json_response({"error": "User not found"}, status=404)
+        return web.json_response(
+            create_error_response("User not found").to_dict(), status=404
+        )
 
     try:
         metadata_vo: (
@@ -69,7 +71,9 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
 
     if metadata_vo is None:
         return web.json_response(
-            {"error": f"No metadata found for notebook {req_dto.file_id}"},
+            create_error_response(
+                f"No metadata found for notebook {req_dto.file_id}"
+            ).to_dict(),
             status=404,
         )
 

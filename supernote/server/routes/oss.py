@@ -116,7 +116,9 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
         )
         return web.json_response(response.to_dict())
 
-    return web.Response(status=400, text="No file field found")
+    return web.json_response(
+        create_error_response("No file field found", "E400").to_dict(), status=400
+    )
 
 
 @routes.put("/api/oss/upload/part")
@@ -224,7 +226,9 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
         )
         return web.json_response(resp_vo.to_dict())
 
-    return web.Response(status=400, text="No file field")
+    return web.json_response(
+        create_error_response("No file field", "E400").to_dict(), status=400
+    )
 
 
 _SAFE_INLINE_MIME_TYPES = frozenset(
