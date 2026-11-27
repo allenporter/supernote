@@ -112,7 +112,7 @@ Slugs use a bounded, plural-prefixed namespace:
   - `edit_policy`: compiler-created pages default to `"auto"`; any manual Web UI or MCP `upsert_wiki_page` edit flips the page to `"protected_prose"`, restricting the compiler to structured citations, an automated-notes appendix, or `f_wiki_lint_issue` proposals; `"locked"` blocks all compiler writes.
 - **Handwriting OCR entity hygiene:** Minor unambiguous alias matches resolve via `f_wiki_alias`; ambiguous potential duplicates (e.g., OCR typo `Al1ce` vs `Alice`) are **never** silently auto-merged—they emit an `alias_merge_proposal` row in `f_wiki_lint_issue` for explicit human/agent approval.
 - **Cost-controlled backfill & two-tier lint:**
-  - *Backfill:* Opt-in (`POST /api/extended/wiki/compile` with `mode="backfill"`), newest-first in small chunks, checkpointed in `f_wiki_checkpoint.backfill_file_cursor`, bounded by `daily_token_budget`.
+  - *Backfill:* Opt-in (`POST /api/extended/wiki/compile` with `mode="backfill"` or continuous background `mode="backfill_start"` / `"backfill_stop"` / `"backfill_reset"`), ordered chronologically by `page_date` in bounded page windows (`max_source_pages_per_turn`), checkpointed in `f_wiki_checkpoint.backfill_page_cursor`, bounded by `daily_token_budget`.
   - *Lint Tier A (Zero-LLM SQL, runs free after every compile):* Upserts broken links, orphan pages, deleted source refs, and fuzzy alias candidates idempotently into `f_wiki_lint_issue` by `(user_id, dedup_key)`.
   - *Lint Tier B (Bounded Sleep-Time LLM):* Runs only when `pending_events_since_lint >= lint_event_threshold` or `lint_interval_days` elapses and daily token budget remains.
 
@@ -138,7 +138,9 @@ Mounted under `/api/extended/wiki/*` (protected by `jwt_auth_middleware` with au
 - `GET /api/extended/wiki/revisions/{slug:.+}` — list immutable revision history
 - `GET /api/extended/wiki/search` — pure-ORM hybrid search + 1-hop links + grounded snippets
 - `GET /api/extended/wiki/status` — checkpoint cursor, budget usage, lint counts
-- `POST /api/extended/wiki/compile` — trigger `mode: "incremental" | "backfill" | "lint"`
+- `POST /api/extended/wiki/compile` — trigger `mode: "incremental" | "backfill" | "backfill_start" | "backfill_stop" | "backfill_reset" | "lint"`
+- `GET /api/extended/wiki/diagnostics` — per-notebook OCR vs. wiki citation coverage
+- `POST /api/extended/wiki/diagnostics/dry-run` — read-only compile dry-run on a notebook or `start_date` page slice
 - `GET /api/extended/wiki/lint` & `POST /api/extended/wiki/lint/{issue_id}/resolve` — inspect and resolve/dismiss lint proposals
 - `GET /api/extended/wiki/export.zip` & `GET /api/extended/wiki/export/{slug:.+}.md` — streaming Obsidian vault / single-page Markdown export
 
