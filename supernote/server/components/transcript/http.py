@@ -53,8 +53,15 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
             start_index=req_dto.start_index,
             end_index=req_dto.end_index,
         )
+        title_transcripts = await transcript_service.get_title_transcripts(
+            user_id=user_id,
+            file_id=req_dto.file_id,
+        )
 
-        if not page_transcripts:
+        has_page_range = (
+            req_dto.start_index is not None or req_dto.end_index is not None
+        )
+        if not page_transcripts and (has_page_range or not title_transcripts):
             return web.json_response(
                 {"error": f"No transcript found for notebook {req_dto.file_id}"},
                 status=404,
@@ -70,7 +77,12 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
             for p in page_transcripts
         ]
 
-        return web.json_response(WebTranscriptResponseVO(pages=vo_pages).to_dict())
+        return web.json_response(
+            WebTranscriptResponseVO(
+                pages=vo_pages,
+                titles=title_transcripts,
+            ).to_dict()
+        )
     except Exception as err:
         logger.exception("Error fetching notebook transcript")
         return SupernoteError.uncaught(err).to_response()

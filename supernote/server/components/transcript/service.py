@@ -21,9 +21,14 @@ import logging
 
 from aiohttp import web
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NoteTitleDO,
+    NoteTitleTranscriptDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.utils.note_content import (
     format_page_metadata,
@@ -191,6 +196,55 @@ class TranscriptService:
                 )
             )
         return results
+
+    async def get_title_transcripts(
+        self,
+        user_id: int,
+        file_id: int,
+    ) -> dict[str, str]:
+        """Retrieve transcribed title text keyed by `bitmap_md5` for an active notebook."""
+        async with self.session_manager.session() as session:
+            file_do = (
+                await session.execute(
+                    select(UserFileDO.id).where(
+                        UserFileDO.id == file_id,
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.is_active == "Y",
+                    )
+                )
+            ).scalar_one_or_none()
+            if file_do is None:
+                return {}
+
+            try:
+                rows = (
+                    await session.execute(
+                        select(
+                            NoteTitleTranscriptDO.bitmap_md5,
+                            NoteTitleTranscriptDO.text_content,
+                        )
+                        .join(
+                            NoteTitleDO,
+                            (NoteTitleDO.user_id == NoteTitleTranscriptDO.user_id)
+                            & (NoteTitleDO.file_id == NoteTitleTranscriptDO.file_id)
+                            & (
+                                NoteTitleDO.bitmap_md5
+                                == NoteTitleTranscriptDO.bitmap_md5
+                            ),
+                        )
+                        .where(
+                            NoteTitleTranscriptDO.user_id == user_id,
+                            NoteTitleTranscriptDO.file_id == file_id,
+                        )
+                    )
+                ).all()
+            except OperationalError as err:
+                # Preserve read compatibility with unmigrated legacy databases
+                # opened before `d0e1f2a3b4c5` (see legacy DB integration tests).
+                if "no such table" in str(err).lower():
+                    return {}
+                raise
+        return {md5: text for md5, text in rows if text}
 
 
 TRANSCRIPT_SERVICE_KEY: web.AppKey[TranscriptService] = web.AppKey("transcript_service")

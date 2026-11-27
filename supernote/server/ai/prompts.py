@@ -25,6 +25,7 @@ __all__ = [
     "format_image_ocr_prompt",
     "format_ocr_prompt",
     "format_summary_prompt",
+    "format_title_ocr_prompt",
     "get_summary_json_schema",
     "parse_summary_response",
 ]
@@ -143,6 +144,21 @@ def format_image_ocr_prompt(
     )
     header = f"Image Filename: {page_metadata.file_name or 'image'}"
     return f"{header}\n\n{prompt}"
+
+
+def format_title_ocr_prompt(
+    file_name: str | None = None,
+    *,
+    custom_type: str | None = None,
+    prompt_loader: PromptLoader = PROMPT_LOADER,
+) -> str:
+    """Format the single-line transcription prompt for a cropped notebook title bitmap."""
+    prompt = prompt_loader.get_prompt(
+        PromptId.TITLE_TRANSCRIPTION, custom_type=custom_type
+    )
+    if file_name:
+        return f"Notebook Filename: {file_name}\n\n{prompt}"
+    return prompt
 
 
 def format_summary_prompt(

@@ -357,7 +357,6 @@ interface TranscriptPage {
 interface NoteTitle {
     pageIndex: number;
     level: number;
-    text: string | null;
     style: string | null;
     rect: [number, number, number, number] | null;
     bitmapMd5: string | null;

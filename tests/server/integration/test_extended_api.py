@@ -26,7 +26,6 @@ from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
     NotePageMetadataDO,
-    NoteTitleDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -1039,11 +1038,6 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
 
     metadata = NoteMetadataModule(file_service=file_service)
     assert await metadata.run(file_id, session_manager, user_id=test_user_id) is True
-    async with session_manager.session() as session:
-        first = await session.get(NoteTitleDO, (test_user_id, file_id, 0))
-        assert first is not None
-        first.text_content = "Black"
-        await session.commit()
 
     resp = await client.post(
         "/api/extended/file/note/metadata",
@@ -1067,7 +1061,6 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
         {
             "pageIndex": 1,
             "level": 1,
-            "text": "Black",
             "style": "1000254",
             "bitmapMd5": "4f60eac0ba701b4983269a55649430ad",
             "rect": [500, 329, 356, 148],
@@ -1075,7 +1068,6 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
         {
             "pageIndex": 1,
             "level": 2,
-            "text": None,
             "style": "1157254",
             "bitmapMd5": "b094a9f71c442cf2a0544d737603b0dc",
             "rect": [480, 691, 582, 178],
@@ -1083,7 +1075,6 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
         {
             "pageIndex": 1,
             "level": 3,
-            "text": None,
             "style": "1201000",
             "bitmapMd5": "f14caee340e90ceab17cad156682ca9c",
             "rect": [490, 1016, 284, 125],
@@ -1091,7 +1082,6 @@ async def test_extended_note_metadata_returns_titles_in_reading_order(
         {
             "pageIndex": 1,
             "level": 4,
-            "text": None,
             "style": "1000000",
             "bitmapMd5": "63bcfe0053116378ededa5038ba7e389",
             "rect": [508, 1295, 290, 118],
