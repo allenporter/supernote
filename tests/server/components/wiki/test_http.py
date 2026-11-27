@@ -20,7 +20,11 @@ from supernote.client.exceptions import (
 )
 from supernote.client.wiki import WikiClient
 from supernote.models.user import UserRegisterDTO
-from supernote.models.wiki import WikiSourceRefDTO, WikiSourceType
+from supernote.models.wiki import (
+    WikiDryRunResponseVO,
+    WikiSourceRefDTO,
+    WikiSourceType,
+)
 from supernote.server.ai.base import AIError
 from supernote.server.components.wiki.compiler import WIKI_COMPILER_KEY
 from supernote.server.components.wiki.service import WIKI_SERVICE_KEY
@@ -329,3 +333,55 @@ async def test_wiki_http_status_reports_backfill_page_counts(
         live = await wiki_client.get_status()
         assert live.backfill_total_pages == 50
         assert live.backfill_remaining_pages == 34
+
+
+async def test_wiki_http_diagnostics_and_dry_run_validation(
+    client: TestClient,
+    wiki_client: WikiClient,
+    auth_headers: dict[str, str],
+) -> None:
+    notebooks = await wiki_client.get_diagnostics()
+    assert notebooks == []
+
+    bad_file = await client.post(
+        "/api/extended/wiki/diagnostics/dry-run",
+        headers=auth_headers,
+        json={"file_id": "not-an-int"},
+    )
+    assert bad_file.status == 400
+
+    bad_date = await client.post(
+        "/api/extended/wiki/diagnostics/dry-run",
+        headers=auth_headers,
+        json={"start_date": "not-a-date"},
+    )
+    assert bad_date.status == 400
+
+    bad_json = await client.post(
+        "/api/extended/wiki/diagnostics/dry-run",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        data="{invalid",
+    )
+    assert bad_json.status == 400
+
+    bad_max = await client.post(
+        "/api/extended/wiki/diagnostics/dry-run",
+        headers=auth_headers,
+        json={"max_pages": 50},
+    )
+    assert bad_max.status == 400
+
+    assert client.app is not None
+    compiler = client.app[WIKI_COMPILER_KEY]
+
+    with patch.object(
+        compiler,
+        "dry_run_compile",
+        return_value=WikiDryRunResponseVO(
+            candidate_slugs=["projects/demo"], lint_proposals_count=1, elapsed_ms=12
+        ),
+    ):
+        res = await wiki_client.dry_run_compile(file_id="12345", max_pages=4)
+        assert res.candidate_slugs == ["projects/demo"]
+        assert res.lint_proposals_count == 1
+        assert res.elapsed_ms == 12

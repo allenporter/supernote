@@ -8,6 +8,7 @@ from supernote.server.components.wiki.source_service import WikiSourceService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.schedule import ScheduleTaskDO
+from supernote.server.db.models.wiki import WikiPageDO, WikiSourceRefDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import DomainEventRecorded
 
@@ -392,6 +393,113 @@ async def test_list_backfill_page_window_orders_globally_by_page_date_and_sets_p
     )
     assert win3 == []
     assert cur3 is None
+
+
+async def test_get_notebook_coverage_and_list_dry_run_pages_enforce_tenant_scope(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=701,
+                    user_id=1,
+                    file_name="Daily.note",
+                    is_folder="N",
+                    is_active="Y",
+                    update_time=1700000000000,
+                ),
+                UserFileDO(
+                    id=702,
+                    user_id=1,
+                    file_name="Project.note",
+                    is_folder="N",
+                    is_active="Y",
+                    update_time=1700000000000,
+                ),
+                UserFileDO(
+                    id=703,
+                    user_id=2,
+                    file_name="Secret.note",
+                    is_folder="N",
+                    is_active="Y",
+                    update_time=1700000000000,
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=701,
+                    page_index=0,
+                    page_id="P20260110080000D1",
+                    text_content="1234567890",
+                ),
+                NotePageContentDO(
+                    file_id=701,
+                    page_index=1,
+                    page_id="P20260210080000D2",
+                    text_content="12345678901234567890",
+                ),
+                NotePageContentDO(
+                    file_id=702,
+                    page_index=0,
+                    page_id="P20260120080000P1",
+                    text_content="Project spec text",
+                ),
+                NotePageContentDO(
+                    file_id=703,
+                    page_index=0,
+                    page_id="P20260120080000S1",
+                    text_content="Other tenant note",
+                ),
+            ]
+        )
+        page = WikiPageDO(
+            user_id=1,
+            page_id=9001,
+            slug="projects/demo",
+            title="Demo",
+            page_kind="project",
+            summary="",
+            body_md="body",
+        )
+        session.add(page)
+        session.add(
+            WikiSourceRefDO(
+                user_id=1,
+                page_id=9001,
+                source_type="note_page",
+                source_key="702:P20260120080000P1",
+                file_id=702,
+            )
+        )
+        await session.commit()
+
+    svc = WikiSourceService(session_manager)
+    cov = await svc.get_notebook_coverage(1)
+    assert [c.file_name for c in cov] == ["Daily.note", "Project.note"]
+    assert cov[0].ocr_pages == 2
+    assert cov[0].cited_pages == 0
+    assert cov[0].avg_chars_per_page == 15
+    assert cov[1].ocr_pages == 1
+    assert cov[1].cited_pages == 1
+    assert cov[1].cited_slugs == ["projects/demo"]
+
+    # Dry-run by file_id with offset and by start_date; other tenant excluded.
+    by_file = await svc.list_dry_run_pages(1, file_id=701, offset_pages=1, max_pages=5)
+    assert [d["payload"]["page_id"] for d in by_file] == ["P20260210080000D2"]
+    by_date = await svc.list_dry_run_pages(1, start_date="2026-01-15", max_pages=5)
+    assert [d["payload"]["file_path"] for d in by_date] == [
+        "Project.note",
+        "Daily.note",
+    ]
+    by_file_and_date = await svc.list_dry_run_pages(
+        1, file_id=701, start_date="2026-02-01", max_pages=5
+    )
+    assert [d["payload"]["page_id"] for d in by_file_and_date] == ["P20260210080000D2"]
+    other_file = await svc.list_dry_run_pages(1, file_id=703, max_pages=5)
+    assert other_file == []
 
 
 async def test_resolve_source_metadata_returns_names_and_enforces_tenant_isolation(

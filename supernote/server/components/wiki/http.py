@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from aiohttp import web
@@ -13,6 +14,7 @@ from supernote.models.wiki import (
     WikiCompileMode,
     WikiCompileResponseVO,
     WikiDeleteResponseVO,
+    WikiDiagnosticsResponseVO,
     WikiLintIssueResponseVO,
     WikiLintListVO,
     WikiPageListVO,
@@ -47,6 +49,7 @@ from .service import WIKI_SERVICE_KEY, WikiService
 
 __all__ = [
     "WikiCompileRequestDTO",
+    "WikiDryRunRequestDTO",
     "WikiResolveLintRequestDTO",
     "WikiUpsertRequestDTO",
     "async_setup_http",
@@ -101,6 +104,26 @@ class WikiResolveLintRequestDTO(DataClassJSONMixin):
     """Optional request body for `POST /api/extended/wiki/lint/{issue_id}/resolve`."""
 
     status: str = "resolved"
+
+
+@dataclass
+class WikiDryRunRequestDTO(DataClassJSONMixin):
+    """Optional request body for `POST /api/extended/wiki/diagnostics/dry-run`."""
+
+    file_id: int | None = None
+    start_date: str | None = None
+    offset_pages: int = 0
+    max_pages: int = 8
+
+    def __post_init__(self) -> None:
+        if self.start_date is not None:
+            self.start_date = self.start_date.strip() or None
+            if self.start_date is not None:
+                self.start_date = date.fromisoformat(self.start_date).isoformat()
+        if self.offset_pages < 0:
+            raise ValueError("offset_pages must be >= 0")
+        if self.max_pages < 1 or self.max_pages > 20:
+            raise ValueError("max_pages must be between 1 and 20")
 
 
 async def _resolve_user_id(request: web.Request) -> int | None:
@@ -427,6 +450,43 @@ async def handle_export_wiki_markdown(request: web.Request) -> web.Response:
     except WikiNotFoundError as err:
         return web.json_response({"error": str(err)}, status=404)
     return web.Response(text=markdown, content_type="text/markdown", charset="utf-8")
+
+
+@routes.get("/api/extended/wiki/diagnostics")
+async def handle_wiki_diagnostics(request: web.Request) -> web.Response:
+    """Return per-notebook OCR vs. wiki citation coverage for live quality debugging."""
+    if (user_id := await _resolve_user_id(request)) is None:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    service: WikiService = request.app[WIKI_SERVICE_KEY]
+    notebooks = await service.get_notebook_coverage(user_id)
+    return web.json_response(WikiDiagnosticsResponseVO(notebooks=notebooks).to_dict())
+
+
+@routes.post("/api/extended/wiki/diagnostics/dry-run")
+@interactive_session_only
+async def handle_wiki_dry_run(request: web.Request) -> web.Response:
+    """Run the production compile pipeline read-only on a notebook or date slice."""
+    if (user_id := await _resolve_user_id(request)) is None:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    try:
+        dto = await parse_json_dto(request, WikiDryRunRequestDTO, allow_empty=True)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
+
+    compiler: WikiCompilerWorker = request.app[WIKI_COMPILER_KEY]
+    try:
+        vo = await compiler.dry_run_compile(
+            user_id,
+            file_id=dto.file_id,
+            start_date=dto.start_date,
+            offset_pages=dto.offset_pages,
+            max_pages=dto.max_pages,
+        )
+    except (AIError, ValueError, TypeError, LookupError) as err:
+        return web.json_response({"error": str(err)}, status=502)
+    return web.json_response(vo.to_dict())
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:

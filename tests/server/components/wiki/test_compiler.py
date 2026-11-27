@@ -19,6 +19,7 @@ from supernote.server.components.wiki.models import WikiSourceRefDTO, WikiUpsert
 from supernote.server.components.wiki.service import WikiService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.schedule import ScheduleTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     LocalEventBus,
@@ -1078,3 +1079,248 @@ async def test_run_backfill_stops_cooperatively_between_windows_without_advancin
     status = await wiki_service.get_status(1)
     assert status.backfill_remaining_files == 1
     assert status.backfill_remaining_pages == 4
+
+
+async def test_dry_run_compile_reports_ops_and_drops_without_mutating_wiki(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    await wiki_service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="projects/protected",
+            title="Protected",
+            body_md="Human notes",
+            author_kind="user",
+        ),
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=6001,
+                user_id=1,
+                directory_id=0,
+                file_name="Daily.note",
+                is_folder="N",
+                is_active="Y",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=6001,
+                page_index=0,
+                page_id="P20261110080000D01",
+                text_content="11.10 Daily notes about solar & protected project.",
+            )
+        )
+        await session.commit()
+
+    fake_llm = FakeTextGenerationModel(
+        responses=[
+            {
+                "page_ops": [
+                    {
+                        "slug": "projects/protected",
+                        "title": "Protected",
+                        "page_kind": "project",
+                        "body_md": "Overwrite attempt",
+                        "source_refs": [
+                            {"source_type": "note_page", "source_key": "page01"}
+                        ],
+                    },
+                    {
+                        "slug": "projects/solar",
+                        "title": "Solar",
+                        "page_kind": "project",
+                        "summary": "Solar summary",
+                        "body_md": "Solar body",
+                        "source_refs": [
+                            {"source_type": "note_page", "source_key": "page01"},
+                            {"source_type": "note_page", "source_key": "page99"},
+                        ],
+                    },
+                ],
+                "lint_proposals": [],
+            }
+        ]
+    )
+    worker = WikiCompilerWorker(
+        config=WikiConfig(enabled=True, auto_compile=False),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=fake_llm,
+    )
+    report = await worker.dry_run_compile(1, file_id=6001, max_pages=8)
+    assert len(report.pages_sent) == 1
+    assert report.pages_sent[0].source_id == "page01"
+    assert report.pages_sent[0].page_date == "2026-11-10"
+    assert len(report.ops) == 2
+    assert report.ops[0].drop_reason == "edit_policy:protected_prose"
+    assert report.ops[1].drop_reason is None
+    assert report.ops[1].resolved_source_keys == ["6001:P20261110080000D01"]
+    assert report.ops[1].dropped_source_keys == ["page99"]
+    # Read-only guarantee: projects/solar must NOT have been persisted.
+    assert await wiki_service.get_page(1, "projects/solar") is None
+
+
+async def test_dry_run_compile_matches_run_backfill_prompt_and_outcomes(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Dry-run and real backfill must send identical LLM inputs and agree on outcomes."""
+    event_bus = LocalEventBus()
+    coord = SqliteCoordinationService(session_manager)
+    event_log = EventLogService(session_manager, coord, event_bus)
+    wiki_service = WikiService(session_manager)
+
+    # Seed existing wiki state (both normal and protected_prose) + notebooks + task.
+    await wiki_service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="projects/protected",
+            title="Protected",
+            body_md="Human notes",
+            author_kind="user",
+        ),
+    )
+    await wiki_service.upsert_page(
+        1,
+        WikiUpsertInput(
+            slug="projects/solar",
+            title="Solar",
+            summary="Existing solar overview",
+            body_md="Initial solar notes.",
+            author_kind="compiler",
+        ),
+    )
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=6101,
+                    user_id=1,
+                    directory_id=0,
+                    file_name="Daily.note",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=6102,
+                    user_id=1,
+                    directory_id=0,
+                    file_name="Solar.note",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=6101,
+                    page_index=0,
+                    page_id="P20260401080000D01",
+                    text_content="04.01 Daily journal: reviewed solar inverter quotes.",
+                ),
+                NotePageContentDO(
+                    file_id=6102,
+                    page_index=0,
+                    page_id="P20260405090000S01",
+                    text_content="04.05 Solar sizing: 10kW array + battery backup.",
+                ),
+            ]
+        )
+        session.add(
+            ScheduleTaskDO(
+                user_id=1,
+                task_id="task-solar-permit",
+                title="Submit solar permit",
+                status="needsAction",
+                update_time=1700000000000,
+            )
+        )
+        await session.commit()
+
+    plan_response: dict[str, Any] = {
+        "page_ops": [
+            {
+                "slug": "index",
+                "title": "Index",
+                "page_kind": "index",
+                "body_md": "Ignored index op",
+                "source_refs": [],
+            },
+            {
+                "slug": "projects/protected",
+                "title": "Protected",
+                "page_kind": "project",
+                "body_md": "Overwrite attempt",
+                "source_refs": [
+                    {"source_type": "note_page", "source_key": "page01"},
+                ],
+            },
+            {
+                "slug": "projects/solar",
+                "title": "Solar",
+                "page_kind": "project",
+                "summary": "10kW solar array and permit",
+                "body_md": "Reviewed quotes and sized 10kW array.",
+                "source_refs": [
+                    {"source_type": "note_page", "source_key": "page01"},
+                    {"source_type": "note_page", "source_key": "page02"},
+                    {"source_type": "schedule_task", "source_key": "task01"},
+                    {"source_type": "note_page", "source_key": "page99"},
+                ],
+            },
+        ],
+        "lint_proposals": [],
+    }
+    fake_llm = FakeTextGenerationModel(responses=[plan_response, plan_response])
+    worker = WikiCompilerWorker(
+        config=WikiConfig(
+            enabled=True,
+            auto_compile=False,
+            max_source_pages_per_turn=8,
+        ),
+        session_manager=session_manager,
+        wiki_service=wiki_service,
+        event_log_service=event_log,
+        event_bus=event_bus,
+        text_model=fake_llm,
+    )
+
+    # Run dry-run first (must not mutate DB), then real backfill on identical state.
+    dry_report = await worker.dry_run_compile(1, max_pages=8)
+    backfill_res = await worker.run_backfill(1, max_files=1)
+
+    assert len(fake_llm.calls) == 2
+    assert fake_llm.calls[0] == fake_llm.calls[1]
+
+    # Verify ops kept vs. dropped in dry-run match exact persisted pages & source_refs.
+    kept_ops = [op for op in dry_report.ops if op.drop_reason is None]
+    assert (
+        [op.slug for op in kept_ops] == backfill_res.updated_pages == ["projects/solar"]
+    )
+    assert backfill_res.skipped_policy_pages == sum(
+        1 for op in dry_report.ops if (op.drop_reason or "").startswith("edit_policy:")
+    )
+
+    persisted_solar = await wiki_service.get_page(1, "projects/solar")
+    assert persisted_solar is not None
+    assert (
+        [r.source_key for r in persisted_solar.source_refs]
+        == kept_ops[0].resolved_source_keys
+        == [
+            "6101:P20260401080000D01",
+            "6102:P20260405090000S01",
+            "task-solar-permit",
+        ]
+    )
+    assert kept_ops[0].dropped_source_keys == ["page99"]
