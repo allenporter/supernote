@@ -1,31 +1,28 @@
 from pathlib import Path
 
 import pytest
+from aiohttp.test_utils import TestClient
 from sqlalchemy import select
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
-from supernote.server.components.conversion.processor import (
-    PngConversionModule,
+from supernote.server.components.ai import (
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
 )
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
-from supernote.server.components.note_metadata.processor import NoteMetadataModule
-from supernote.server.components.processor import ProcessorService
-from supernote.server.components.processor.page_hashing import PageHashingModule
-from supernote.server.components.search.processor import EmbeddingModule
-from supernote.server.components.summary import SummaryService
-from supernote.server.components.summary.processor import SummaryModule
-from supernote.server.components.transcript.processor import OcrModule
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus, NoteProcessingCompletedEvent
+from supernote.server.events import NoteProcessingCompletedEvent
 from supernote.server.services.blob import BlobStorage
-from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (
     AI_SUMMARIES_GROUP_NAME,
@@ -36,38 +33,28 @@ from supernote.server.utils.paths import (
 
 
 @pytest.fixture
-def summary_service(
-    user_service: UserService,
-    session_manager: DatabaseSessionManager,
-) -> SummaryService:
-    return SummaryService(user_service=user_service, session_manager=session_manager)
-
-
-@pytest.fixture
-def processor_service(
-    session_manager: DatabaseSessionManager,
-    file_service: FileService,
-) -> ProcessorService:
-    return ProcessorService(
-        event_bus=LocalEventBus(),
-        session_manager=session_manager,
-        file_service=file_service,
+def server_config(server_config: ServerConfig) -> ServerConfig:
+    """Configure fake_ai models so create_app wires the full processor pipeline."""
+    server_config.ai = AiConfig(
+        providers={"fake_ai": ProviderConfig()},
+        ocr=ModelConfig(provider="fake_ai", model="fake-ocr-v1"),
+        embedding=ModelConfig(provider="fake_ai", model="fake-embedding-v1"),
+        summary=ModelConfig(provider="fake_ai", model="fake-summary-v1"),
     )
+    return server_config
 
 
 async def test_full_processing_pipeline_with_real_file(
-    processor_service: ProcessorService,
-    summary_service: SummaryService,
+    client: TestClient,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     test_data_dir: Path,
-    fake_ocr_model: FakeOcrModel,
-    fake_embedding_model: FakeEmbeddingModel,
-    fake_summary_model: FakeSummaryModel,
     authenticated_client: Client,
     user_service: UserService,
 ) -> None:
     """Full integration test using a real handwritten .note file."""
+    assert client.app is not None
+    processor_service = client.app[PROCESSOR_SERVICE_KEY]
 
     # Setup Data
     user_email = "test@example.com"
@@ -92,20 +79,6 @@ async def test_full_processing_pipeline_with_real_file(
         )
         session.add(user_file)
         await session.commit()
-
-    # Register modules with fake task models
-    hashing = PageHashingModule(processor_service.file_service)
-    metadata = NoteMetadataModule(processor_service.file_service)
-    png = PngConversionModule(processor_service.file_service)
-    ocr = OcrModule(processor_service.file_service, fake_ocr_model)
-    embedding = EmbeddingModule(processor_service.file_service, fake_embedding_model)
-    summary = SummaryModule(
-        file_service=processor_service.file_service,
-        summary_service=summary_service,
-        summary_model=fake_summary_model,
-    )
-
-    processor_service.set_modules([hashing, metadata, png, ocr, embedding, summary])
 
     completed_events: list[NoteProcessingCompletedEvent] = []
 
@@ -212,16 +185,27 @@ async def test_full_processing_pipeline_with_real_file(
 
 
 async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
-    processor_service: ProcessorService,
-    summary_service: SummaryService,
+    client: TestClient,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     test_data_dir: Path,
-    fake_ocr_model: FakeOcrModel,
-    fake_embedding_model: FakeEmbeddingModel,
-    fake_summary_model: FakeSummaryModel,
 ) -> None:
     """Verify blank template pages skip OCR and embedding LLM calls while still rendering PNGs and completing tasks."""
+    assert client.app is not None
+    processor_service = client.app[PROCESSOR_SERVICE_KEY]
+
+    def _unwrap(model: object) -> object:
+        while hasattr(model, "_model"):
+            model = model._model
+        return model
+
+    fake_ocr_model = _unwrap(client.app[OCR_MODEL_KEY])
+    fake_embedding_model = _unwrap(client.app[EMBEDDING_MODEL_KEY])
+    fake_summary_model = _unwrap(client.app[SUMMARY_MODEL_KEY])
+    assert isinstance(fake_ocr_model, FakeOcrModel)
+    assert isinstance(fake_embedding_model, FakeEmbeddingModel)
+    assert isinstance(fake_summary_model, FakeSummaryModel)
+
     note_path = test_data_dir / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
     user_id = 77
     file_id = 1001
@@ -240,21 +224,6 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
             )
         )
         await session.commit()
-
-    processor_service.set_modules(
-        [
-            PageHashingModule(processor_service.file_service),
-            NoteMetadataModule(processor_service.file_service),
-            PngConversionModule(processor_service.file_service),
-            OcrModule(processor_service.file_service, fake_ocr_model),
-            EmbeddingModule(processor_service.file_service, fake_embedding_model),
-            SummaryModule(
-                file_service=processor_service.file_service,
-                summary_service=summary_service,
-                summary_model=fake_summary_model,
-            ),
-        ]
-    )
 
     await processor_service.process_file(file_id, user_id=user_id)
 

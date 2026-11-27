@@ -22,6 +22,7 @@ from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.components.processor import (
+    PROCESSOR_SERVICE_KEY,
     ProcessorModule,
     ProcessorService,
     TaskScope,
@@ -33,7 +34,9 @@ from supernote.server.components.summary import SummaryService
 from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.components.transcript import TranscriptService
 from supernote.server.components.transcript.processor import OcrModule
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
@@ -67,6 +70,7 @@ from supernote.testing.notebook_fixtures import (
     append_synthetic_page,
     build_synthetic_notebook,
 )
+from tests.server.components.conftest import LoadComponents
 
 
 @pytest.fixture
@@ -204,7 +208,8 @@ async def test_processor_deduplication(processor_service: ProcessorService) -> N
 
 
 async def test_handle_note_deleted_cleanup(
-    processor_service: ProcessorService,
+    component_core: ServerCore,
+    load_components: LoadComponents,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     file_service: FileService,
@@ -326,20 +331,9 @@ async def test_handle_note_deleted_cleanup(
         )
         await session.commit()
 
-    # Trigger deletion event across registered modules
-    processor_service.set_modules(
-        [
-            PageHashingModule(file_service=file_service),
-            NoteMetadataModule(file_service=file_service),
-            PngConversionModule(file_service=file_service),
-            OcrModule(file_service=file_service, ocr_model=None),
-            SummaryModule(
-                file_service=file_service,
-                summary_service=summary_service,
-                summary_model=None,
-            ),
-        ]
-    )
+    # Trigger deletion event across component-registered modules
+    await load_components("processor", "transcript", "summary", start=False)
+    processor_service = component_core.app[PROCESSOR_SERVICE_KEY]
     event = VfsItemPurgedEvent(item_id=file_id, user_id=test_user_id, name="test.note")
     await processor_service.handle_vfs_item_purged(event)
 
@@ -833,29 +827,21 @@ async def test_recover_missing_tasks_skips_inactive_files(
 
 
 async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
+    component_core: ServerCore,
+    load_components: LoadComponents,
     session_manager: DatabaseSessionManager,
-    processor_service: ProcessorService,
-    file_service: FileService,
-    summary_service: SummaryService,
 ) -> None:
     """Verify recover_missing_tasks enqueues files needing OCR, embedding, or summary backfill."""
-    processor_service.set_modules(
-        [
-            PageHashingModule(file_service=file_service),
-            NoteMetadataModule(file_service=file_service),
-            PngConversionModule(file_service=file_service),
-            OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
-            EmbeddingModule(
-                file_service=file_service,
-                embedding_model=FakeEmbeddingModel(model_id="new-model"),
-            ),
-            SummaryModule(
-                file_service=file_service,
-                summary_service=summary_service,
-                summary_model=FakeSummaryModel(),
-            ),
-        ]
+    component_core.config.ai = AiConfig(
+        providers={"fake_ai": ProviderConfig()},
+        ocr=ModelConfig(provider="fake_ai", model="fake-ocr-v1"),
+        embedding=ModelConfig(provider="fake_ai", model="new-model"),
+        summary=ModelConfig(provider="fake_ai", model="fake-summary-v1"),
     )
+    await load_components(
+        "ai", "fake_ai", "processor", "transcript", "search", "summary", start=False
+    )
+    processor_service = component_core.app[PROCESSOR_SERVICE_KEY]
 
     async with session_manager.session() as session:
         # File 9101: All tasks completed with current model ("new-model") -> should NOT be enqueued
@@ -1449,18 +1435,14 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
 
 
 async def test_handle_note_deleted_removes_note_and_page_metadata(
-    processor_service: ProcessorService,
+    component_core: ServerCore,
+    load_components: LoadComponents,
     session_manager: DatabaseSessionManager,
-    file_service: FileService,
     test_user_id: int,
 ) -> None:
     """Verify VfsItemPurgedEvent purges note, page, and title metadata via NoteMetadataModule.cleanup_file."""
-    processor_service.set_modules(
-        [
-            PageHashingModule(file_service),
-            NoteMetadataModule(file_service),
-        ]
-    )
+    await load_components("processor", "note_metadata", start=False)
+    processor_service = component_core.app[PROCESSOR_SERVICE_KEY]
 
     async with session_manager.session() as session:
         session.add_all(
@@ -2425,19 +2407,17 @@ async def test_standalone_image_exclusions_for_mystyle_and_export(
 
 
 async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
-    processor_service: ProcessorService,
+    component_core: ServerCore,
+    load_components: LoadComponents,
     session_manager: DatabaseSessionManager,
-    file_service: FileService,
 ) -> None:
     """Verify recover_missing_tasks backfills missing NOTE_METADATA for .note files but skips images."""
-    processor_service.set_modules(
-        [
-            PageHashingModule(file_service=file_service),
-            NoteMetadataModule(file_service=file_service),
-            PngConversionModule(file_service=file_service),
-            OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
-        ]
+    component_core.config.ai = AiConfig(
+        providers={"fake_ai": ProviderConfig()},
+        ocr=ModelConfig(provider="fake_ai", model="fake-ocr-v1"),
     )
+    await load_components("ai", "fake_ai", "processor", "transcript", start=False)
+    processor_service = component_core.app[PROCESSOR_SERVICE_KEY]
 
     async with session_manager.session() as session:
         # 9201: .note with HASHING/PNG/OCR completed but missing NOTE_METADATA -> backfill.

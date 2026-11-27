@@ -5,21 +5,19 @@ from pathlib import Path
 import pytest
 
 from supernote.models.summary import SummaryItem
-from supernote.server.components.conversion import ConversionService, ConvertedBlob
-from supernote.server.components.conversion.processor import (
-    PngConversionModule,
+from supernote.server.components.conversion import (
+    CONVERSION_SERVICE_KEY,
+    ConversionService,
+    ConvertedBlob,
 )
-from supernote.server.components.processor import ProcessorService
-from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus
 from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
-from supernote.server.services.file import FileService
-from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_conversion_pdf_path
+from tests.server.components.conftest import LoadComponents
 
 
 async def _read(blob_storage: BlobStorage, key: str) -> bytes:
@@ -27,35 +25,12 @@ async def _read(blob_storage: BlobStorage, key: str) -> bytes:
 
 
 @pytest.fixture
-def conversion_service(
-    storage_root: Path,
-    session_manager: DatabaseSessionManager,
-    blob_storage: BlobStorage,
-    user_service: UserService,
+async def conversion_service(
+    component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> ConversionService:
-    file_service = FileService(
-        storage_root=storage_root,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        session_manager=session_manager,
-    )
-    processor_service = ProcessorService(
-        event_bus=LocalEventBus(),
-        session_manager=session_manager,
-        file_service=file_service,
-    )
-    processor_service.set_modules(
-        [
-            PageHashingModule(file_service=file_service),
-            PngConversionModule(file_service=file_service),
-        ]
-    )
-    return ConversionService(
-        session_manager=session_manager,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        processor_service=processor_service,
-    )
+    await load_components("conversion", "web_ui", start=False)
+    return component_core.app[CONVERSION_SERVICE_KEY]
 
 
 async def test_convert_note_to_png_and_resolve_page(
