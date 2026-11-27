@@ -11,6 +11,7 @@ or renders PDFs in a worker thread via `supernote.notebook.converter.PdfConverte
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -34,6 +35,11 @@ from supernote.server.db.models.note_processing import (
     NoteTitleTranscriptDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import (
+    LocalEventBus,
+    SummaryDeletedEvent,
+    SummaryUpdatedEvent,
+)
 from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.user import UserService
@@ -50,11 +56,16 @@ from supernote.server.utils.image import (
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_page_png_path,
+    get_summary_conversion_prefix,
     get_summary_handwriting_prefix,
+    get_summary_handwriting_prefix_of,
+    is_valid_page_id,
 )
 
 if TYPE_CHECKING:
     from supernote.server.components.processor import ProcessorService
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CONVERSION_SERVICE_KEY",
@@ -183,6 +194,7 @@ class ConversionService:
         user_service: UserService,
         processor_service: ProcessorService,
         *,
+        event_bus: LocalEventBus | None = None,
         notebook_preview: bool = True,
     ) -> None:
         self.session_manager = session_manager
@@ -190,6 +202,9 @@ class ConversionService:
         self.user_service = user_service
         self.processor_service = processor_service
         self.notebook_preview = notebook_preview
+        if event_bus is not None:
+            event_bus.subscribe(SummaryUpdatedEvent, self._handle_summary_updated)
+            event_bus.subscribe(SummaryDeletedEvent, self._handle_summary_deleted)
 
     async def _get_required_note_node(
         self, user: str, file_id: int
@@ -472,6 +487,59 @@ class ConversionService:
             storage_key=storage_key,
             file_name=f"summary_{summary.id}_page_{page_no}.png",
         )
+
+    async def _cleanup_summary_renders(
+        self,
+        user_id: int,
+        summary_id: int,
+        *,
+        keep_handwrite_md5: str | None = None,
+    ) -> None:
+        """Delete stale cached summary handwriting renders in CACHE_BUCKET.
+
+        When `keep_handwrite_md5` is provided and valid, renders belonging to
+        that handwriting version are preserved and all other cached renders
+        under the summary's prefix are removed. Otherwise, all cached renders
+        for the summary are deleted.
+        """
+        keep_prefix = (
+            get_summary_handwriting_prefix(user_id, summary_id, keep_handwrite_md5)
+            if keep_handwrite_md5 and is_valid_page_id(keep_handwrite_md5)
+            else None
+        )
+
+        prefix = get_summary_conversion_prefix(user_id, summary_id)
+        for key in await self.blob_storage.list_blobs(CACHE_BUCKET, prefix):
+            if (
+                keep_prefix is not None
+                and get_summary_handwriting_prefix_of(key) == keep_prefix
+            ):
+                continue
+            try:
+                await self.blob_storage.delete(CACHE_BUCKET, key)
+            except (FileNotFoundError, OSError) as err:
+                logger.warning(
+                    "Failed to delete stale summary render blob %s: %s", key, err
+                )
+
+    async def _handle_summary_updated(self, event: SummaryUpdatedEvent) -> None:
+        """Remove stale cached handwriting renders when a summary is updated."""
+        if event.summary.id is None:
+            return
+        keep_md5 = (
+            event.summary.handwrite_md5
+            if event.summary.handwrite_inner_name and event.summary.handwrite_md5
+            else None
+        )
+        await self._cleanup_summary_renders(
+            event.user_id,
+            event.summary.id,
+            keep_handwrite_md5=keep_md5,
+        )
+
+    async def _handle_summary_deleted(self, event: SummaryDeletedEvent) -> None:
+        """Remove all cached handwriting renders when a summary is deleted."""
+        await self._cleanup_summary_renders(event.user_id, event.summary_id)
 
     async def _get_page_id(self, file_id: int, page_index: int) -> str | None:
         """Look up the `NotePageContentDO.page_id` for `(file_id, page_index)`."""

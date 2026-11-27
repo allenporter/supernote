@@ -129,13 +129,20 @@ def get_conversion_pdf_path(
     return f"{prefix}_pages_{digest}.pdf"
 
 
+def get_summary_conversion_prefix(user_id: int, summary_id: int) -> str:
+    """Return the key prefix shared by every cached render of a summary."""
+    return f"conversions/{user_id}/summary_{summary_id}/"
+
+
 def get_summary_handwriting_prefix(
     user_id: int, summary_id: int, handwrite_md5: str
 ) -> str:
     """Return the key prefix shared by every render of one summary handwriting version."""
     if not SAFE_PAGE_ID_PATTERN.match(handwrite_md5):
         raise ValueError(f"Invalid handwrite_md5: {handwrite_md5!r}")
-    return f"conversions/{user_id}/summary_{summary_id}/handwrite_{handwrite_md5}"
+    return (
+        f"{get_summary_conversion_prefix(user_id, summary_id)}handwrite_{handwrite_md5}"
+    )
 
 
 def get_summary_handwriting_prefix_of(key: str) -> str | None:
