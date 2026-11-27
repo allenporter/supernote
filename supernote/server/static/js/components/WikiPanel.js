@@ -24,6 +24,7 @@ import { isComponentRunning } from '../composables/useServerFeatures.js';
 import { useToast } from '../composables/useToast.js';
 import { getErrorMessage } from '../utils/format.js';
 import { renderWikiMarkdown } from '../utils/markdown.js';
+import WikiDiagnosticsPanel from './WikiDiagnosticsPanel.js';
 
 const KIND_FILTERS = [
     { id: '', label: 'All' },
@@ -35,6 +36,9 @@ const KIND_FILTERS = [
 
 export default {
     name: 'WikiPanel',
+    components: {
+        WikiDiagnosticsPanel,
+    },
     props: {
         initialSlug: {
             type: String,
@@ -77,6 +81,7 @@ export default {
         const searchQuery = ref('');
         const showLintPanel = ref(false);
         const showBackfillPanel = ref(false);
+        const showDiagnosticsPanel = ref(false);
         const backfillBannerDismissed = ref(false);
         const stopBackfillRequested = ref(false);
         /** @type {import('vue').Ref<string[]>} */
@@ -722,6 +727,7 @@ export default {
             clearSearch,
             showLintPanel,
             showBackfillPanel,
+            showDiagnosticsPanel,
             isBackfillBannerVisible,
             isServerBackfilling,
             isBackfillActive,
@@ -814,6 +820,11 @@ export default {
                             {{ lintIssues.length }}
                         </span>
                     </button>
+                    <button type="button" @click="showDiagnosticsPanel = !showDiagnosticsPanel" :disabled="isDisabled"
+                        :class="showDiagnosticsPanel ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-stone-200 text-slate-700 hover:bg-stone-50'"
+                        class="px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors">
+                        Diagnostics
+                    </button>
                     <button type="button" @click="handleExportZip" :disabled="isDisabled || pages.length === 0"
                         title="Download Obsidian-compatible Markdown vault (.zip)"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
@@ -828,6 +839,12 @@ export default {
                 <span class="font-semibold">Wiki compiler {{ status.status }}:</span>
                 {{ status.last_error }}
             </div>
+
+            <!-- Live Wiki Diagnostics & Dry-Run Compile Inspector -->
+            <WikiDiagnosticsPanel v-if="showDiagnosticsPanel && !isDisabled"
+                @close="showDiagnosticsPanel = false"
+                @select-slug="selectSlug"
+                @open-file="emit('open-file', $event)" />
 
             <!-- Notebook Backfill Progress & Queue Panel -->
             <section v-if="isBackfillBannerVisible" aria-label="Notebook Backfill"

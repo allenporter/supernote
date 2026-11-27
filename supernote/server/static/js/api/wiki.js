@@ -487,3 +487,132 @@ export async function downloadWikiVaultZip() {
     link.remove();
     URL.revokeObjectURL(url);
 }
+
+/**
+ * @typedef {Object} WikiNotebookCoverage
+ * @property {string} file_id
+ * @property {string} file_name
+ * @property {number} ocr_pages
+ * @property {number} cited_pages
+ * @property {number} avg_chars_per_page
+ * @property {string[]} cited_slugs
+ */
+
+/**
+ * @typedef {Object} WikiDryRunPage
+ * @property {string} source_id
+ * @property {string} [source_key]
+ * @property {string} file_id
+ * @property {string} file_path
+ * @property {number} page_index
+ * @property {string} page_date
+ * @property {number} chars
+ * @property {string} snippet
+ * @property {string} [text_content]
+ */
+
+/**
+ * @typedef {Object} WikiDryRunOp
+ * @property {string} slug
+ * @property {string} title
+ * @property {string} page_kind
+ * @property {string} summary
+ * @property {number} body_chars
+ * @property {string} [body_md]
+ * @property {string[]} resolved_source_keys
+ * @property {string[]} dropped_source_keys
+ * @property {string | null} drop_reason
+ */
+
+/**
+ * Translate a machine `drop_reason` code from dry-run compile into plain English.
+ *
+ * @param {string | null | undefined} reason
+ * @returns {string}
+ */
+export function formatDryRunDropReason(reason) {
+    if (!reason) return '';
+    if (reason === 'edit_policy:protected_prose') {
+        return 'Skipped: human-edited page is protected';
+    }
+    if (reason === 'edit_policy:locked') {
+        return 'Skipped: page is locked';
+    }
+    if (reason === 'index_auto_maintained') {
+        return 'Skipped: index page is auto-generated';
+    }
+    if (reason === 'page_cap_exceeded') {
+        return 'Skipped: per-turn page limit reached';
+    }
+    if (reason === 'missing_slug_or_title') {
+        return 'Skipped: AI omitted slug or title';
+    }
+    return `Skipped: ${reason}`;
+}
+
+/**
+ * @typedef {Object} WikiDryRunReport
+ * @property {WikiDryRunPage[]} pages_sent
+ * @property {string[]} candidate_slugs
+ * @property {WikiDryRunOp[]} ops
+ * @property {number} lint_proposals_count
+ * @property {number} elapsed_ms
+ */
+
+/**
+ * Fetch per-notebook OCR vs. wiki citation coverage (`GET /api/extended/wiki/diagnostics`).
+ *
+ * @returns {Promise<WikiNotebookCoverage[]>}
+ */
+export async function fetchWikiDiagnostics() {
+    const data = await apiRequest('/api/extended/wiki/diagnostics', {
+        method: 'GET',
+        errorPrefix: 'Failed to load wiki diagnostics',
+    });
+    return Array.isArray(data?.notebooks) ? data.notebooks : [];
+}
+
+/**
+ * Run the production wiki compile pipeline read-only on a notebook or date slice
+ * (`POST /api/extended/wiki/diagnostics/dry-run`).
+ *
+ * @param {{
+ *   fileId?: string | number | null,
+ *   startDate?: string | null,
+ *   offsetPages?: number,
+ *   maxPages?: number,
+ * }} [options]
+ * @returns {Promise<WikiDryRunReport>}
+ */
+export async function runWikiDryRun({
+    fileId = null,
+    startDate = null,
+    offsetPages = 0,
+    maxPages = 8,
+} = {}) {
+    /** @type {Record<string, any>} */
+    const body = {
+        offset_pages: offsetPages,
+        max_pages: maxPages,
+    };
+    const trimmedFileId = fileId !== null && fileId !== undefined ? String(fileId).trim() : '';
+    if (trimmedFileId) {
+        body.file_id = trimmedFileId;
+    }
+    const trimmedDate = typeof startDate === 'string' ? startDate.trim() : '';
+    if (trimmedDate) {
+        body.start_date = trimmedDate;
+    }
+    const data = await apiRequest('/api/extended/wiki/diagnostics/dry-run', {
+        method: 'POST',
+        body,
+        errorPrefix: 'Dry-run compile failed',
+    });
+    return {
+        pages_sent: Array.isArray(data?.pages_sent) ? data.pages_sent : [],
+        candidate_slugs: Array.isArray(data?.candidate_slugs) ? data.candidate_slugs : [],
+        ops: Array.isArray(data?.ops) ? data.ops : [],
+        lint_proposals_count: Number(data?.lint_proposals_count || 0),
+        elapsed_ms: Number(data?.elapsed_ms || 0),
+    };
+}

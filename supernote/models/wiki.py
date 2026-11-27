@@ -306,6 +306,8 @@ class WikiDryRunPageDTO(DataClassJSONMixin):
     page_date: str
     chars: int
     snippet: str
+    source_key: str = ""
+    text_content: str = ""
 
 
 @dataclass
@@ -320,6 +322,7 @@ class WikiDryRunOpDTO(DataClassJSONMixin):
     resolved_source_keys: list[str] = field(default_factory=list)
     dropped_source_keys: list[str] = field(default_factory=list)
     drop_reason: str | None = None
+    body_md: str = ""
 
 
 @dataclass

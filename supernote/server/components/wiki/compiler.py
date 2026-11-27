@@ -585,12 +585,14 @@ class WikiCompilerWorker:
         pages_sent = [
             WikiDryRunPageDTO(
                 source_id=handle_by_key.get(str(diff["entity_id"]), ""),
+                source_key=str(diff["entity_id"]),
                 file_id=str(diff["payload"]["file_id"]),
                 file_path=str(diff["payload"]["file_path"]),
                 page_index=int(diff["payload"]["page_index"]),
                 page_date=str(diff["payload"].get("page_date") or ""),
                 chars=len(str(diff["payload"].get("text_content") or "")),
                 snippet=str(diff["payload"].get("text_content") or "")[:160].strip(),
+                text_content=str(diff["payload"].get("text_content") or ""),
             )
             for diff in window_diffs
         ]
@@ -631,6 +633,7 @@ class WikiCompilerWorker:
                     else "topic",
                     summary=op.summary,
                     body_chars=len(op.body_md),
+                    body_md=op.body_md,
                     resolved_source_keys=[r.source_key for r in resolved_refs],
                     dropped_source_keys=dropped_keys,
                     drop_reason=drop_reason,
