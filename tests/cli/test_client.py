@@ -3,6 +3,7 @@
 import argparse
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -41,10 +42,9 @@ from supernote.cli.client import (
 )
 from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.models.summary import AddSummaryDTO
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY, SummaryService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
-from supernote.server.keys import SUMMARY_SERVICE_KEY
-from supernote.server.services.summary import SummaryService
 
 from .conftest import ADMIN_EMAIL, ADMIN_PASSWORD, CliServerEnv
 
@@ -394,7 +394,6 @@ async def test_async_cloud_socket_success(
 
 
 def test_load_cached_auth_with_api_key_and_env(
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Verify load_cached_auth supports api_key_override and SUPERNOTE_API_KEY / SUPERNOTE_URL."""
@@ -408,22 +407,27 @@ def test_load_cached_auth_with_api_key_and_env(
     assert "Server URL required when using an API key" in capsys.readouterr().out
 
     # Context overrides take precedence over environment variables
-    monkeypatch.setenv("SUPERNOTE_API_KEY", "sn_envkey0123456789abcdef01234567")
-    monkeypatch.setenv("SUPERNOTE_URL", "http://127.0.0.1:8080")
-    with (
-        server_url_override("http://127.0.0.1:9090"),
-        api_key_override("sn_ctxkey0123456789abcdef01234567"),
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_API_KEY": "sn_envkey0123456789abcdef01234567",
+            "SUPERNOTE_URL": "http://127.0.0.1:8080",
+        },
     ):
-        ctx_auth, ctx_url = load_cached_auth()
-        assert isinstance(ctx_auth, ConstantAuth)
-        assert ctx_auth.token == "sn_ctxkey0123456789abcdef01234567"
-        assert ctx_url == "http://127.0.0.1:9090"
+        with (
+            server_url_override("http://127.0.0.1:9090"),
+            api_key_override("sn_ctxkey0123456789abcdef01234567"),
+        ):
+            ctx_auth, ctx_url = load_cached_auth()
+            assert isinstance(ctx_auth, ConstantAuth)
+            assert ctx_auth.token == "sn_ctxkey0123456789abcdef01234567"
+            assert ctx_url == "http://127.0.0.1:9090"
 
-    # Environment variable resolution after context exit
-    auth, resolved_url = load_cached_auth()
-    assert isinstance(auth, ConstantAuth)
-    assert auth.token == "sn_envkey0123456789abcdef01234567"
-    assert resolved_url == "http://127.0.0.1:8080"
+        # Environment variable resolution after context exit
+        auth, resolved_url = load_cached_auth()
+        assert isinstance(auth, ConstantAuth)
+        assert auth.token == "sn_envkey0123456789abcdef01234567"
+        assert resolved_url == "http://127.0.0.1:8080"
 
 
 def test_cloud_flags_override_cached_credentials(
@@ -447,7 +451,6 @@ def test_cloud_flags_override_cached_credentials(
 
 async def test_cloud_keys_cli_and_headless_api_key_execution(
     cli_env: CliServerEnv,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Verify CLI API key management lifecycle and headless cloud commands without cached login."""
@@ -483,19 +486,19 @@ async def test_cloud_keys_cli_and_headless_api_key_execution(
             await async_cloud_mkdir("/NOTE/Note/HeadlessFolder")
         assert "Folder created successfully" in capsys.readouterr().out
 
-        monkeypatch.setenv("SUPERNOTE_API_KEY", raw_key)
-        monkeypatch.setenv("SUPERNOTE_URL", cli_env.url)
-        await async_cloud_ls("/NOTE/Note")
-        assert "HeadlessFolder" in capsys.readouterr().out
+        with patch.dict(
+            os.environ,
+            {"SUPERNOTE_API_KEY": raw_key, "SUPERNOTE_URL": cli_env.url},
+        ):
+            await async_cloud_ls("/NOTE/Note")
+            assert "HeadlessFolder" in capsys.readouterr().out
 
-        # Attempting key management with a static API key fails with 403 -> SystemExit(1)
-        with pytest.raises(SystemExit) as exc_info:
-            await async_cloud_keys_list()
-        assert exc_info.value.code == 1
-        capsys.readouterr()
+            # Attempting key management with a static API key fails with 403 -> SystemExit(1)
+            with pytest.raises(SystemExit) as exc_info:
+                await async_cloud_keys_list()
+            assert exc_info.value.code == 1
+            capsys.readouterr()
     finally:
-        monkeypatch.delenv("SUPERNOTE_API_KEY", raising=False)
-        monkeypatch.delenv("SUPERNOTE_URL", raising=False)
         cache_path.write_bytes(saved_cache)
 
     # Revoke key using interactive session cache, then verify headless key no longer works

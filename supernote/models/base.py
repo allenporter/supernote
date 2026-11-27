@@ -90,6 +90,7 @@ class TaskType(str, BaseEnum):
         return obj
 
     PAGE_HASHING = ("HASHING", "hashing")
+    NOTE_METADATA = ("NOTE_METADATA", "metadata")
     PNG_CONVERSION = ("PNG_CONVERSION", "png")
     OCR_EXTRACTION = ("OCR_EXTRACTION", "ocr")
     EMBEDDING_GENERATION = ("EMBEDDING_GENERATION", "embedding")
@@ -157,6 +158,7 @@ class ErrorCode(str, Enum):
     FORBIDDEN = ("403", "Forbidden")
     NOT_FOUND = ("404", "Not Found")
     CONFLICT = ("409", "Conflict")
+    GONE = ("410", "Gone")
     INTERNAL_ERROR = ("500", "Internal Server Error")
 
     # Specific Error Codes from legacy system

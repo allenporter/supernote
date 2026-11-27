@@ -11,7 +11,11 @@ import {
     useRouter,
 } from '../../supernote/server/static/js/composables/useRouter.js';
 
-function createRouterHarness({ onOAuthRouteEnter = null, onOAuthRouteClear = null } = {}) {
+function createRouterHarness({
+    onOAuthRouteEnter = null,
+    onOAuthRouteClear = null,
+    isTabAvailable = undefined,
+} = {}) {
     /** @type {string[]} */
     const historyStack = [''];
     let historyIdx = 0;
@@ -98,6 +102,7 @@ function createRouterHarness({ onOAuthRouteEnter = null, onOAuthRouteClear = nul
         selectedIds,
         onOAuthRouteEnter,
         onOAuthRouteClear,
+        isTabAvailable,
     });
     routerRef = router;
 
@@ -137,6 +142,12 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
         dirId: '0',
         showSystem: false,
     });
+    assert.deepEqual(parseUrlHash('#/settings'), {
+        tab: 'settings',
+        view: 'grid',
+        dirId: '0',
+        showSystem: false,
+    });
     assert.deepEqual(parseUrlHash('#/system'), {
         tab: 'system',
         view: 'grid',
@@ -152,7 +163,11 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
         '#/file/9001?page=3',
     );
     assert.equal(buildUrlHash('tasks', '0', 'grid', null, false, null), '#/tasks');
+    assert.equal(buildUrlHash('settings', '0', 'grid', null, false, null), '#/settings');
+    assert.equal(buildUrlHash('settings', '0', 'recycle', null, false, null), '#/settings');
+    assert.equal(buildUrlHash('files', '0', 'grid', null, 'settings', null), '#/settings');
     assert.equal(buildUrlHash('files', '0', 'grid', null, true, null), '#/system');
+    assert.equal(buildUrlHash('files', '0', 'grid', null, 'system', null), '#/system');
 
     assert.equal(formatCrumbName('INBOX', 0), 'Inbox');
     assert.equal(formatCrumbName('Projects', 1), 'Projects');
@@ -202,10 +217,17 @@ test('useRouter.js: navigates folders/files, replaces history on page scroll & s
         assert.equal(router.view.value, 'grid');
         assert.equal(router.selectedFile.value, null);
 
-        router.openSystemPanel();
+        router.openSettingsPanel('access');
+        assert.equal(globalThis.window.location.hash, '#/settings');
+        assert.equal(router.showSystemPanel.value, true);
+        assert.equal(router.settingsModalTab.value, 'access');
+        const stackLenOnSystem = historyStack.length;
+
+        router.setSettingsModalTab('system');
         assert.equal(globalThis.window.location.hash, '#/system');
         assert.equal(router.showSystemPanel.value, true);
-        const stackLenOnSystem = historyStack.length;
+        assert.equal(router.settingsModalTab.value, 'system');
+        assert.equal(historyStack.length, stackLenOnSystem);
 
         await router.openItem({ id: '99', isDirectory: false });
         assert.equal(router.showSystemPanel.value, false);
@@ -312,6 +334,110 @@ test('useRouter.js: handles #/recycle deep links, openRecycleBin, and closeRecyc
         await router.syncFromUrl();
         assert.equal(router.activeTab.value, 'files');
         assert.equal(router.view.value, 'recycle');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('useRouter.js: handles #/digests deep links and switchTab("digests")', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        assert.deepEqual(parseUrlHash('#/digests'), {
+            tab: 'digests',
+            view: 'grid',
+            dirId: '0',
+            showSystem: false,
+        });
+        assert.equal(buildUrlHash('digests', '0', 'grid', null), '#/digests');
+
+        setToken('router-digests-tok');
+        const { router } = createRouterHarness();
+
+        await router.switchTab('digests');
+        assert.equal(router.activeTab.value, 'digests');
+        assert.equal(globalThis.window.location.hash, '#/digests');
+
+        globalThis.window.history.pushState(null, '', '#/digests');
+        await router.syncFromUrl();
+        assert.equal(router.activeTab.value, 'digests');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('useRouter.js: handles #/wiki/<slug> deep links and navigateToWikiSlug', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        assert.deepEqual(parseUrlHash('#/wiki/projects/alpha'), {
+            tab: 'wiki',
+            view: 'grid',
+            dirId: '0',
+            wikiSlug: 'projects/alpha',
+            showSystem: false,
+        });
+        assert.equal(
+            buildUrlHash('wiki', '0', 'grid', null, false, null, 'projects/alpha'),
+            '#/wiki/projects/alpha',
+        );
+
+        setToken('router-wiki-tok');
+        const { router } = createRouterHarness();
+
+        globalThis.window.history.pushState(null, '', '#/wiki/projects/alpha');
+        await router.syncFromUrl(true);
+        assert.equal(router.activeTab.value, 'wiki');
+        assert.equal(router.selectedWikiSlug.value, 'projects/alpha');
+
+        router.updateUrl(true);
+        assert.equal(globalThis.window.location.hash, '#/wiki/projects/alpha');
+
+        router.navigateToWikiSlug('entities/alice');
+        assert.equal(router.selectedWikiSlug.value, 'entities/alice');
+        assert.equal(globalThis.window.location.hash, '#/wiki/entities/alice');
+
+        globalThis.window.history.back();
+        await router.syncFromUrl();
+        assert.equal(router.selectedWikiSlug.value, 'projects/alpha');
+        assert.equal(globalThis.window.location.hash, '#/wiki/projects/alpha');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('useRouter.js: routes unavailable tabs to Files for deep links and switchTab', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        setToken('router-unavailable-tok');
+        const { router, historyStack } = createRouterHarness({
+            isTabAvailable: (tab) => tab !== 'wiki',
+        });
+
+        globalThis.window.history.pushState(null, '', '#/wiki/projects/alpha');
+        await router.syncFromUrl(true);
+        assert.equal(router.activeTab.value, 'files');
+        assert.equal(router.selectedWikiSlug.value, '');
+        assert.equal(globalThis.window.location.hash, '#/files');
+        assert.deepEqual(historyStack, ['', '#/files']);
+
+        await router.switchTab('wiki');
+        assert.equal(router.activeTab.value, 'files');
+        assert.equal(globalThis.window.location.hash, '#/files');
+
+        await router.switchTab('tasks');
+        assert.equal(router.activeTab.value, 'tasks');
+        assert.equal(globalThis.window.location.hash, '#/tasks');
     } finally {
         await logout({ reload: false });
         globalThis.window = origWindow;

@@ -8,25 +8,25 @@ from unittest.mock import patch
 
 import pytest
 from prometheus_client import REGISTRY
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 
 from supernote.server.constants import (
     CACHE_BUCKET,
     RECYCLE_RETENTION_MS,
     USER_DATA_BUCKET,
 )
-from supernote.server.db.models.file import RecycleFileDO
-from supernote.server.db.models.summary import SummaryDO
+from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.models.user import FALLBACK_QUOTA, UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
+    BlobCleanupEvent,
     Event,
     LocalEventBus,
-    NoteDeletedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
+    VfsItemPurgedEvent,
 )
 from supernote.server.exceptions import HashMismatch, QuotaExceeded
 from supernote.server.metrics import NoteUploadSource
@@ -38,12 +38,6 @@ from supernote.server.utils.paths import get_conversion_pdf_path
 
 
 @pytest.fixture
-def event_bus() -> LocalEventBus:
-    """Real LocalEventBus for verifying published domain events."""
-    return LocalEventBus()
-
-
-@pytest.fixture
 def published_events(event_bus: LocalEventBus) -> list[Event]:
     """Capture domain events published on the LocalEventBus."""
     events: list[Event] = []
@@ -51,26 +45,8 @@ def published_events(event_bus: LocalEventBus) -> list[Event]:
     async def capture(event: Event) -> None:
         events.append(event)
 
-    event_bus.subscribe(NoteDeletedEvent, capture)
+    event_bus.subscribe(VfsItemPurgedEvent, capture)
     return events
-
-
-@pytest.fixture
-def file_service(
-    storage_root: Path,
-    blob_storage: BlobStorage,
-    user_service: UserService,
-    session_manager: DatabaseSessionManager,
-    event_bus: LocalEventBus,
-) -> FileService:
-    """Fixture providing FileService with explicit DI dependencies."""
-    return FileService(
-        storage_root=storage_root,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        session_manager=session_manager,
-        event_bus=event_bus,
-    )
 
 
 async def test_recycle_bin_lifecycle(
@@ -80,7 +56,7 @@ async def test_recycle_bin_lifecycle(
     test_user_id: int,
     test_users: list[str],
 ) -> None:
-    """Verify moving files to recycle bin, restoring, permanent deletion, and NoteDeletedEvent."""
+    """Verify moving files to recycle bin, restoring, permanent deletion, and VfsItemPurgedEvent."""
     user = test_users[0]
     content = b"recycle bin test note"
     md5 = hashlib.md5(content).hexdigest()
@@ -116,9 +92,14 @@ async def test_recycle_bin_lifecycle(
     assert len(await file_service.list_recycle(user)) == 0
     assert await blob_storage.exists(USER_DATA_BUCKET, "rec_blob") is False
 
-    # Permanent purge of .note publishes NoteDeletedEvent
+    # Permanent purge publishes VfsItemPurgedEvent
     assert published_events == [
-        NoteDeletedEvent(file_id=file_entity.id, user_id=test_user_id)
+        VfsItemPurgedEvent(
+            item_id=file_entity.id,
+            user_id=test_user_id,
+            name="rec_item.note",
+            is_folder=False,
+        )
     ]
 
 
@@ -247,7 +228,12 @@ async def test_recycle_bin_opportunistic_retention_cleanup(
     assert await blob_storage.exists(USER_DATA_BUCKET, "recent_blob") is True
 
     assert published_events == [
-        NoteDeletedEvent(file_id=expired_file.id, user_id=test_user_id)
+        VfsItemPurgedEvent(
+            item_id=expired_file.id,
+            user_id=test_user_id,
+            name="expired.note",
+            is_folder=False,
+        )
     ]
 
 
@@ -491,7 +477,6 @@ async def test_query_file_list_and_get_folders_by_ids_resolve_parent_path_once(
     blob_storage: BlobStorage,
     create_test_user: None,
     test_users: list[str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify query_file_list and get_folders_by_ids resolve parent path once instead of per child item."""
     user = test_users[0]
@@ -518,32 +503,31 @@ async def test_query_file_list_and_get_folders_by_ids_resolve_parent_path_once(
         get_full_path_calls.append(node_id)
         return await orig_get_full_path(self, user_id, node_id)
 
-    monkeypatch.setattr(VirtualFileSystem, "get_full_path", tracking_get_full_path)
+    with patch.object(VirtualFileSystem, "get_full_path", tracking_get_full_path):
+        # query_file_list resolves parent_dir.id once for all 5 children (2 folders + 3 files)
+        items = await file_service.query_file_list(user, parent_dir.id)
+        assert len(items) == 5
+        assert get_full_path_calls == [parent_dir.id]
+        assert {item.full_path for item in items} == {
+            "NOTE/Note/Projects/Alpha",
+            "NOTE/Note/Projects/Beta",
+            "NOTE/Note/Projects/doc_0.note",
+            "NOTE/Note/Projects/doc_1.note",
+            "NOTE/Note/Projects/doc_2.note",
+        }
 
-    # query_file_list resolves parent_dir.id once for all 5 children (2 folders + 3 files)
-    items = await file_service.query_file_list(user, parent_dir.id)
-    assert len(items) == 5
-    assert get_full_path_calls == [parent_dir.id]
-    assert {item.full_path for item in items} == {
-        "NOTE/Note/Projects/Alpha",
-        "NOTE/Note/Projects/Beta",
-        "NOTE/Note/Projects/doc_0.note",
-        "NOTE/Note/Projects/doc_1.note",
-        "NOTE/Note/Projects/doc_2.note",
-    }
-
-    # get_folders_by_ids resolves parent_dir.id once for all non-excluded folders
-    get_full_path_calls.clear()
-    folder_details = await file_service.get_folders_by_ids(
-        user, parent_id=parent_dir.id, id_list=[]
-    )
-    assert len(folder_details) == 2
-    assert get_full_path_calls == [parent_dir.id]
-    by_id = {fd.entity.id: fd for fd in folder_details}
-    assert by_id[sub_a.id].entity.full_path == "NOTE/Note/Projects/Alpha"
-    assert by_id[sub_a.id].has_subfolders is True
-    assert by_id[sub_b.id].entity.full_path == "NOTE/Note/Projects/Beta"
-    assert by_id[sub_b.id].has_subfolders is False
+        # get_folders_by_ids resolves parent_dir.id once for all non-excluded folders
+        get_full_path_calls.clear()
+        folder_details = await file_service.get_folders_by_ids(
+            user, parent_id=parent_dir.id, id_list=[]
+        )
+        assert len(folder_details) == 2
+        assert get_full_path_calls == [parent_dir.id]
+        by_id = {fd.entity.id: fd for fd in folder_details}
+        assert by_id[sub_a.id].entity.full_path == "NOTE/Note/Projects/Alpha"
+        assert by_id[sub_a.id].has_subfolders is True
+        assert by_id[sub_b.id].entity.full_path == "NOTE/Note/Projects/Beta"
+        assert by_id[sub_b.id].has_subfolders is False
 
 
 async def test_search_files_caches_parent_paths(
@@ -551,7 +535,6 @@ async def test_search_files_caches_parent_paths(
     blob_storage: BlobStorage,
     create_test_user: None,
     test_users: list[str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify search_files memoizes parent directory paths across multiple matching items."""
     user = test_users[0]
@@ -579,9 +562,8 @@ async def test_search_files_caches_parent_paths(
         get_full_path_calls.append(node_id)
         return await orig_get_full_path(self, user_id, node_id)
 
-    monkeypatch.setattr(VirtualFileSystem, "get_full_path", tracking_get_full_path)
-
-    results = await file_service.search_files(user, "match_")
+    with patch.object(VirtualFileSystem, "get_full_path", tracking_get_full_path):
+        results = await file_service.search_files(user, "match_")
     assert len(results) == 4
     # Root directory (0) is pre-seeded, and folder.id is resolved only once for all 3 matches in /Note/Archive
     assert get_full_path_calls == [folder.id]
@@ -853,67 +835,52 @@ async def test_file_service_publishes_vfs_domain_events(
     ]
 
 
-async def test_file_overwrite_and_purge_preserve_summary_referenced_blob(
+async def test_file_overwrite_and_purge_preserve_provider_referenced_blob(
     file_service: FileService,
     blob_storage: BlobStorage,
-    session_manager: DatabaseSessionManager,
     test_user_id: int,
     test_users: list[str],
 ) -> None:
-    """Near-miss: overwriting or purging a file must not delete a blob still referenced by SummaryDO."""
+    """Overwriting or purging a file must not delete a blob still referenced by a registered provider."""
+    _ = test_user_id
+    protected_keys = {"shared_ext_key_v1", "shared_ext_key_v2"}
+
+    async def _provider(_session: object, candidate_keys: set[str]) -> set[str]:
+        return candidate_keys & protected_keys
+
+    unregister = file_service.register_blob_reference_provider(_provider)
     user = test_users[0]
-    content_v1 = b"shared with summary v1"
+    content_v1 = b"shared with external table v1"
     md5_v1 = hashlib.md5(content_v1).hexdigest()
-    content_v2 = b"shared with summary v2"
+    content_v2 = b"shared with external table v2"
     md5_v2 = hashlib.md5(content_v2).hexdigest()
 
-    await blob_storage.put(USER_DATA_BUCKET, "shared_sum_key_v1", content_v1)
-    await blob_storage.put(USER_DATA_BUCKET, "shared_sum_key_v2", content_v2)
-
-    async with session_manager.session() as session:
-        session.add_all(
-            [
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="sum-ref-v1",
-                    handwrite_inner_name="shared_sum_key_v1",
-                ),
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="sum-ref-v2",
-                    handwrite_inner_name="shared_sum_key_v2",
-                ),
-            ]
-        )
-        await session.commit()
+    await blob_storage.put(USER_DATA_BUCKET, "shared_ext_key_v1", content_v1)
+    await blob_storage.put(USER_DATA_BUCKET, "shared_ext_key_v2", content_v2)
 
     await file_service.finish_upload(
-        user, "cross_ref.txt", "/", md5_v1, "shared_sum_key_v1"
+        user, "cross_ref.txt", "/", md5_v1, "shared_ext_key_v1"
     )
-    # Overwrite with v2 -> v1 blob must survive because SummaryDO still references it
+    # Overwrite with v2 -> v1 blob must survive because the provider still references it
     entity_v2 = await file_service.finish_upload(
-        user, "cross_ref.txt", "/", md5_v2, "shared_sum_key_v2"
+        user, "cross_ref.txt", "/", md5_v2, "shared_ext_key_v2"
     )
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v1") is True
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v1") is True
 
-    # Soft-delete and purge v2 -> v2 blob must survive because SummaryDO still references it
+    # Soft-delete and purge v2 -> v2 blob must survive because the provider still references it
     await file_service.delete_item(user, entity_v2.id)
     recycled = await file_service.list_recycle(user)
     await file_service.delete_from_recycle(user, [recycled[0].id])
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v2") is True
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v2") is True
 
-    # Once SummaryDO rows are removed, cleanup_unreferenced_blobs deletes both keys
-    async with session_manager.session() as session:
-        await session.execute(
-            delete(SummaryDO).where(SummaryDO.user_id == test_user_id)
-        )
-        await session.commit()
-
+    # Once the provider stops referencing (or is unregistered), cleanup deletes both keys
+    protected_keys.clear()
+    unregister()
     await file_service.cleanup_unreferenced_blobs(
-        {"shared_sum_key_v1", "shared_sum_key_v2"}
+        {"shared_ext_key_v1", "shared_ext_key_v2"}
     )
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v1") is False
-    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v2") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v1") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_ext_key_v2") is False
 
 
 async def test_get_storage_quota(
@@ -1343,3 +1310,67 @@ async def test_note_upload_metrics_by_source_and_extension(
         )
     assert _note_uploads(NoteUploadSource.DEVICE_SYNC) == before_device + 2.0
     assert _note_uploads(NoteUploadSource.WEB) == before_web + 1.0
+
+
+async def test_handle_blob_cleanup_event(
+    file_service: FileService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+) -> None:
+    """Verify FileService.start() subscribes to BlobCleanupEvent and deletes only unreferenced blobs."""
+    await blob_storage.put(USER_DATA_BUCKET, "unreferenced_hw.bin", b"orphan")
+    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_file.bin", b"file-data")
+    await blob_storage.put(
+        USER_DATA_BUCKET, "referenced_by_recycled_file.bin", b"recycled-file-data"
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_provider.bin", b"ext-data")
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=777,
+                    user_id=test_user_id,
+                    storage_key="referenced_by_file.bin",
+                    file_name="keep.note",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=778,
+                    user_id=test_user_id,
+                    storage_key="referenced_by_recycled_file.bin",
+                    file_name="recycled.note",
+                    directory_id=0,
+                    is_active="N",
+                ),
+            ]
+        )
+        await session.commit()
+
+    async def _provider(_session: object, candidate_keys: set[str]) -> set[str]:
+        return candidate_keys & {"referenced_by_provider.bin"}
+
+    file_service.register_blob_reference_provider(_provider)
+    await file_service.start()
+    await file_service.start()  # idempotent
+    await event_bus.publish(
+        BlobCleanupEvent(
+            storage_keys={
+                "unreferenced_hw.bin",
+                "referenced_by_file.bin",
+                "referenced_by_recycled_file.bin",
+                "referenced_by_provider.bin",
+            }
+        )
+    )
+    await asyncio.sleep(0.05)
+
+    assert not await blob_storage.exists(USER_DATA_BUCKET, "unreferenced_hw.bin")
+    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_file.bin")
+    assert await blob_storage.exists(
+        USER_DATA_BUCKET, "referenced_by_recycled_file.bin"
+    )
+    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_provider.bin")

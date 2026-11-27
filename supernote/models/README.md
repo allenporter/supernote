@@ -25,7 +25,7 @@ All request DTOs and response VOs are Python `@dataclass` models backed by `mash
 | `supernote.models.schedule` | To-Do task groups, tasks, and recurrence payloads | `ScheduleTaskGroupItem`, `ScheduleTaskInfo`, `AddScheduleTaskDTO`, `UpdateScheduleTaskListDTO` |
 | `supernote.models.summary` | Handwritten/AI summaries, summary groups, and tags | `SummaryItem`, `SummaryGroupItem`, `AddSummaryDTO`, `QuerySummaryVO`, `QuerySummaryMD5HashVO` |
 | `supernote.models.extended` | Self-hosted semantic search, transcripts, API keys, and AI status | `WebSearchRequestDTO`, `WebSearchResponseVO`, `WebTranscriptResponseVO`, `CreateApiKeyDTO`, `ApiKeyVO`, `WebAiStatusVO` |
-| `supernote.models.webhook` | Outbound HMAC-signed webhook event payloads | `WebhookPayload`, `WebhookFileVO`, `EVENT_NOTE_SYNC_COMPLETED`, `EVENT_NOTE_PROCESSING_COMPLETED` |
+| `supernote.models.events` | Domain event feed and outbound webhook payloads | `DomainEventType`, `DomainEntityType`, `DomainEventVO`, `EventFeedRequestDTO`, `EventFeedListVO` |
 | `supernote.models.socket` | Real-time Socket.IO events (`FILE-SYN`, `TASK-SYN`, `DIGEST-SYN`) | `SocketHandshakeParams`, `SocketIoClientMessage`, `SocketMessageData`, `SocketTaskMessageData` |
 | `supernote.models.equipment` | Hardware device activation and binding | `ActivateEquipmentDTO`, `BindEquipmentDTO`, `UnbindEquipmentDTO`, `UserEquipmentVO` |
 | `supernote.models.system` | OSS multipart chunks, queue status, and storage integrity | `FileChunkVO`, `UploadFileVO`, `QueueStatusVO`, `IntegrityReportVO`, `ReferenceSysParamDTO` |
@@ -250,12 +250,17 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
 * **OCR Page Transcripts** (`POST /api/extended/transcript`): `WebTranscriptRequestDTO` (stringified `file_id`, optional `start_index` / `end_index`) -> `WebTranscriptResponseVO` (`pages: list[PageTranscriptVO]`).
 * **Web Summaries, Structured Notebook Metadata & Note Cover Previews**:
   * `POST /api/extended/file/summary/list`: `WebSummaryListRequestDTO` -> `WebSummaryListVO`
+  * `POST /api/extended/file/summary/to/pdf`: `DownloadSummaryDTO` -> `PdfVO` (signed `GET /api/oss/summary/pdf/{id}` URL for the rendered handwriting)
+  * `POST /api/extended/file/summary/to/png`: `DownloadSummaryDTO` -> `PngVO` (signed `GET /api/oss/summary/png/{id}/{page_no}` URLs)
   * `POST /api/extended/file/note/cover`: `WebNoteCoverRequestDTO` -> `WebNoteCoverVO`
   * `POST /api/extended/file/note/metadata`: `WebNoteMetadataRequestDTO` -> `WebNoteMetadataVO` (`file_id`, `equipment`, `total_pages`, `keywords`, `titles: list[NoteTitleVO]`, `links: list[NoteLinkVO]`, `pages: list[NotePageMetadataVO]`)
 * **Static Bearer API Keys**:
   * `POST /api/extended/keys`: `CreateApiKeyDTO` (`name`, `expires_in_days`) -> `CreateApiKeyResponseVO` (`id`, `name`, `key`, `created_at`, `expires_at`)
   * `GET /api/extended/keys`: `ApiKeyListResponseVO` (`keys: list[ApiKeyVO]`)
   * `DELETE /api/extended/keys/{keyId}`: `BaseResponse`
+* **OAuth Client Grants**:
+  * `GET /api/extended/oauth/grants`: `OAuthGrantListResponseVO` (`grants: list[OAuthGrantVO]`: `id`, `client_id`, `scopes`, `created_at`, `expires_at`, `last_used_at`)
+  * `DELETE /api/extended/oauth/grants/{grantId}`: `BaseResponse`
 * **AI Configuration & Processing Tasks**:
   * `GET /api/extended/ai/status`: `WebAiStatusVO` (`has_api_key`, `ocr_enabled`, `ocr_model`, `summary_enabled`, `summary_model`, `vector_search_enabled`, `embedding_model`)
   * `POST /api/extended/file/processing/status`: `FileProcessingStatusDTO` -> `FileProcessingStatusVO`
@@ -268,23 +273,12 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
 Models in `supernote.models.events` define the wire contract for `GET /api/extended/events` and `supernote.client.events.EventsClient`:
 
 * **Enumerations**:
-  * `DomainEventType`: `vfs.created`, `vfs.content_updated`, `vfs.moved`, `vfs.copied`, `vfs.deleted`, `note.pages_delta`, `note.page_transcribed`, `note.processing_completed`, `note.processing_failed`, `schedule.task_created`, `schedule.task_updated`, `schedule.task_deleted`, `summary.upserted`, `summary.deleted`
+  * `DomainEventType`: `file.created`, `file.content_updated`, `file.moved`, `file.copied`, `file.deleted`, `note.pages_delta`, `note.page_transcribed`, `note.processing_completed`, `note.processing_failed`, `schedule.task_created`, `schedule.task_updated`, `schedule.task_deleted`, `summary.created`, `summary.updated`, `summary.deleted`
   * `DomainEntityType`: `file`, `note_page`, `schedule_task`, `summary`
 * **Request & Response Envelopes**:
   * `EventFeedRequestDTO` (`sync_token`, `event_types`, `file_id`, `limit`)
-  * `DomainEventVO` (`seq`, `timestamp`, `event_type`, `actor`, `entity_type`, `entity_id`, `related_file_id`, `payload`)
+  * `DomainEventVO` (`seq`, `timestamp`, `event_type`, `actor`, `entity_type`, `entity_id`, `related_file_id`, `payload`) — also dispatched as the JSON body for outbound webhooks (`supernote.server.components.webhooks.service.WebhookService`; see `supernote.guides.webhooks_and_integrations`)
   * `EventFeedListVO` (`events: list[DomainEventVO]`, `next_sync_token`, `has_more`)
-
----
-
-## Outbound Webhooks (`supernote.models.webhook`)
-
-Models in `supernote.models.webhook` define the JSON payloads dispatched by `supernote.server.components.webhooks.service.WebhookService` when a `.note` file completes synchronization or background AI processing:
-
-* **Event Constants**: `EVENT_NOTE_SYNC_COMPLETED` (`"note.sync_completed"`) and `EVENT_NOTE_PROCESSING_COMPLETED` (`"note.processing_completed"`)
-* **Payloads**: `WebhookPayload` (`event`, `timestamp`, `user_id`, and `file: WebhookFileVO` containing `id`, `name`, and `path`)
-
-See `supernote.guides.webhooks_and_integrations` for HMAC-SHA256 signature verification (`X-Supernote-Signature`) and consumer examples.
 
 ---
 

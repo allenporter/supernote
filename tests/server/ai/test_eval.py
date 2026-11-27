@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.eval import (
@@ -26,8 +27,8 @@ from supernote.server.ai.eval import (
     rescore_suite_report,
     score_ocr_output,
 )
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -673,3 +674,110 @@ def test_render_pareto_svg_formats_known_provider_labels() -> None:
     assert "Gemini 3.6 Flash (100.0%)" in svg
     assert "apple:vision-fast" not in svg
     assert "gemini:gemini-3.5-flash-lite" not in svg
+
+
+def test_score_ocr_output_mermaid_validation_and_entity_recall() -> None:
+    valid = "Auth Flow\n\n```mermaid\nflowchart TD\n    A[Client] --> B[Gateway]\n```\n"
+    metrics = score_ocr_output(
+        valid,
+        valid,
+        evaluate_bujo=False,
+        expect_mermaid=True,
+        required_entities=["Client", "Gateway", "SQLite"],
+    )
+    assert metrics.multimodal_structure_pass is True
+    assert metrics.entity_recall == round(2 / 3, 4)
+
+
+@pytest.mark.parametrize(
+    "bad_output",
+    [
+        "No mermaid block at all",
+        "```mermaid\nnotADiagram\nA --> B\n```",
+        "```mermaid\nflowchart TD\n```",
+        '```mermaid\nflowchart TD\n    A["unclosed --> B\n```',
+        "```mermaid\nflowchart TD\n    A[unclosed --> B\n```",
+    ],
+)
+def test_score_ocr_output_rejects_invalid_mermaid(bad_output: str) -> None:
+    metrics = score_ocr_output(
+        "ref",
+        bad_output,
+        evaluate_bujo=False,
+        expect_mermaid=True,
+    )
+    assert metrics.multimodal_structure_pass is False
+
+
+def test_score_ocr_output_table_and_diagram_description_checks() -> None:
+    table_md = "| Model | Latency |\n| :--- | :--- |\n| Gemini | 1.2s |\n"
+    table_metrics = score_ocr_output(
+        table_md,
+        table_md,
+        evaluate_bujo=False,
+        expect_table=True,
+    )
+    assert table_metrics.multimodal_structure_pass is True
+
+    sketch_md = "> [Diagram: Living room with Sofa and Window]"
+    sketch_metrics = score_ocr_output(
+        sketch_md,
+        sketch_md,
+        evaluate_bujo=False,
+        expect_diagram_description=True,
+    )
+    assert sketch_metrics.multimodal_structure_pass is True
+
+    hallucinated = "Notes\n```mermaid\nflowchart TD\n  A --> B\n```\n"
+    forbid_metrics = score_ocr_output(
+        "Notes",
+        hallucinated,
+        evaluate_bujo=False,
+        forbid_mermaid=True,
+    )
+    assert forbid_metrics.multimodal_structure_pass is False
+
+
+def test_load_eval_case_input_supports_jpeg_images(tmp_path: Path) -> None:
+    jpg_path = tmp_path / "whiteboard.jpg"
+    Image.new("RGB", (200, 100), color="white").save(jpg_path, format="JPEG")
+    case = OcrEvalCase(
+        id="wb_jpg",
+        path="whiteboard.jpg",
+        category="multimodal_diagrams",
+        ground_truth="hello",
+    )
+    loaded = load_eval_case_input(case, tmp_path)
+    assert loaded.png_data.startswith(b"\x89PNG\r\n\x1a\n")
+    assert loaded.device_rtr_text is None
+
+
+async def test_evaluate_ocr_dataset_aggregates_and_formats_multimodal_metrics(
+    sample_png_dir: Path,
+) -> None:
+    dataset = OcrEvalDataset(
+        name="multimodal-suite",
+        cases=[
+            OcrEvalCase(
+                id="diag_1",
+                path="sample.png",
+                category="multimodal_diagrams",
+                expect_mermaid=True,
+                required_entities=["Client", "Gateway"],
+                ground_truth="Client Gateway",
+            )
+        ],
+    )
+    output = "```mermaid\nflowchart TD\n  Client --> Gateway\n```"
+    report = await evaluate_ocr_dataset(
+        dataset,
+        sample_png_dir,
+        [OcrEvalTarget("gemini:v1", _ScriptedOcrModel([output]))],
+        warmup=False,
+    )
+    assert report.targets[0].overall.multimodal_structure_pass_rate == 1.0
+    assert report.targets[0].overall.mean_entity_recall == 1.0
+
+    md = format_markdown_report(report)
+    assert "## Multimodal Structure & Entity Checks" in md
+    assert "100.0%" in md

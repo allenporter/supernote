@@ -1,13 +1,13 @@
 """Tests for route handler decorators and sensitive endpoint authorization invariants."""
 
-from pathlib import Path
-
 from aiohttp import web
+from aiohttp.test_utils import TestClient
 
-from supernote.server.app import create_app
-from supernote.server.config import ServerConfig
-from supernote.server.routes.admin import require_admin
-from supernote.server.routes.decorators import interactive_session_only, public_route
+from supernote.server.routes.decorators import (
+    interactive_session_only,
+    public_route,
+    require_admin,
+)
 
 
 def test_route_decorators_set_handler_attributes() -> None:
@@ -36,12 +36,12 @@ def test_route_decorators_set_handler_attributes() -> None:
     assert getattr(admin_handler, "__wrapped__", None) is not None
 
 
-def test_sensitive_routes_enforce_explicit_api_key_policy(
-    tmp_path: Path,
+async def test_sensitive_routes_enforce_explicit_api_key_policy(
+    client: TestClient,
 ) -> None:
     """Ensure every /api/admin/*, /api/extended/keys*, and /api/user/* route has an explicit API key policy."""
-    config = ServerConfig(storage_dir=str(tmp_path / "storage"))
-    app = create_app(config)
+    assert client.app is not None
+    app = client.app
 
     # Read-only self-profile query endpoints intentionally accessible to SDK/CLI API keys
     allowed_api_key_user_routes = {

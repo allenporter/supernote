@@ -3,7 +3,7 @@
 
 This script pushes pdoc beyond single-level Python module dumps by:
 1. Synthesizing virtual `pdoc.doc.Module` objects (`supernote.guides.*`) from
-   standalone Markdown guides in `docs/` and `supernote/server/ARCHITECTURE.md`
+   standalone Markdown guides under `docs/` (`guides/`, `reference/`, `architecture/`)
    without polluting the shipped Python package with dummy `.py` files.
 2. Injecting a multi-level navigation structure (`nav_guide_sections`,
    `nav_api_packages`, `nav_page_titles`) into `pdoc.render.env.globals`.
@@ -52,104 +52,141 @@ class GuideSpec:
 
 
 GUIDE_SPECS: list[GuideSpec] = [
-    # Getting Started & Self-Hosting
+    # Getting Started
     GuideSpec(
         slug="bootstrap_guide",
         title="Self-Hosting & Quickstart",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "bootstrap_guide.md",
+        section="Getting Started",
+        path=ROOT_DIR / "docs" / "guides" / "bootstrap_guide.md",
+    ),
+    GuideSpec(
+        slug="ai_providers",
+        title="Choosing an AI Provider",
+        section="Getting Started",
+        path=ROOT_DIR / "docs" / "guides" / "ai_providers.md",
     ),
     GuideSpec(
         slug="configuration",
         title="Configuration Reference",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "configuration.md",
-    ),
-    GuideSpec(
-        slug="mcp",
-        title="AI Pipeline, Prompts & MCP",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "mcp.md",
-    ),
-    GuideSpec(
-        slug="ocr_benchmarks",
-        title="OCR Provider Benchmarks",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "evals" / "ocr" / "README.md",
-    ),
-    GuideSpec(
-        slug="monitoring",
-        title="Prometheus & Grafana Monitoring",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "monitoring.md",
-    ),
-    GuideSpec(
-        slug="webhooks_and_integrations",
-        title="Webhooks, iCal & Integrations",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "webhooks_and_integrations.md",
+        section="Getting Started",
+        path=ROOT_DIR / "docs" / "reference" / "configuration.md",
     ),
     GuideSpec(
         slug="cli_reference",
         title="CLI Reference",
-        section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "cli_reference.md",
+        section="Getting Started",
+        path=ROOT_DIR / "docs" / "reference" / "cli_reference.md",
     ),
-    # Architecture & Specifications
+    # Features & Workflows
     GuideSpec(
-        slug="architecture",
-        title="Server & Sync Protocol",
-        section="Architecture & Specs",
-        path=ROOT_DIR / "supernote" / "server" / "ARCHITECTURE.md",
+        slug="ocr_and_multimodal",
+        title="Handwriting OCR & Multimodal",
+        section="Features & Workflows",
+        path=ROOT_DIR / "docs" / "guides" / "ocr_and_multimodal.md",
     ),
     GuideSpec(
-        slug="note_processing_design",
-        title="Async Note Processing Pipeline",
-        section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "note_processing_design.md",
+        slug="search",
+        title="Search & Retrieval",
+        section="Features & Workflows",
+        path=ROOT_DIR / "docs" / "guides" / "search.md",
+    ),
+    GuideSpec(
+        slug="llm_wiki",
+        title="LLM Wiki",
+        section="Features & Workflows",
+        path=ROOT_DIR / "docs" / "guides" / "llm_wiki.md",
+    ),
+    GuideSpec(
+        slug="mcp",
+        title="MCP Server & AI Assistants",
+        section="Features & Workflows",
+        path=ROOT_DIR / "docs" / "guides" / "mcp.md",
+    ),
+    GuideSpec(
+        slug="webhooks_and_integrations",
+        title="Webhooks, iCal & Integrations",
+        section="Features & Workflows",
+        path=ROOT_DIR / "docs" / "guides" / "webhooks_and_integrations.md",
+    ),
+    GuideSpec(
+        slug="ocr_benchmarks",
+        title="OCR Provider Benchmarks",
+        section="Features & Workflows",
+        path=ROOT_DIR / "evals" / "ocr" / "README.md",
+    ),
+    GuideSpec(
+        slug="search_benchmarks",
+        title="Search & Embedding Benchmarks",
+        section="Features & Workflows",
+        path=ROOT_DIR / "evals" / "search" / "README.md",
+    ),
+    # Operations
+    GuideSpec(
+        slug="monitoring",
+        title="Prometheus & Grafana Monitoring",
+        section="Operations",
+        path=ROOT_DIR / "docs" / "reference" / "monitoring.md",
     ),
     GuideSpec(
         slug="security",
         title="Security & Threat Model",
-        section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "security.md",
+        section="Operations",
+        path=ROOT_DIR / "docs" / "reference" / "security.md",
+    ),
+    GuideSpec(
+        slug="schema_migration_guide",
+        title="Database Migrations (Alembic)",
+        section="Operations",
+        path=ROOT_DIR / "docs" / "architecture" / "schema_migration_guide.md",
+    ),
+    # Architecture & Development
+    GuideSpec(
+        slug="components",
+        title="Server Component Catalog",
+        section="Architecture & Development",
+        path=ROOT_DIR / "docs" / "architecture" / "components.md",
+    ),
+    GuideSpec(
+        slug="architecture",
+        title="Server & Sync Protocol",
+        section="Architecture & Development",
+        path=ROOT_DIR / "docs" / "architecture" / "server_architecture.md",
+    ),
+    GuideSpec(
+        slug="note_processing_design",
+        title="Async Note Processing Pipeline",
+        section="Architecture & Development",
+        path=ROOT_DIR / "docs" / "architecture" / "note_processing_design.md",
     ),
     GuideSpec(
         slug="notebook_spec",
         title="Binary .note Format Spec",
-        section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "notebook_spec.md",
+        section="Architecture & Development",
+        path=ROOT_DIR / "docs" / "architecture" / "notebook_spec.md",
     ),
     GuideSpec(
         slug="schedule_api",
         title="Schedule & Tasks API Spec",
-        section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "schedule_api.md",
+        section="Architecture & Development",
+        path=ROOT_DIR / "docs" / "architecture" / "schedule_api.md",
     ),
     GuideSpec(
         slug="summary_api",
         title="Summary & OCR API Spec",
-        section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "summary_api.md",
+        section="Architecture & Development",
+        path=ROOT_DIR / "docs" / "architecture" / "summary_api.md",
     ),
-    # Contributing & Maintenance
     GuideSpec(
         slug="roadmap",
         title="Roadmap & Priorities",
-        section="Development",
+        section="Architecture & Development",
         path=ROOT_DIR / "ROADMAP.md",
     ),
     GuideSpec(
         slug="contributing",
         title="Contributing & Local Dev",
-        section="Development",
+        section="Architecture & Development",
         path=ROOT_DIR / "docs" / "CONTRIBUTING.md",
-    ),
-    GuideSpec(
-        slug="schema_migration_guide",
-        title="Database Migrations (Alembic)",
-        section="Development",
-        path=ROOT_DIR / "docs" / "schema_migration_guide.md",
     ),
 ]
 
@@ -207,6 +244,12 @@ class MarkdownGuideModule(pdoc.doc.Module):
                     text = text.replace(target, f"{target}\n\n{results_body.strip()}\n")
                 else:
                     text = f"{text}\n\n{results_body}"
+        elif self._guide_spec.slug == "search_benchmarks":
+            results_path = ROOT_DIR / "evals" / "search" / "RESULTS.md"
+            if results_path.exists():
+                results_body = results_path.read_text(encoding="utf-8")
+                results_body = re.sub(r"^#\s+[^\n]+\n+", "", results_body, count=1)
+                text = f"{text.rstrip()}\n\n{results_body.strip()}\n"
         return text.replace(r"$\rightarrow$", "→")
 
     @cached_property
@@ -307,10 +350,12 @@ def _install_markdown_link_rewriter() -> None:
         "supernote/server/README.md": "supernote.server",
         "supernote/notebook/README.md": "supernote.notebook",
         "supernote/models/README.md": "supernote.models",
-        "supernote/server/ARCHITECTURE.md": "supernote.guides.architecture",
+        "docs/architecture/server_architecture.md": "supernote.guides.architecture",
         "docs/CONTRIBUTING.md": "supernote.guides.contributing",
         "evals/ocr/RESULTS.md": "supernote.guides.ocr_benchmarks",
         "evals/ocr/README.md": "supernote.guides.ocr_benchmarks",
+        "evals/search/RESULTS.md": "supernote.guides.search_benchmarks",
+        "evals/search/README.md": "supernote.guides.search_benchmarks",
         "RESULTS.md": "supernote.guides.ocr_benchmarks",
     }
     for spec in GUIDE_SPECS:
@@ -606,7 +651,7 @@ def build_site(output_dir: Path) -> None:
         shutil.copy2(favicon_src, output_dir / "favicon.ico")
 
     # If building to an external directory (e.g. site/), copy static assets if needed
-    for asset_dir_name in ("static-assets", "images"):
+    for asset_dir_name in ("static-assets",):
         src_assets = ROOT_DIR / "docs" / asset_dir_name
         dst_assets = output_dir / asset_dir_name
         if src_assets.exists() and src_assets.resolve() != dst_assets.resolve():

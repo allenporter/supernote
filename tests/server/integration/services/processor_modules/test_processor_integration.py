@@ -5,9 +5,19 @@ from sqlalchemy import select
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
+from supernote.server.components.conversion.processor import (
+    PngConversionModule,
+)
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
+from supernote.server.components.processor import ProcessorService
+from supernote.server.components.processor.page_hashing import PageHashingModule
+from supernote.server.components.search.processor import EmbeddingModule
+from supernote.server.components.summary import SummaryService
+from supernote.server.components.summary.processor import SummaryModule
+from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -16,15 +26,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteProcessingCompletedEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor import ProcessorService
-from supernote.server.services.processor_modules.embedding import EmbeddingModule
-from supernote.server.services.processor_modules.ocr import OcrModule
-from supernote.server.services.processor_modules.page_hashing import PageHashingModule
-from supernote.server.services.processor_modules.png_conversion import (
-    PngConversionModule,
-)
-from supernote.server.services.processor_modules.summary import SummaryModule
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (
     AI_SUMMARIES_GROUP_NAME,
@@ -46,18 +47,17 @@ def summary_service(
 def processor_service(
     session_manager: DatabaseSessionManager,
     file_service: FileService,
-    summary_service: SummaryService,
 ) -> ProcessorService:
     return ProcessorService(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
     )
 
 
 async def test_full_processing_pipeline_with_real_file(
     processor_service: ProcessorService,
+    summary_service: SummaryService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     test_data_dir: Path,
@@ -95,17 +95,19 @@ async def test_full_processing_pipeline_with_real_file(
 
     # Register modules with fake task models
     hashing = PageHashingModule(processor_service.file_service)
+    metadata = NoteMetadataModule(processor_service.file_service)
     png = PngConversionModule(processor_service.file_service)
     ocr = OcrModule(processor_service.file_service, fake_ocr_model)
     embedding = EmbeddingModule(processor_service.file_service, fake_embedding_model)
     summary = SummaryModule(
         file_service=processor_service.file_service,
-        summary_service=processor_service.summary_service,
+        summary_service=summary_service,
         summary_model=fake_summary_model,
     )
 
     processor_service.register_modules(
         hashing=hashing,
+        metadata=metadata,
         png=png,
         ocr=ocr,
         embedding=embedding,
@@ -121,7 +123,7 @@ async def test_full_processing_pipeline_with_real_file(
     processor_service.event_bus.subscribe(NoteProcessingCompletedEvent, on_completed)
 
     # Execute Pipeline
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=user_id)
 
     # Verifications
     async with session_manager.session() as session:
@@ -155,8 +157,8 @@ async def test_full_processing_pipeline_with_real_file(
             .all()
         )
 
-        # Hashing (1) + Per-Page (3 types * N pages) + Summary (1)
-        expected_task_count = 1 + (total_pages * 3) + 1
+        # Hashing (1) + Metadata (1) + Per-Page (3 types * N pages) + Summary (1)
+        expected_task_count = 2 + (total_pages * 3) + 1
 
         # Filter for COMPLETED
         completed_tasks = [t for t in tasks if t.status == "COMPLETED"]
@@ -218,6 +220,7 @@ async def test_full_processing_pipeline_with_real_file(
 
 async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
     processor_service: ProcessorService,
+    summary_service: SummaryService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     test_data_dir: Path,
@@ -247,17 +250,18 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
 
     processor_service.register_modules(
         hashing=PageHashingModule(processor_service.file_service),
+        metadata=NoteMetadataModule(processor_service.file_service),
         png=PngConversionModule(processor_service.file_service),
         ocr=OcrModule(processor_service.file_service, fake_ocr_model),
         embedding=EmbeddingModule(processor_service.file_service, fake_embedding_model),
         summary=SummaryModule(
             file_service=processor_service.file_service,
-            summary_service=processor_service.summary_service,
+            summary_service=summary_service,
             summary_model=fake_summary_model,
         ),
     )
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=user_id)
 
     # Pages 0 and 2 have ink; page 1 is an un-inked PDF template page.
     assert len(fake_ocr_model.calls) == 2
@@ -298,4 +302,4 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
             .scalars()
             .all()
         )
-        assert len(completed_tasks) == 1 + (3 * 3) + 1
+        assert len(completed_tasks) == 2 + (3 * 3) + 1

@@ -8,6 +8,7 @@ and lifecycle orchestration (`async_setup`, `async_start`, `async_stop`).
 
 from __future__ import annotations
 
+import asyncio
 import graphlib
 import heapq
 import importlib
@@ -37,6 +38,7 @@ __all__ = [
     "DependencyCycleError",
     "DuplicateComponentError",
     "MissingDependencyError",
+    "PlatformHost",
     "ServerCore",
 ]
 
@@ -116,6 +118,24 @@ class Component(Protocol):
         ...
 
 
+@runtime_checkable
+class PlatformHost(Protocol):
+    """Optional protocol for components that host one or more platforms."""
+
+    @property
+    def hosted_platforms(self) -> Sequence[str]:
+        """Platform names hosted by this component (e.g. ``('http',)``)."""
+        ...
+
+    def get_platform_registrar(self) -> Any:
+        """Return the registrar passed into ``async_setup_<platform>(core, registrar)``."""
+        ...
+
+    async def async_finalize_platforms(self, core: ServerCore) -> None:
+        """Apply or finalize all platform registrations after loading completes."""
+        ...
+
+
 @dataclass(frozen=True)
 class ServerCore:
     """Immutable, strongly-typed core host shared with all server components."""
@@ -145,6 +165,7 @@ class ComponentLoader:
         self._components: dict[str, Component] = {}
         self._initialized: list[Component] = []
         self._state = _LifecycleState.IDLE
+        self._reconfigure_lock = asyncio.Lock()
 
     @property
     def components(self) -> tuple[Component, ...]:
@@ -154,6 +175,10 @@ class ComponentLoader:
     def get(self, domain: str) -> Component | None:
         """Return the registered component for ``domain``, if present."""
         return self._components.get(domain)
+
+    def is_running(self, domain: str) -> bool:
+        """Return whether ``domain`` is currently initialized and running."""
+        return any(comp.domain == domain for comp in self._initialized)
 
     def register(self, component: Component) -> None:
         """Register a component before setup after validating its domain and uniqueness."""
@@ -169,6 +194,14 @@ class ComponentLoader:
         if domain in self._components:
             raise DuplicateComponentError(domain)
         self._components[domain] = component
+
+    def unregister(self, domain: str) -> Component | None:
+        """Remove and return a registered component before setup if present."""
+        if self._state is not _LifecycleState.IDLE:
+            raise ComponentError(
+                f"Cannot unregister component after setup (state={self._state.value!r})"
+            )
+        return self._components.pop(domain, None)
 
     def resolve_order(self) -> tuple[Component, ...]:
         """Resolve a deterministic topological order preserving registration tie-breaks."""
@@ -265,12 +298,106 @@ class ComponentLoader:
                 )
             await setup_fn(core, registrar)
 
+    async def async_load_all_platforms(self, core: ServerCore) -> None:
+        """Load and finalize every platform declared by initialized `PlatformHost` components."""
+        if self._state is not _LifecycleState.SETUP:
+            raise ComponentError(
+                f"Cannot load platforms in state {self._state.value!r}; "
+                "components must complete async_setup_all first"
+            )
+        try:
+            for comp in self._initialized:
+                if not isinstance(comp, PlatformHost):
+                    continue
+                registrar = comp.get_platform_registrar()
+                for platform in comp.hosted_platforms:
+                    await self.async_load_platform(platform, core, registrar)
+                await comp.async_finalize_platforms(core)
+        except BaseException:
+            await self.async_stop_all(core)
+            raise
+
     async def async_stop_all(self, core: ServerCore) -> None:
         """Idempotently stop all initialized components in reverse topological order."""
         to_stop = list(reversed(self._initialized))
         self._initialized.clear()
         self._state = _LifecycleState.STOPPED
         await _best_effort_stop(to_stop, core)
+
+    async def async_reconfigure(
+        self,
+        core: ServerCore,
+        component: Component,
+        config: Mapping[str, Any],
+    ) -> None:
+        """Dynamically start, restart, or stop ``component`` at runtime after server startup.
+
+        Serialized with an internal asyncio lock so concurrent reconfiguration requests
+        never interleave teardown and setup.
+        """
+        domain = component.domain
+        if not _DOMAIN_PATTERN.fullmatch(domain):
+            raise ComponentError(
+                f"Component domain {domain!r} must match {_DOMAIN_PATTERN.pattern}"
+            )
+        enabled = bool(config.get("enabled", True))
+        async with self._reconfigure_lock:
+            if self._state is not _LifecycleState.STARTED:
+                raise ComponentError(
+                    f"Cannot reconfigure component in state {self._state.value!r}; "
+                    "server must be in 'started' state"
+                )
+            if enabled:
+                for dep in component.dependencies:
+                    if not self.is_running(dep):
+                        raise MissingDependencyError(domain, dep)
+            else:
+                for running_comp in self._initialized:
+                    if (
+                        running_comp.domain != domain
+                        and domain in running_comp.dependencies
+                    ):
+                        raise ComponentError(
+                            f"Cannot disable component {domain!r} while dependent "
+                            f"component {running_comp.domain!r} is running"
+                        )
+
+            existing = next(
+                (comp for comp in self._initialized if comp.domain == domain),
+                None,
+            )
+            if existing is not None:
+                logger.debug(
+                    "Stopping running component %r for reconfiguration", domain
+                )
+                self._initialized.remove(existing)
+                await _best_effort_stop((existing,), core)
+
+            if not enabled:
+                logger.info("Component %r disabled at runtime", domain)
+                self._components.pop(domain, None)
+                return
+
+            self._components[domain] = component
+            setup_succeeded = False
+            try:
+                await component.async_setup(core, config)
+                setup_succeeded = True
+                await component.async_start(core)
+                self._initialized.append(component)
+                logger.info("Component %r reconfigured and started at runtime", domain)
+            except BaseException:
+                logger.debug(
+                    "Rolling back failed runtime reconfiguration for component %r",
+                    domain,
+                )
+                if setup_succeeded:
+                    await _best_effort_stop((component,), core)
+                if existing is not None:
+                    self._components[domain] = existing
+                else:
+                    self._components.pop(domain, None)
+                raise
 
 
 async def _best_effort_stop(

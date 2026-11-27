@@ -19,7 +19,7 @@ def test_webhook_config_from_dict_parses_endpoints() -> None:
                     "url": "https://n8n.homelab.local/webhook/supernote",
                     "user": "alice@example.com",
                     "secret": "hmac-secret-key",
-                    "events": ["note.sync_completed"],
+                    "events": ["file.created", "note.*"],
                 }
             ],
         }
@@ -31,7 +31,7 @@ def test_webhook_config_from_dict_parses_endpoints() -> None:
     assert endpoint.url == "https://n8n.homelab.local/webhook/supernote"
     assert endpoint.user == "alice@example.com"
     assert endpoint.secret == "hmac-secret-key"
-    assert endpoint.events == ["note.sync_completed"]
+    assert endpoint.events == ["file.created", "note.*"]
 
 
 @pytest.mark.parametrize(

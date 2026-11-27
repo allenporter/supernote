@@ -91,6 +91,7 @@ async def test_note_page_content_crud(db_session: AsyncSession) -> None:
 async def test_system_task_crud(db_session: AsyncSession) -> None:
     """Test Basic CRUD for SystemTaskDO."""
     task = SystemTaskDO(
+        user_id=10,
         file_id=1,
         task_type="OCR",
         key="page_0",
@@ -99,10 +100,13 @@ async def test_system_task_crud(db_session: AsyncSession) -> None:
     db_session.add(task)
     await db_session.commit()
 
-    stmt = select(SystemTaskDO).where(SystemTaskDO.id == task.id)
+    stmt = select(SystemTaskDO).where(
+        SystemTaskDO.user_id == 10, SystemTaskDO.id == task.id
+    )
     result = await db_session.execute(stmt)
     fetched = result.scalar_one()
 
+    assert fetched.user_id == 10
     assert fetched.file_id == 1
     assert fetched.task_type == "OCR"
     assert fetched.status == ProcessingStatus.PENDING

@@ -11,12 +11,18 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from collections.abc import Awaitable, Callable, Iterable, Mapping
-from typing import TYPE_CHECKING, Any, ParamSpec, cast
+from collections.abc import Awaitable, Callable, Mapping
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
+from mcp.types import CallToolResult
+
+from supernote.server.components.mcp.config import McpConfig
+from supernote.server.components.mcp.metrics import (
+    init_mcp_metrics,
+    track_mcp_tool_call,
+)
 from supernote.server.core import ServerCore
-from supernote.server.keys import MCP_REGISTRAR_KEY, SEARCH_SERVICE_KEY
-from supernote.server.metrics import MCPToolName, init_mcp_metrics, track_mcp_tool_call
+from supernote.server.events import bind_event_actor
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -24,44 +30,67 @@ if TYPE_CHECKING:
     from supernote.server.components.oauth.models import SupernoteAccessToken
 
 __all__ = [
-    "MCP_REGISTRAR_KEY",
     "McpComponent",
+    "McpConfig",
     "McpRegistrar",
+    "get_authenticated_actor",
     "get_authenticated_user_id",
     "instrument_mcp_tool",
 ]
 
 _P = ParamSpec("_P")
+_R = TypeVar("_R", bound=dict[str, Any] | CallToolResult)
 
 
-def get_authenticated_user_id() -> int | None:
-    """Return the authenticated user ID from the active MCP bearer auth context."""
+def _get_authenticated_token() -> SupernoteAccessToken | None:
+    """Return the active `SupernoteAccessToken` from the MCP auth context, if any."""
     from mcp.server.auth.middleware.auth_context import (  # noqa: PLC0415
         auth_context_var,
     )
 
     if not (auth_context := auth_context_var.get()):
         return None
-    token = cast("SupernoteAccessToken", auth_context.access_token)
-    return token.user_id
+    return cast("SupernoteAccessToken", auth_context.access_token)
+
+
+def get_authenticated_user_id() -> int | None:
+    """Return the authenticated user ID from the active MCP bearer auth context."""
+    token = _get_authenticated_token()
+    return token.user_id if token is not None else None
+
+
+def get_authenticated_actor() -> str | None:
+    """Return the canonical actor identifier for the active MCP auth context."""
+    token = _get_authenticated_token()
+    return token.actor if token is not None else None
+
+
+def _is_tool_result_success(result: dict[str, Any] | CallToolResult) -> bool:
+    """Determine whether an MCP tool result represents a successful invocation."""
+    if isinstance(result, CallToolResult):
+        return not result.is_error
+    return result.get("success") is True
 
 
 def instrument_mcp_tool(
     tool: str,
 ) -> Callable[
-    [Callable[_P, Awaitable[dict[str, Any]]]],
-    Callable[_P, Awaitable[dict[str, Any]]],
+    [Callable[_P, Awaitable[_R]]],
+    Callable[_P, Awaitable[_R]],
 ]:
-    """Wrap an MCP tool handler to record Prometheus call and latency metrics."""
+    """Wrap an MCP tool handler to bind caller actor and record Prometheus metrics."""
 
     def decorator(
-        fn: Callable[_P, Awaitable[dict[str, Any]]],
-    ) -> Callable[_P, Awaitable[dict[str, Any]]]:
+        fn: Callable[_P, Awaitable[_R]],
+    ) -> Callable[_P, Awaitable[_R]]:
         @functools.wraps(fn)
-        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> dict[str, Any]:
-            with track_mcp_tool_call(tool=tool) as call:
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            with (
+                bind_event_actor(get_authenticated_actor()),
+                track_mcp_tool_call(tool=tool) as call,
+            ):
                 result = await fn(*args, **kwargs)
-                call.set_succeeded(result.get("success") is True)
+                call.set_succeeded(_is_tool_result_success(result))
                 return result
 
         return wrapper
@@ -72,14 +101,16 @@ def instrument_mcp_tool(
 class McpRegistrar:
     """Registrar passed into ``<component>.mcp:async_setup_mcp(core, registrar)``."""
 
-    def __init__(self, *, reserved_names: Iterable[str] = ()) -> None:
-        self._reserved: frozenset[str] = frozenset(str(n) for n in reserved_names)
-        self._tools: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {}
+    def __init__(self) -> None:
+        self._tools: dict[
+            str, Callable[..., Awaitable[dict[str, Any] | CallToolResult]]
+        ] = {}
         self._applied: set[str] = set()
 
     def add_tool(
         self,
-        fn: Callable[..., Awaitable[dict[str, Any]]],
+        fn: Callable[..., Awaitable[dict[str, Any]]]
+        | Callable[..., Awaitable[CallToolResult]],
         *,
         name: str | None = None,
     ) -> None:
@@ -87,7 +118,7 @@ class McpRegistrar:
         tool_name = (name or getattr(fn, "__name__", "")).strip()
         if not tool_name:
             raise ValueError("MCP tool name must be non-empty")
-        if tool_name in self._tools or tool_name in self._reserved:
+        if tool_name in self._tools:
             raise ValueError(f"MCP tool {tool_name!r} is already registered")
         self._tools[tool_name] = instrument_mcp_tool(tool_name)(fn)
 
@@ -117,26 +148,34 @@ class McpComponent:
     domain = "mcp"
     dependencies: tuple[str, ...] = ("oauth",)
     platforms: tuple[str, ...] = ()
+    hosted_platforms: tuple[str, ...] = ("mcp",)
 
     def __init__(self) -> None:
+        self._config: McpConfig = McpConfig()
         self._mcp_server: MCPServer | None = None
         self._registrar: McpRegistrar | None = None
         self._task: asyncio.Task[None] | None = None
 
-    async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Bind services, expose `McpRegistrar`, and prepare the FastMCP server."""
-        from .server import create_mcp_server, set_services  # noqa: PLC0415
+    def get_platform_registrar(self) -> McpRegistrar:
+        """Return the `McpRegistrar` initialized during `async_setup`."""
+        assert self._registrar is not None
+        return self._registrar
 
-        set_services(
-            core.app[SEARCH_SERVICE_KEY],
-            core.user_service,
-            core.coordination,
+    async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
+        """Parse `McpConfig`, initialize `McpRegistrar`, and prepare the FastMCP resource server."""
+        from .server import create_mcp_server  # noqa: PLC0415
+
+        self._config = McpConfig.from_dict(dict(config))
+        rs_url = f"{self._config.resolve_base_url(core.config.host)}/mcp"
+        self._mcp_server = create_mcp_server(
+            core.config.base_url, rs_url, core.user_service
         )
-        rs_url = f"{core.config.mcp_base_url}/mcp"
-        self._mcp_server = create_mcp_server(core.config.base_url, rs_url)
-        registrar = McpRegistrar(reserved_names=MCPToolName)
-        core.app[MCP_REGISTRAR_KEY] = registrar
-        self._registrar = registrar
+        self._registrar = McpRegistrar()
+
+    async def async_finalize_platforms(self, core: ServerCore) -> None:
+        """Mount all registered platform MCP tools onto the FastMCP server."""
+        assert self._mcp_server is not None
+        self.get_platform_registrar().apply_to_server(self._mcp_server)
 
     async def async_start(self, core: ServerCore) -> None:
         """Apply platform tools and start the background Streamable HTTP MCP server task."""
@@ -149,7 +188,7 @@ class McpComponent:
             run_server(
                 self._mcp_server,
                 core.config.host,
-                core.config.mcp_port,
+                self._config.port,
                 core.config.proxy_mode,
             ),
             name="mcp-resource-server",

@@ -709,9 +709,11 @@ def test_synthetic_link_blocks_roundtrip_through_reconstruct_and_parse_metadata(
     assert reparsed.footer.links[1].page_id is None
 
 
-# --- Executable Documentation Spec Gate (docs/notebook_spec.md) ---
+# --- Executable Documentation Spec Gate (docs/architecture/notebook_spec.md) ---
 
-SPEC_PATH = Path(__file__).resolve().parents[2] / "docs" / "notebook_spec.md"
+SPEC_PATH = (
+    Path(__file__).resolve().parents[2] / "docs" / "architecture" / "notebook_spec.md"
+)
 _SPEC_SNIPPET_RE = re.compile(
     r"<!--\s*schema:\s*(\w+)\s*-->\s*```text\n(.*?)\n```",
     re.DOTALL,
@@ -756,7 +758,7 @@ def test_notebook_spec_snippet_parses_strictly_and_roundtrips(
 
     model = parser_fn(params)
     assert model.extra == {}, (
-        f"unmodeled extra keys in docs/notebook_spec.md {cls_name} snippet: {model.extra}"
+        f"unmodeled extra keys in docs/architecture/notebook_spec.md {cls_name} snippet: {model.extra}"
     )
     assert encode_parameters(model.to_params()).decode("utf-8") == wire_snippet
 
@@ -766,12 +768,12 @@ def test_notebook_spec_relative_links_resolve() -> None:
     assert "file://" not in spec_text
 
     targets = _MARKDOWN_LINK_RE.findall(spec_text)
-    assert targets, "expected relative links in docs/notebook_spec.md"
+    assert targets, "expected relative links in docs/architecture/notebook_spec.md"
     for target in targets:
         if target.startswith(("http://", "https://", "#")):
             continue
         rel_path = target.split("#", 1)[0]
         resolved = (SPEC_PATH.parent / rel_path).resolve()
         assert resolved.exists(), (
-            f"broken relative link in docs/notebook_spec.md: {target} -> {resolved}"
+            f"broken relative link in docs/architecture/notebook_spec.md: {target} -> {resolved}"
         )

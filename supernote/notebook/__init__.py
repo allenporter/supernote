@@ -21,6 +21,7 @@ from .color import MODE_RGB, ColorPalette
 from .converter import (
     ImageConverter,
     PdfConverter,
+    PdfOutlineEntry,
     PngConverter,
     SvgConverter,
     TextConverter,
@@ -53,6 +54,7 @@ __all__ = [
     "Notebook",
     "Page",
     "PdfConverter",
+    "PdfOutlineEntry",
     "PngConverter",
     "SupernoteMetadata",
     "SvgConverter",

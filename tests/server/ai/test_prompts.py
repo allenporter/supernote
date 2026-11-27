@@ -6,6 +6,7 @@ from pathlib import Path
 
 from supernote.server.ai.prompts import (
     PageMetadata,
+    format_image_ocr_prompt,
     format_ocr_prompt,
     format_summary_prompt,
     get_summary_json_schema,
@@ -158,3 +159,14 @@ def test_format_ocr_prompt_vocabulary_skips_the_pages_own_keywords(
         page_metadata, vocabulary=["Lovelace"], prompt_loader=loader
     )
     assert "may appear in the text" not in only_own
+def test_format_image_ocr_prompt_excludes_rapid_logging_legend() -> None:
+    page_metadata = PageMetadata(
+        file_name="whiteboard.jpg",
+        page_index=0,
+        page_id="img",
+        notebook_create_time=None,
+    )
+    prompt = format_image_ocr_prompt(page_metadata)
+    assert "Image Filename: whiteboard.jpg" in prompt
+    assert "Visual Scene / Photo Summary" in prompt
+    assert "Rapid Logging" not in prompt

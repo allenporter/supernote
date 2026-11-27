@@ -24,10 +24,10 @@ flowchart TD
 | `supernote.server.app` | Application factory (`supernote.server.app.create_app`), middleware stack (proxy headers, Socket.IO Engine.IO v3/v4 compatibility, Prometheus metrics, structured trace logging, JWT & `sn_...` API key verification), and lifecycle hooks. |
 | `supernote.server.config` | Strongly-typed YAML and `SUPERNOTE_*` environment configuration (`supernote.server.config.ServerConfig`, `supernote.server.config.AuthConfig`, `supernote.server.config.AiConfig`). |
 | `supernote.server.routes` | HTTP route handlers for hardware device sync (`file_device`), Web UI file APIs (`file_web`), local OSS signed blob transfer (`oss`), summaries (`summary`), search/metadata/API keys (`extended`), incremental domain event feed (`events`), authentication (`auth`), and admin operations (`admin`). |
-| `supernote.server.services` | Core domain services: `supernote.server.services.file.FileService` (transactional VFS & two-tier storage quotas), `supernote.server.services.blob.LocalBlobStorage` (content-addressable storage), `supernote.server.services.processor.ProcessorService` (5-stage `.note` pipeline), `supernote.server.services.search.SearchService`, `supernote.server.components.schedule.service.ScheduleService`, `supernote.server.components.schedule.ical_export.ICalExportService`, `supernote.server.components.webhooks.service.WebhookService`, `supernote.server.services.event_log.EventLogService`, `supernote.server.components.metrics.storage.StorageMetricsCollector`, and `supernote.server.services.integrity.IntegrityService`. |
+| `supernote.server.services` | Core domain services: `supernote.server.services.file.FileService` (transactional VFS & two-tier storage quotas), `supernote.server.services.blob.LocalBlobStorage` (content-addressable storage), `supernote.server.services.processor.ProcessorService` (5-stage `.note` pipeline), `supernote.server.components.search.service.SearchService`, `supernote.server.components.schedule.service.ScheduleService`, `supernote.server.components.schedule.ical_export.ICalExportService`, `supernote.server.components.webhooks.service.WebhookService`, `supernote.server.components.events.service.EventLogService`, `supernote.server.components.metrics.storage.StorageMetricsCollector`, and `supernote.server.services.integrity.IntegrityService`. |
 | `supernote.server.ai` | Provider-agnostic AI interfaces (`supernote.server.ai.models.ocr.OcrModel`, `supernote.server.ai.models.summary.SummaryModel`, `supernote.server.ai.models.embedding.EmbeddingModel`), prompt formatting (`supernote.server.ai.prompts`), and Google Gemini / OpenAI-compatible / macOS Apple Vision implementations. |
-| `supernote.server.components.oauth` | OAuth 2.1 / IndieAuth Authorization Server (`supernote.server.components.oauth.provider`, also supporting static `sn_...` Bearer API keys). |
-| `supernote.server.components.mcp` | Streamable HTTP MCP Resource Server (`supernote.server.components.mcp.server`) exposing `list_notebooks`, `search_notebook_chunks`, and `get_notebook_transcript`. |
+| `supernote.server.components.oauth` | OAuth 2.1 Authorization Server with Client ID Metadata Documents (`supernote.server.components.oauth.provider`, also supporting static `sn_...` Bearer API keys). |
+| `supernote.server.components.mcp` | Streamable HTTP MCP Resource Server (`supernote.server.components.mcp.server`) and `McpRegistrar` platform host for component-contributed tools (`events`, `search`, `transcript`, `schedule`). |
 | `supernote.server.db` | Async SQLAlchemy 2.0 session management (`supernote.server.db.session.DatabaseSessionManager`), ORM models (`UserDO`, `ApiKeyDO`, `UserFileDO`, `NoteMetadataDO`, `NotePageMetadataDO`, `NotePageContentDO`, `SystemTaskDO`, `SummaryDO`, `ScheduleTaskDO`, `UserEventDO`), and Alembic migrations. |
 
 ---
@@ -69,7 +69,7 @@ supernote cloud keys create "local-agent"
 
 #### AI Configuration
 
-Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled). We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`; see `supernote.guides.ocr_benchmarks` and [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)):
+Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled). We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`; see `supernote.guides.ocr_benchmarks` and [Choosing an AI Provider](../../docs/guides/ai_providers.md)):
 
 ```yaml
 ai:
@@ -88,11 +88,11 @@ ai:
     max_concurrency: 5
   embedding:
     provider: gemini
-    model: gemini-embedding-001
+    model: gemini-embedding-2  # see evals/search/RESULTS.md
     max_concurrency: 5
 ```
 
-Gemini offers both a `$0` Free tier (which uses API data for model training) and a Paid tier when linked to a [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) (which does not; see [API Privacy](../../README.md#api-privacy-training--data-retention)).
+Gemini offers both a `$0` Free tier (which uses API data for model training) and a Paid tier when linked to a [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) (which does not; see [API Privacy](../../docs/guides/ai_providers.md#api-data-use-training-and-retention)).
 
 To run the models locally instead, use the `openai` provider with any server that implements the OpenAI API (e.g. Ollama, llama.cpp, vLLM, LM Studio). OCR needs a vision-capable chat model. Providers can be mixed per capability:
 
@@ -116,7 +116,7 @@ ai:
     max_concurrency: 1
 ```
 
-On macOS (`pip install "supernote[server,apple]"`), Apple's on-device `Vision` framework (`vision-accurate`) is supported as an offline fallback for basic prose search without an API key or model server. It is not recommended for diagrams, multi-column notes, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)); avoid `vision-fast`, which only detects machine-printed text:
+On macOS (`pip install "supernote[server,apple]"`), Apple's on-device `Vision` framework (`vision-accurate`) is supported as an offline fallback for basic prose search without an API key or model server. It is not recommended for diagrams, multi-column notes, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](../../docs/guides/ai_providers.md)); avoid `vision-fast`, which only detects machine-printed text:
 
 ```yaml
 ai:
@@ -159,8 +159,8 @@ webhooks:
       user: "you@example.com"
       secret: "replace-with-random-secret"
       events:
-        - "note.sync_completed"
-        - "note.processing_completed"
+        - "file.created"
+        - "note.*"
 ```
 
 ### Running with Docker
@@ -254,18 +254,19 @@ By default, the server logs at `INFO` level and automatically redacts credential
 
 ## Documentation & Guides
 
-- **[Self-Hosting & Quickstart Guide](../../docs/bootstrap_guide.md)** (`supernote.guides.bootstrap_guide`): Deployment modes, Docker Compose, Admin-First bootstrap, static API keys, physical Supernote tablet setup, Nginx/Caddy reverse proxy configuration, and safe SQLite + blob backups.
-- **[Configuration Reference](../../docs/configuration.md)** (`supernote.guides.configuration`): Complete reference for `config/config.yaml`, `SUPERNOTE_*` environment variables, and priority resolution.
-- **[AI Pipeline, Custom Prompts & MCP Server](../../docs/mcp.md)** (`supernote.guides.mcp`): How the 5-stage processing pipeline works, mixing cloud/local/Apple Vision models, filename and `page_style` prompt routing (`prompts_dir`), and connecting MCP clients via OAuth 2.1 or static `sn_...` keys.
+- **[Self-Hosting & Quickstart Guide](../../docs/guides/bootstrap_guide.md)** (`supernote.guides.bootstrap_guide`): Deployment modes, Docker Compose, Admin-First bootstrap, static API keys, physical Supernote tablet setup, Nginx/Caddy reverse proxy configuration, and safe SQLite + blob backups.
+- **[Configuration Reference](../../docs/reference/configuration.md)** (`supernote.guides.configuration`): Complete reference for `config/config.yaml`, `SUPERNOTE_*` environment variables, and priority resolution.
+- **[AI Pipeline, Custom Prompts & MCP Server](../../docs/guides/mcp.md)** (`supernote.guides.mcp`): How the 5-stage processing pipeline works, mixing cloud/local/Apple Vision models, filename and `page_style` prompt routing (`prompts_dir`), and connecting MCP clients via OAuth 2.1 or static `sn_...` keys.
 - **[OCR Provider Benchmarks](../../evals/ocr/RESULTS.md)** (`supernote.guides.ocr_benchmarks`): Empirical CER/WER accuracy, structure preservation, latency, and cost benchmarks across cloud and local vision models.
-- **[Webhooks, Calendar (`.ics`) & Home Assistant Integrations](../../docs/webhooks_and_integrations.md)** (`supernote.guides.webhooks_and_integrations`): Subscribing to `/api/schedule/feed.ics` `VTODO` feeds, configuring outbound webhooks, verifying `X-Supernote-Signature` HMAC-SHA256 headers, and Home Assistant automations.
+- **[Search & Embedding Benchmarks](../../evals/search/RESULTS.md)** (`supernote.guides.search_benchmarks`): Empirical nDCG, MRR, Recall, Precision, and latency benchmarks comparing keyword, dense vector, and hybrid search across Gemini, OpenAI, and local Ollama embedding models.
+- **[Webhooks, Calendar (`.ics`) & Home Assistant Integrations](../../docs/guides/webhooks_and_integrations.md)** (`supernote.guides.webhooks_and_integrations`): Subscribing to `/api/schedule/feed.ics` `VTODO` feeds, configuring outbound webhooks, verifying `X-Supernote-Signature` HMAC-SHA256 headers, and Home Assistant automations.
 
 ---
 
 ## Development
 
 - **Entry Point**: `supernote/server/app.py` (`supernote.server.app`)
-- **Architecture & Wire Protocol**: [`ARCHITECTURE.md`](ARCHITECTURE.md) (`supernote.guides.architecture`)
+- **Architecture & Wire Protocol**: [`server_architecture.md`](../../docs/architecture/server_architecture.md) (`supernote.guides.architecture`)
 - **Tests**: `tests/server/`
 - **Ephemeral Mode**: Run `supernote serve --ephemeral` for a transient, pre-configured test instance.
 

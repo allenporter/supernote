@@ -4,15 +4,33 @@ from pathlib import Path
 import pytest
 
 from supernote.models.base import TaskType
+from supernote.server.components.processor import (
+    ProcessorModule,
+    ProcessorService,
+    TaskScope,
+)
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor import ProcessorService
-from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
+
+_DEFAULT_SCOPES = {
+    TaskType.PAGE_HASHING: TaskScope.FILE,
+    TaskType.PNG_CONVERSION: TaskScope.PAGE,
+    TaskType.OCR_EXTRACTION: TaskScope.PAGE,
+    TaskType.EMBEDDING_GENERATION: TaskScope.PAGE,
+    TaskType.SUMMARY_GENERATION: TaskScope.FILE,
+}
+
+_DEFAULT_DEPS: dict[TaskType, tuple[TaskType, ...]] = {
+    TaskType.PAGE_HASHING: (),
+    TaskType.PNG_CONVERSION: (TaskType.PAGE_HASHING,),
+    TaskType.OCR_EXTRACTION: (TaskType.PNG_CONVERSION,),
+    TaskType.EMBEDDING_GENERATION: (TaskType.OCR_EXTRACTION,),
+    TaskType.SUMMARY_GENERATION: (TaskType.OCR_EXTRACTION,),
+}
 
 
 @dataclass
@@ -30,6 +48,14 @@ class FakeModule(ProcessorModule):
     @property
     def task_type(self) -> TaskType:
         return TaskType.from_friendly(self.module_name)
+
+    @property
+    def scope(self) -> TaskScope:
+        return _DEFAULT_SCOPES[self.task_type]
+
+    @property
+    def depends_on(self) -> tuple[TaskType, ...]:
+        return _DEFAULT_DEPS[self.task_type]
 
     async def process(
         self,
@@ -59,15 +85,10 @@ def processor_service(
         session_manager=session_manager,
         event_bus=event_bus,
     )
-    summary_service = SummaryService(
-        user_service=user_service,
-        session_manager=session_manager,
-    )
     return ProcessorService(
         event_bus=event_bus,
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
     )
 
 
@@ -103,7 +124,7 @@ async def test_explicit_orchestration_flow(
         )
         await session.commit()
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
 
     assert hashing.calls == [(file_id, None, None)]
     assert set(png.calls) == {(file_id, 0, "p0"), (file_id, 1, "p1")}
@@ -140,12 +161,12 @@ async def test_dependant_skipping(
         )
         await session.commit()
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
 
     assert png.calls == [(file_id, 0, "p0")]
     assert ocr.calls == []
     assert embedding.calls == []
-    assert summary.calls == [(file_id, None, None)]
+    assert summary.calls == []
 
     tasks = await processor_service.list_system_tasks(file_id=file_id, status="failed")
     assert len(tasks) == 1
@@ -153,7 +174,7 @@ async def test_dependant_skipping(
     assert tasks[0].retry_count == 0
 
     # Retrying the failed file increments retry_count
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
     tasks = await processor_service.list_system_tasks(file_id=file_id, status="failed")
     assert len(tasks) == 1
     assert tasks[0].retry_count == 1

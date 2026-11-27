@@ -26,9 +26,22 @@ from supernote.server.ai.eval import (  # noqa: E402
     render_pareto_svg,
     rescore_suite_report,
 )
-from supernote.server.ai.models.ocr import create_ocr_model  # noqa: E402
+from supernote.server.components.ai import AiRegistrar  # noqa: E402
+from supernote.server.components.ai.config import AiComponentConfig  # noqa: E402
+from supernote.server.components.apple.backend import (  # noqa: E402
+    create_apple_backend,
+)
+from supernote.server.components.apple.ocr import AppleOcrModel  # noqa: E402
+from supernote.server.components.fake_ai.ocr import FakeOcrModel  # noqa: E402
+from supernote.server.components.gemini.backend import (  # noqa: E402
+    create_gemini_backend,
+)
+from supernote.server.components.gemini.ocr import GeminiOcrModel  # noqa: E402
+from supernote.server.components.openai.backend import (  # noqa: E402
+    create_openai_backend,
+)
+from supernote.server.components.openai.ocr import OpenAIOcrModel  # noqa: E402
 from supernote.server.config import (  # noqa: E402
-    AiConfig,
     ModelConfig,
     ProviderConfig,
     ServerConfig,
@@ -210,18 +223,41 @@ def _resolve_targets(
                 "(e.g. 'apple:vision-accurate' or 'openai:gemma3:27b')."
             )
         provider_name, model_name = spec.split(":", 1)
-        target_cfg = dataclasses.replace(
-            base_config,
-            ai=AiConfig(
-                providers=dict(base_config.ai.providers),
-                ocr=ModelConfig(
-                    provider=provider_name,
-                    model=model_name,
-                    max_concurrency=args.max_concurrency,
-                ),
+        providers = dict(base_config.ai.providers)
+        target_cfg = AiComponentConfig(
+            providers=providers,
+            ocr=ModelConfig(
+                provider=provider_name,
+                model=model_name,
+                max_concurrency=args.max_concurrency,
             ),
         )
-        ocr_model = create_ocr_model(target_cfg)
+        ai_registrar = AiRegistrar()
+        ai_registrar.register_ocr(
+            "apple",
+            lambda p, m: AppleOcrModel(create_apple_backend(p), m),
+        )
+        ai_registrar.register_ocr(
+            "fake",
+            lambda p, m: FakeOcrModel(model_id=m, provider=p),
+        )
+        ai_registrar.register_ocr(
+            "gemini",
+            lambda p, m: (
+                GeminiOcrModel(b, m)
+                if (b := create_gemini_backend(providers, p)) is not None
+                else None
+            ),
+        )
+        ai_registrar.register_ocr(
+            "openai",
+            lambda p, m: (
+                OpenAIOcrModel(b, m)
+                if (b := create_openai_backend(providers, p)) is not None
+                else None
+            ),
+        )
+        ocr_model = ai_registrar.create_ocr_model(target_cfg)
         if ocr_model is None:
             raise ValueError(
                 f"Target {spec!r} could not be initialized (missing provider credentials "

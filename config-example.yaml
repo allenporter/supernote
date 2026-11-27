@@ -82,6 +82,7 @@ auth:
 #         - "note.processing_completed"
 
 # AI providers and per-capability model configuration (optional)
+# See evals/ocr/RESULTS.md and evals/search/RESULTS.md for cloud & local model benchmarks.
 # ai:
 #   providers:
 #     gemini:
@@ -91,15 +92,21 @@ auth:
 #       api_key: "ollama"
 #   ocr:
 #     provider: gemini
-#     model: gemini-3.6-flash
+#     model: gemini-3.5-flash-lite # or gemini-3.6-flash
 #     max_concurrency: 5
 #   summary:
 #     provider: gemini
-#     model: gemini-3.6-flash
+#     model: gemini-3.5-flash-lite
 #     max_concurrency: 5
+#   # Optional: override the model used for structured text tasks like LLM Wiki
+#   # compilation (falls back to `summary` when omitted).
+#   # text:
+#   #   provider: gemini
+#   #   model: gemini-3.6-flash
+#   #   max_concurrency: 5
 #   embedding:
 #     provider: gemini
-#     model: gemini-embedding-001
+#     model: gemini-embedding-2 # or provider: openai, model: embeddinggemma for local Ollama
 #     max_concurrency: 5
 
 # Web interface and MCP settings (optional)

@@ -23,7 +23,9 @@ __all__ = [
     "load_component_from_spec",
 ]
 
-KNOWN_PLATFORMS: frozenset[str] = frozenset({"http", "mcp"})
+KNOWN_PLATFORMS: frozenset[str] = frozenset(
+    {"embedding", "http", "mcp", "ocr", "processor", "summary", "text"}
+)
 
 
 @dataclass(frozen=True)
@@ -36,22 +38,78 @@ class BuiltinComponentSpec:
     """Dotted `module:ClassName` path imported lazily only when enabled."""
     default_enabled: bool = False
     """Whether the component loads by default when `enabled` is not set in config."""
+    config_schema_path: str | None = None
+    """Optional dotted `module:ClassName` path for the component's typed config dataclass."""
+    runtime_configurable: bool = False
+    """Whether the component can be dynamically reconfigured at runtime without restarting the server."""
 
 
 BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
     BuiltinComponentSpec(
+        domain="ai",
+        import_path="supernote.server.components.ai:AiComponent",
+        default_enabled=True,
+        config_schema_path="supernote.server.components.ai.config:AiComponentConfig",
+    ),
+    BuiltinComponentSpec(
+        domain="apple",
+        import_path="supernote.server.components.apple:AppleComponent",
+        default_enabled=False,
+    ),
+    BuiltinComponentSpec(
+        domain="config",
+        import_path="supernote.server.components.config:ConfigComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
+        domain="conversion",
+        import_path="supernote.server.components.conversion:ConversionComponent",
+        default_enabled=True,
+        config_schema_path="supernote.server.components.conversion.config:ConversionConfig",
+    ),
+    BuiltinComponentSpec(
+        domain="events",
+        import_path="supernote.server.components.events:EventsComponent",
+        default_enabled=True,
+        config_schema_path="supernote.server.components.events.config:EventsConfig",
+    ),
+    BuiltinComponentSpec(
+        domain="fake_ai",
+        import_path="supernote.server.components.fake_ai:FakeAiComponent",
+        default_enabled=False,
+    ),
+    BuiltinComponentSpec(
+        domain="gemini",
+        import_path="supernote.server.components.gemini:GeminiComponent",
+        default_enabled=False,
+        config_schema_path="supernote.server.components.gemini.config:GeminiConfig",
+    ),
+    BuiltinComponentSpec(
         domain="http",
         import_path="supernote.server.components.http:HttpComponent",
+        default_enabled=True,
+        config_schema_path="supernote.server.components.http.config:HttpConfig",
+    ),
+    BuiltinComponentSpec(
+        domain="integrity",
+        import_path="supernote.server.components.integrity:IntegrityComponent",
         default_enabled=True,
     ),
     BuiltinComponentSpec(
         domain="mcp",
         import_path="supernote.server.components.mcp:McpComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.mcp.config:McpConfig",
     ),
     BuiltinComponentSpec(
         domain="metrics",
         import_path="supernote.server.components.metrics:MetricsComponent",
+        default_enabled=True,
+        config_schema_path="supernote.server.components.metrics.config:MetricsConfig",
+    ),
+    BuiltinComponentSpec(
+        domain="note_metadata",
+        import_path="supernote.server.components.note_metadata:NoteMetadataComponent",
         default_enabled=True,
     ),
     BuiltinComponentSpec(
@@ -60,13 +118,40 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="openai",
+        import_path="supernote.server.components.openai:OpenAIComponent",
+        default_enabled=False,
+        config_schema_path="supernote.server.components.openai.config:OpenAIConfig",
+    ),
+    BuiltinComponentSpec(
+        domain="processor",
+        import_path="supernote.server.components.processor:ProcessorComponent",
+        default_enabled=True,
+        config_schema_path="supernote.server.components.processor.config:ProcessorConfig",
+    ),
+    BuiltinComponentSpec(
         domain="schedule",
         import_path="supernote.server.components.schedule:ScheduleComponent",
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="search",
+        import_path="supernote.server.components.search:SearchComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="socketio",
         import_path="supernote.server.components.socketio:SocketIOComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
+        domain="summary",
+        import_path="supernote.server.components.summary:SummaryComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
+        domain="transcript",
+        import_path="supernote.server.components.transcript:TranscriptComponent",
         default_enabled=True,
     ),
     BuiltinComponentSpec(
@@ -78,6 +163,14 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="webhooks",
         import_path="supernote.server.components.webhooks:WebhooksComponent",
         default_enabled=False,
+        config_schema_path="supernote.server.components.webhooks.config:WebhookConfig",
+        runtime_configurable=True,
+    ),
+    BuiltinComponentSpec(
+        domain="wiki",
+        import_path="supernote.server.components.wiki:WikiComponent",
+        default_enabled=False,
+        config_schema_path="supernote.server.components.wiki.config:WikiConfig",
     ),
 )
 
@@ -121,6 +214,11 @@ def load_builtin_components(
 ) -> None:
     """Lazily import and register all enabled components from ``specs``."""
     for spec in specs:
-        if not is_component_enabled(spec, component_configs.get(spec.domain, {})):
+        enabled = is_component_enabled(spec, component_configs.get(spec.domain, {}))
+        existing = loader.get(spec.domain)
+        if not enabled:
+            if existing is not None:
+                loader.unregister(spec.domain)
             continue
-        loader.register(load_component_from_spec(spec))
+        if existing is None:
+            loader.register(load_component_from_spec(spec))

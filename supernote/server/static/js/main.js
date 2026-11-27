@@ -4,38 +4,49 @@
  * Coordinates session authentication, OAuth 2.1 consent bridging, top-level
  * tab/route switching, global search (`Cmd/Ctrl+K`), system status drawer,
  * and toast notifications while delegating domain panels to `FileBrowserPanel`,
- * `FileViewer`, and `TaskPanel`.
+ * `FileViewer`, `TaskPanel`, and `SettingsPanel`.
  */
 
-import { computed, createApp, onMounted, onUnmounted, ref } from 'vue';
-import { connectSocket, login, submitOAuthBridgeDecision } from './api/client.js';
+import { computed, createApp, onMounted, onUnmounted, ref, watch } from 'vue';
+import {
+    connectSocket,
+    fetchOAuthBridgeClient,
+    login,
+    submitOAuthBridgeDecision,
+} from './api/client.js';
 import { ApiError, getToken, logout, onLogout } from './api/http.js';
+import DigestPanel from './components/DigestPanel.js';
 import FileBrowserPanel from './components/FileBrowserPanel.js';
 import FileViewer from './components/FileViewer.js';
 import LoginCard from './components/LoginCard.js';
 import OAuthConsentCard from './components/OAuthConsentCard.js';
 import RecycleBinPanel from './components/RecycleBinPanel.js';
 import SearchModal from './components/SearchModal.js';
-import SystemPanel from './components/SystemPanel.js';
+import SettingsPanel from './components/SettingsPanel.js';
 import TaskPanel from './components/TaskPanel.js';
+import WikiPanel from './components/WikiPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { resetEscapeStack } from './composables/useModalEscape.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useRecycleBin } from './composables/useRecycleBin.js';
 import { useRouter } from './composables/useRouter.js';
+import { useServerFeatures } from './composables/useServerFeatures.js';
 import { useToast } from './composables/useToast.js';
 import { getErrorMessage } from './utils/format.js';
+import { withResolvedClient } from './utils/oauth.js';
 
 createApp({
     components: {
         'file-browser-panel': FileBrowserPanel,
         'recycle-bin-panel': RecycleBinPanel,
+        DigestPanel,
         SearchModal,
         TaskPanel,
+        WikiPanel,
+        SettingsPanel,
         LoginCard,
         'oauth-consent-card': OAuthConsentCard,
         FileViewer,
-        SystemPanel,
     },
     setup() {
         const { toasts, showToast, dismissToast, clearToasts } = useToast();
@@ -90,23 +101,31 @@ createApp({
             resetRecycleBin,
         } = useRecycleBin();
 
+        // Server Feature Availability
+        const { isTabAvailable, loadServerFeatures, resetServerFeatures } = useServerFeatures();
+
         // Host Navigation & URL Routing
         const {
             activeTab,
+            selectedWikiSlug,
             view,
             selectedFile,
             selectedPageIndex,
             selectedPageJumpSeq,
             breadcrumbs,
             showSystemPanel,
+            settingsModalTab,
             pendingOAuthRequest,
             syncFromUrl,
             updateUrl,
             clearOAuthRoute,
             switchTab,
+            navigateToWikiSlug,
             openRecycleBin,
             closeRecycleBin,
+            openSettingsPanel,
             openSystemPanel,
+            setSettingsModalTab,
             closeSystemPanel,
             closeViewer,
             handleViewerPageChange,
@@ -120,6 +139,7 @@ createApp({
             loadedDirectoryId,
             loadDirectory,
             selectedIds,
+            isTabAvailable,
             onOAuthRouteEnter: () => {
                 isSubmittingOAuth.value = false;
                 oauthCompletedOutcome.value = null;
@@ -173,16 +193,27 @@ createApp({
         }
 
         /**
-         * @param {string | number | null} fileId
+         * @param {string | number | { id?: string | number | null, pageIndex?: number | null } | null} target
          */
-        async function handleSystemOpenFile(fileId) {
-            if (!fileId) return;
-            await openItem({ id: String(fileId), isDirectory: false });
+        async function handleSystemOpenFile(target) {
+            if (!target) return;
+            if (typeof target === 'object') {
+                if (!target.id) return;
+                await openItem({
+                    id: String(target.id),
+                    isDirectory: false,
+                    pageIndex: typeof target.pageIndex === 'number' ? target.pageIndex : null,
+                });
+                return;
+            }
+            await openItem({ id: String(target), isDirectory: false });
         }
 
         async function resumeSession() {
             const token = getToken();
             if (!token) return false;
+            await loadServerFeatures();
+            if (!getToken()) return false;
             isLoggedIn.value = true;
             connectSocket();
             return true;
@@ -208,12 +239,77 @@ createApp({
             }
         }
 
+        /** @type {{ path: string, client: OAuthBridgeClient } | null} */
+        let resolvedOAuthClient = null;
+        /** @type {string | null} */
+        let loadingOAuthClientPath = null;
+
+        async function loadOAuthClient() {
+            const req = pendingOAuthRequest.value;
+            const path = req?.bridgePathWithQuery;
+            if (!isLoggedIn.value || !req?.isValid || req.client || req.clientError || !path) {
+                return;
+            }
+            if (resolvedOAuthClient?.path === path) {
+                pendingOAuthRequest.value = withResolvedClient(req, resolvedOAuthClient.client);
+                return;
+            }
+            if (loadingOAuthClientPath === path) return;
+            loadingOAuthClientPath = path;
+            try {
+                const client = await fetchOAuthBridgeClient(req.clientId, req.redirectUri);
+                resolvedOAuthClient = { path, client };
+                const current = pendingOAuthRequest.value;
+                if (current?.isValid && current.bridgePathWithQuery === path) {
+                    pendingOAuthRequest.value = withResolvedClient(current, client);
+                }
+            } catch (e) {
+                const current = pendingOAuthRequest.value;
+                if (current?.bridgePathWithQuery !== path) return;
+                if (e instanceof ApiError && e.status === 401) {
+                    showToast('Your session expired. Please sign in again.', 'error');
+                } else if (e instanceof ApiError && e.status === 400) {
+                    pendingOAuthRequest.value = {
+                        ...current,
+                        isValid: false,
+                        error: e.message,
+                    };
+                } else {
+                    const message = getErrorMessage(e).replace(/[.!?]?$/, '.');
+                    pendingOAuthRequest.value = {
+                        ...current,
+                        clientError: `${message} Try again in a few seconds.`,
+                    };
+                }
+            } finally {
+                if (loadingOAuthClientPath === path) loadingOAuthClientPath = null;
+            }
+        }
+
+        watch(() => [isLoggedIn.value, pendingOAuthRequest.value], loadOAuthClient, {
+            immediate: true,
+        });
+
+        function retryOAuthClient() {
+            const req = pendingOAuthRequest.value;
+            if (req?.clientError) {
+                pendingOAuthRequest.value = { ...req, clientError: null };
+            }
+        }
+
         /**
          * @param {'approve' | 'deny'} decision
          */
         async function submitOAuthDecision(decision) {
             const req = pendingOAuthRequest.value;
-            if (!req?.isValid || !req.bridgePathWithQuery || isSubmittingOAuth.value) return;
+            if (
+                !req?.isValid ||
+                !req.client ||
+                !req.bridgePathWithQuery ||
+                isSubmittingOAuth.value
+            ) {
+                return;
+            }
             if (!getToken()) {
                 isLoggedIn.value = false;
                 showToast('Please sign in to authorize this application.', 'error');
@@ -225,6 +321,7 @@ createApp({
                 const redirectUrl = await submitOAuthBridgeDecision(
                     req.bridgePathWithQuery,
                     decision,
+                    req.client.redirectUri,
                 );
                 if (req.redirectTarget?.isCustomScheme) {
                     oauthCompletedOutcome.value = decision === 'approve' ? 'approved' : 'denied';
@@ -236,6 +333,7 @@ createApp({
                 if (e instanceof ApiError && e.status === 401) {
                     showToast('Your session expired. Please sign in again.', 'error');
                 } else if (e instanceof ApiError && e.status === 400) {
+                    resolvedOAuthClient = null;
                     pendingOAuthRequest.value = { ...req, isValid: false, error: e.message };
                 } else {
                     showToast(`Authorization failed: ${getErrorMessage(e)}`, 'error');
@@ -249,8 +347,10 @@ createApp({
 
         const handleOAuthApprove = () => submitOAuthDecision('approve');
         const handleOAuthDeny = () => submitOAuthDecision('deny');
+        const handleOAuthRetry = () => retryOAuthClient();
 
         async function dismissOAuthConsent() {
+            resolvedOAuthClient = null;
             isSubmittingOAuth.value = false;
             oauthCompletedOutcome.value = null;
             await clearOAuthRoute();
@@ -268,6 +368,7 @@ createApp({
         });
 
         const unsubscribeLogout = onLogout(() => {
+            resolvedOAuthClient = null;
             isLoggedIn.value = false;
             showSearchModal.value = false;
             searchInitialQuery.value = '';
@@ -278,6 +379,7 @@ createApp({
             resetRecycleBin();
             resetSessionRoutes();
             resetProcessingStatuses();
+            resetServerFeatures();
             clearToasts();
         });
 
@@ -343,10 +445,14 @@ createApp({
             oauthCompletedOutcome,
             handleOAuthApprove,
             handleOAuthDeny,
+            handleOAuthRetry,
             dismissOAuthConsent,
             handleLogin,
             handleLogout,
             activeTab,
+            isTabAvailable,
+            selectedWikiSlug,
+            navigateToWikiSlug,
             showSearchModal,
             searchInitialQuery,
             openSearchWithQuery,
@@ -378,7 +484,9 @@ createApp({
             deleteRecycleItemsPermanently,
             emptyRecycleBin,
             handleRecycleRestored,
+            openSettingsPanel,
             openSystemPanel,
+            setSettingsModalTab,
             closeSystemPanel,
             closeViewer,
             handleViewerPageChange,
@@ -388,6 +496,7 @@ createApp({
             selectedPageIndex,
             selectedPageJumpSeq,
             showSystemPanel,
+            settingsModalTab,
             processingStatuses,
             toasts,
             showToast,

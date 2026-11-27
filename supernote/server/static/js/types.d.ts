@@ -132,6 +132,27 @@ declare module 'dompurify' {
     export default DOMPurify;
 }
 
+declare module 'mermaid' {
+    export interface MermaidConfig {
+        startOnLoad?: boolean;
+        securityLevel?: 'strict' | 'loose' | 'antiscript' | 'sandbox';
+        theme?: string;
+        suppressErrorRendering?: boolean;
+        htmlLabels?: boolean;
+        flowchart?: {
+            htmlLabels?: boolean;
+        };
+    }
+
+    export interface MermaidApi {
+        initialize(config: MermaidConfig): void;
+        render(id: string, definition: string): Promise<{ svg: string }>;
+    }
+
+    const mermaid: MermaidApi;
+    export default mermaid;
+}
+
 // ---------------------------------------------------------------------------
 // Core Frontend Domain & API DTO Models
 // ---------------------------------------------------------------------------
@@ -176,6 +197,7 @@ interface SemanticSearchMatch {
     pageIndex: number;
     pageNumber: number;
     score: number;
+    matchPercent: number;
     textPreview: string;
     date: string | null;
 }
@@ -207,6 +229,56 @@ interface NoteSummary {
     dataSource: string | null;
 }
 
+interface DigestCategory {
+    id: string;
+    uniqueIdentifier: string;
+    name: string;
+    description: string | null;
+    creationTime: number;
+    lastModifiedTime: number;
+}
+
+interface DigestItem {
+    id: string;
+    uniqueIdentifier: string;
+    parentUniqueIdentifier: string | null;
+    fileId: string | null;
+    content: string;
+    commentStr: string | null;
+    author: string | null;
+    sourcePath: string | null;
+    dataSource: string | null;
+    tags: string[];
+    hasHandwriting: boolean;
+    handwriteInnerName: string | null;
+    commentHandwriteName: string | null;
+    creationTime: number;
+    lastModifiedTime: number;
+    metadata: Record<string, unknown> | null;
+}
+
+interface DigestInput {
+    parentUniqueIdentifier?: string | null;
+    content: string;
+    commentStr?: string | null;
+    author?: string | null;
+    sourcePath?: string | null;
+}
+
+interface DigestUpdateInput {
+    parentUniqueIdentifier?: string | null;
+    content?: string;
+    commentStr?: string | null;
+    author?: string | null;
+    sourcePath?: string | null;
+}
+
+interface DigestSourceOption {
+    path: string;
+    label: string;
+    count: number;
+}
+
 interface SystemTaskItem {
     id: string;
     fileId: string;
@@ -216,6 +288,15 @@ interface SystemTaskItem {
     retryCount: number;
     updateTime: number;
     lastError: string | null;
+    fileName?: string | null;
+    pageIndex?: number | null;
+}
+
+interface SystemQueueOverview {
+    tasks: SystemTaskItem[];
+    paused: boolean;
+    queueSize: number;
+    processingFileIds: string[];
 }
 
 type TaskImportance = 'high' | 'medium' | 'low';
@@ -276,6 +357,11 @@ interface TranscriptPage {
 interface NoteTitle {
     pageIndex: number;
     level: number;
+    text: string | null;
+    style: string | null;
+    rect: [number, number, number, number] | null;
+    bitmapMd5: string | null;
+    imageUrl: string | null;
 }
 
 interface NotePageMeta {
@@ -317,6 +403,53 @@ interface AiStatus {
     model: string | null;
 }
 
+type ComponentConfigSource = 'env' | 'yaml' | 'database' | 'default';
+type ComponentFieldType = 'boolean' | 'integer' | 'number' | 'string' | 'array' | 'object';
+
+interface ComponentFieldSpec {
+    name: string;
+    type: ComponentFieldType;
+    default?: unknown;
+}
+
+interface SystemComponentStatus {
+    domain: string;
+    enabled: boolean;
+    running: boolean;
+    source: ComponentConfigSource;
+    readOnly: boolean;
+    runtimeConfigurable: boolean;
+    restartRequired: boolean;
+    config: Record<string, unknown>;
+    fields: ComponentFieldSpec[];
+}
+
+interface OAuthGrant {
+    id: string;
+    clientId: string;
+    scopes: string[];
+    createdAt: number;
+    expiresAt: number;
+    lastUsedAt: number | null;
+}
+
+interface ApiKeyInfo {
+    id: string;
+    name: string;
+    keyPrefix: string;
+    createdAt: number;
+    lastUsedAt: number | null;
+    expiresAt: number | null;
+}
+
+interface CreatedApiKey {
+    id: string;
+    name: string;
+    key: string;
+    createdAt: number;
+    expiresAt: number | null;
+}
+
 interface OAuthRedirectTarget {
     scheme: string;
     isCustomScheme: boolean;
@@ -334,7 +467,15 @@ interface OAuthBridgeRequest {
     resource: string | null;
     scopes: string[];
     redirectTarget: OAuthRedirectTarget;
+    client: OAuthBridgeClient | null;
+    clientError: string | null;
     bridgePathWithQuery: string | null;
+}
+
+interface OAuthBridgeClient {
+    clientName: string;
+    clientHost: string;
+    redirectUri: string;
 }
 
 // ---------------------------------------------------------------------------

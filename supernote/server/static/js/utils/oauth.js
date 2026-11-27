@@ -3,7 +3,7 @@
  *
  * Redirect URI validation is enforced server-side by `/authorize` and `POST /login-bridge`.
  * The frontend only verifies that `return_to` targets same-origin `/login-bridge` before
- * attaching `x-access-token`.
+ * attaching `x-access-token`, and shows the client and redirect the server resolved.
  */
 
 const DEFAULT_MCP_SCOPE = 'supernote:all';
@@ -30,7 +30,7 @@ export function describeRedirectTarget(redirectUri) {
         return {
             scheme: '',
             isCustomScheme: false,
-            hostLabel: 'Unspecified',
+            hostLabel: '',
             fullUri: '',
         };
     }
@@ -103,7 +103,7 @@ export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
     const bp = bridgeUrl.searchParams;
     const clientId = (bp.get('client_id') || '').trim();
     const explicitRedirectUri = (bp.get('redirect_uri') || '').trim();
-    const redirectUri = explicitRedirectUri || clientId;
+    const redirectUri = explicitRedirectUri;
     const codeChallenge = (bp.get('code_challenge') || '').trim();
     const state = bp.get('state') || null;
     const rawResource = (bp.get('resource') || '').trim();
@@ -113,10 +113,10 @@ export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
     const scopes = scopeTokens.length > 0 ? scopeTokens : [DEFAULT_MCP_SCOPE];
     const redirectTarget = describeRedirectTarget(redirectUri);
 
-    if (!clientId || !codeChallenge || !redirectTarget.scheme) {
+    if (!clientId || !codeChallenge || (redirectUri && !redirectTarget.scheme)) {
         return {
             isValid: false,
-            error: 'Missing required OAuth 2.1 parameters (client_id, redirect_uri, or PKCE code_challenge).',
+            error: 'Missing or malformed OAuth 2.1 parameters (client_id, redirect_uri, or PKCE code_challenge).',
             clientId,
             redirectUri,
             codeChallenge,
@@ -124,6 +124,8 @@ export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
             resource,
             scopes,
             redirectTarget,
+            client: null,
+            clientError: null,
             bridgePathWithQuery: null,
         };
     }
@@ -138,6 +140,25 @@ export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
         resource,
         scopes,
         redirectTarget,
+        client: null,
+        clientError: null,
         bridgePathWithQuery: `${bridgeUrl.pathname}${bridgeUrl.search}`,
+    };
+}
+
+/**
+ * Merge the client the server resolved into a pending consent request, so the card
+ * shows the redirect that will actually be used.
+ * @param {OAuthBridgeRequest} request
+ * @param {OAuthBridgeClient} client
+ * @returns {OAuthBridgeRequest}
+ */
+export function withResolvedClient(request, client) {
+    return {
+        ...request,
+        client,
+        clientError: null,
+        redirectUri: client.redirectUri,
+        redirectTarget: describeRedirectTarget(client.redirectUri),
     };
 }

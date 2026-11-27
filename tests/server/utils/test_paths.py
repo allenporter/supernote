@@ -13,7 +13,11 @@ from supernote.server.utils.paths import (
     get_file_chunk_path,
     get_full_conversion_pdf_path,
     get_page_png_path,
+    get_summary_handwriting_prefix,
+    get_summary_handwriting_prefix_of,
     get_summary_id,
+    get_title_png_path,
+    get_title_png_prefix,
     is_valid_page_id,
     parse_file_chunk_name,
 )
@@ -36,6 +40,14 @@ def test_get_page_png_path() -> None:
     assert not is_valid_page_id("../../102/pages/victim")
     with pytest.raises(ValueError, match="Invalid page_id"):
         get_page_png_path(123, "../../102/pages/victim")
+
+
+def test_get_title_png_path() -> None:
+    md5 = "4f60eac0ba701b4983269a55649430ad"
+    assert get_title_png_prefix(123) == "123/titles/"
+    assert get_title_png_path(123, md5) == f"123/titles/{md5}.png"
+    with pytest.raises(ValueError, match="Invalid bitmap_md5"):
+        get_title_png_path(123, "../../102/pages/victim")
 
 
 def test_get_file_chunk_path() -> None:
@@ -114,3 +126,20 @@ def test_generate_inner_name() -> None:
             generate_inner_name("note.note", None)
             == "12345678-1234-5678-1234-567812345678-000.note"
         )
+
+
+def test_get_summary_handwriting_prefix() -> None:
+    prefix = get_summary_handwriting_prefix(1, 2, "md5hash")
+    assert prefix == "conversions/1/summary_2/handwrite_md5hash"
+
+    for bad_md5 in ("", "../etc", "a/b", "a.b"):
+        with pytest.raises(ValueError, match="handwrite_md5"):
+            get_summary_handwriting_prefix(1, 2, bad_md5)
+
+
+def test_get_summary_handwriting_prefix_of() -> None:
+    prefix = get_summary_handwriting_prefix(1, 2, "md5hash")
+    assert get_summary_handwriting_prefix_of(f"{prefix}.pdf") == prefix
+    assert get_summary_handwriting_prefix_of(f"{prefix}_page_10.png") == prefix
+    assert get_summary_handwriting_prefix_of(f"{prefix}_page_x.png") is None
+    assert get_summary_handwriting_prefix_of("conversions/1/2/note_md5.pdf") is None

@@ -5,15 +5,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from aiohttp import web
+
 from supernote.server.core import ServerCore
 
+from .config import MetricsConfig
 from .storage import STORAGE_METRICS_COLLECTOR_KEY, StorageMetricsCollector
 
 __all__ = [
+    "METRICS_CONFIG_KEY",
     "STORAGE_METRICS_COLLECTOR_KEY",
     "MetricsComponent",
+    "MetricsConfig",
     "StorageMetricsCollector",
 ]
+
+METRICS_CONFIG_KEY: web.AppKey[MetricsConfig] = web.AppKey("metrics_config")
 
 
 class MetricsComponent:
@@ -27,7 +34,8 @@ class MetricsComponent:
         self._collector: StorageMetricsCollector | None = None
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Instantiate `StorageMetricsCollector` and expose it via `STORAGE_METRICS_COLLECTOR_KEY`."""
+        """Parse `MetricsConfig`, instantiate `StorageMetricsCollector`, and register on `core.app`."""
+        core.app[METRICS_CONFIG_KEY] = MetricsConfig.from_dict(dict(config))
         collector = StorageMetricsCollector(core.blob_storage)
         core.app[STORAGE_METRICS_COLLECTOR_KEY] = collector
         self._collector = collector

@@ -12,18 +12,27 @@ For a complete table of YAML keys and environment variables, see
 `supernote.guides.configuration` and `supernote.guides.bootstrap_guide`.
 """
 
+import copy
 import logging
 import os
-from dataclasses import dataclass, field
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
+import yaml
+from mashumaro import field_options
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.yaml import DataClassYAMLMixin
+
+from supernote.models.config import ComponentConfigSource
+from supernote.server.utils.image import DEFAULT_IMAGE_EXCLUDE_PATTERNS
 
 logger = logging.getLogger(__name__)
 
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+_COMPONENT_DOMAIN_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def _normalize_log_level(level_name: str) -> str:
@@ -37,12 +46,21 @@ def _normalize_log_level(level_name: str) -> str:
     return normalized
 
 
+def _parse_bool(val: Any) -> bool:
+    """Coerce a raw configuration or environment value to a boolean."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on")
+    return bool(val)
+
+
 def _get_bool_env(name: str, default: bool) -> bool:
     """Get a boolean value from an environment variable."""
     val = os.getenv(name)
     if val is None:
         return default
-    return val.lower() in ("true", "1", "yes", "on")
+    return _parse_bool(val)
 
 
 @dataclass
@@ -95,7 +113,7 @@ class ProviderConfig(DataClassYAMLMixin):
     """Optional custom base URL for the provider (e.g. local Ollama or vLLM server)."""
 
     type: str | None = None
-    """Backend implementation (`'gemini'`, `'openai'`, `'apple'`, `'fake'`). Defaults to the entry's name.
+    """Backend implementation (`'gemini'`, `'openai'`, `'apple'`, `'fake_ai'`). Defaults to the entry's name.
 
     Set it to configure several entries of one kind, e.g. two OpenAI-compatible
     servers named `ollama` and `llamacpp`.
@@ -119,6 +137,13 @@ class ModelConfig(DataClassYAMLMixin):
     max_concurrency: int = 5
     """Maximum number of concurrent requests allowed for this model."""
 
+    prompt_override: str | None = None
+    """Optional fixed prompt that replaces the composed prompt for OCR models.
+
+    Useful for dedicated OCR models (such as DeepSeek-OCR or GLM-OCR) trained
+    on a single short instruction rather than the full metadata and legend prompt.
+    """
+
     def __post_init__(self) -> None:
         if not self.provider or not self.provider.strip():
             raise ValueError("ModelConfig must specify a non-empty provider.")
@@ -126,6 +151,8 @@ class ModelConfig(DataClassYAMLMixin):
             raise ValueError("ModelConfig must specify a non-empty model.")
         if self.max_concurrency < 1:
             raise ValueError("ModelConfig max_concurrency must be >= 1.")
+        if self.prompt_override is not None and not self.prompt_override.strip():
+            raise ValueError("ModelConfig prompt_override must be non-empty when set.")
 
     class Config(BaseConfig):
         omit_none = True
@@ -148,12 +175,32 @@ class AiConfig(DataClassYAMLMixin):
     embedding: ModelConfig | None = None
     """Model configuration for page embedding generation."""
 
+    text: ModelConfig | None = None
+    """Optional model configuration for structured JSON text generation (e.g. LLM wiki).
+
+    Falls back to ``summary`` when unset.
+    """
+
+    @property
+    def effective_text(self) -> ModelConfig | None:
+        """Return ``text`` model configuration, falling back to ``summary`` when unset."""
+        return self.text if self.text is not None else self.summary
+
     def provider_type(self, name: str) -> str:
         """Return the backend implementation for the `ai.providers` entry `name`."""
         provider_cfg = self.providers.get(name)
         if provider_cfg is not None and provider_cfg.type:
             return provider_cfg.type
         return name
+
+    @property
+    def active_provider_types(self) -> set[str]:
+        """Return normalized backend provider types referenced by configured capability models."""
+        return {
+            self.provider_type(m.provider).strip().lower()
+            for m in (self.ocr, self.summary, self.embedding, self.text)
+            if m is not None
+        }
 
     class Config(BaseConfig):
         omit_none = True
@@ -174,25 +221,46 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_PORT`
     """
 
-    mcp_enabled: bool = True
+    mcp_enabled: bool = field(
+        default=True,
+        metadata={"component": ("mcp", "enabled")},
+    )
     """Whether to enable the Model Context Protocol (MCP) server and OAuth endpoints.
+
+    Aliases `mcp.enabled`.
 
     Env Var: `SUPERNOTE_MCP_ENABLED`
     """
 
-    mcp_port: int = 8081
+    mcp_port: int = field(
+        default=8081,
+        metadata={"component": ("mcp", "port")},
+    )
     """Port to bind the MCP server to.
+
+    Aliases `mcp.port`.
 
     Env Var: `SUPERNOTE_MCP_PORT`
     """
 
-    _base_url: str | None = field(default=None, metadata={"name": "base_url"})
+    _base_url: str | None = field(
+        default=None,
+        metadata=field_options(alias="base_url"),
+    )
     """Base URL for the main server (port 8080).
     Used for generating links and for the MCP Authorization Server issuer.
     """
 
-    _mcp_base_url: str | None = field(default=None, metadata={"name": "mcp_base_url"})
+    _mcp_base_url: str | None = field(
+        default=None,
+        metadata={
+            **field_options(alias="mcp_base_url"),
+            "component": ("mcp", "base_url"),
+        },
+    )
     """Base URL for the MCP server (port 8081).
+
+    Aliases `mcp.base_url`.
 
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
@@ -231,22 +299,55 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_DEFAULT_USER_QUOTA`
     """
 
-    event_log_retention_days: int = 90
+    # TODO(#403): Revisit per-format image_* config fields alongside declarative
+    # path/extension processing and prompt routing so both share one config model.
+    enable_image_processing: bool = field(
+        default=True,
+        metadata={"component": ("processor", "enable_image_processing")},
+    )
+    """Whether standalone raster images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`) are indexed by the background OCR pipeline."""
+
+    image_include_patterns: list[str] = field(
+        default_factory=list,
+        metadata={"component": ("processor", "image_include_patterns")},
+    )
+    """Optional VFS path globs restricting standalone image indexing (empty = allow all paths not excluded)."""
+
+    image_exclude_patterns: list[str] = field(
+        default_factory=lambda: list(DEFAULT_IMAGE_EXCLUDE_PATTERNS),
+        metadata={"component": ("processor", "image_exclude_patterns")},
+    )
+    """VFS path globs excluded from standalone image indexing (defaults to `MyStyle/**` and `EXPORT/**`)."""
+
+    event_log_retention_days: int = field(
+        default=90,
+        metadata={"component": ("events", "retention_days")},
+    )
     """Number of days to retain domain events in `f_user_event` (0 = retain indefinitely).
+
+    Aliases `events.retention_days`.
 
     Env Var: `SUPERNOTE_EVENT_LOG_RETENTION_DAYS`
     """
 
-    proxy_mode: str | None = None
+    proxy_mode: str | None = field(
+        default=None,
+        metadata={"component": ("http", "proxy_mode")},
+    )
     """Proxy header handling mode: None/'disabled' (ignore proxy headers), 'relaxed' (trust immediate upstream), or 'strict' (require specific trusted IPs). Defaults to None for security.
+
+    Aliases `http.proxy_mode`.
 
     Env Var: `SUPERNOTE_PROXY_MODE`
     """
 
     trusted_proxies: list[str] = field(
-        default_factory=lambda: ["127.0.0.1", "::1", "172.17.0.0/16"]
+        default_factory=lambda: ["127.0.0.1", "::1", "172.17.0.0/16"],
+        metadata={"component": ("http", "trusted_proxies")},
     )
     """List of trusted proxy IPs/networks (used in strict mode). Supports CIDR notation.
+
+    Aliases `http.trusted_proxies`.
 
     Env Var: `SUPERNOTE_TRUSTED_PROXIES` (comma-separated)
     """
@@ -270,7 +371,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_OCR_MODEL`
     """
 
-    gemini_embedding_model: str = "gemini-embedding-001"
+    gemini_embedding_model: str = "gemini-embedding-2"
     """Legacy Gemini model to use for Embeddings.
 
     Env Var: `SUPERNOTE_GEMINI_EMBEDDING_MODEL`
@@ -282,35 +383,69 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
-    prompts_dir: str | None = None
+    prompts_dir: str | None = field(
+        default=None,
+        metadata={"component": ("ai", "prompts_dir")},
+    )
     """Directory where custom AI prompts are located.
+
+    Aliases `ai.prompts_dir`.
 
     Env Var: `SUPERNOTE_PROMPTS_DIR`
     """
 
-    metrics_enabled: bool = True
+    metrics_enabled: bool = field(
+        default=True,
+        metadata={"component": ("metrics", "enabled")},
+    )
     """Whether to enable the Prometheus metrics endpoint and logging middleware.
+
+    Aliases `metrics.enabled`.
 
     Env Var: `SUPERNOTE_METRICS_ENABLED`
     """
 
-    metrics_path: str = "/metrics"
+    metrics_path: str = field(
+        default="/metrics",
+        metadata={"component": ("metrics", "path")},
+    )
     """The path where Prometheus metrics are exposed.
+
+    Aliases `metrics.path`.
 
     Env Var: `SUPERNOTE_METRICS_PATH`
     """
 
-    webhooks: dict[str, Any] = field(default_factory=dict)
+    webhooks: dict[str, Any] = field(
+        default_factory=dict,
+        metadata={"component": "webhooks"},
+    )
     """Raw configuration section for the outbound webhooks component."""
 
-    web_enabled: bool = True
+    wiki: dict[str, Any] = field(
+        default_factory=dict,
+        metadata={"component": "wiki"},
+    )
+    """Raw configuration section for the opt-in LLM wiki component."""
+
+    web_enabled: bool = field(
+        default=True,
+        metadata={"component": ("web_ui", "enabled")},
+    )
     """Whether to serve the web frontend dashboard and static assets.
+
+    Aliases `web_ui.enabled`.
 
     Env Var: `SUPERNOTE_WEB_ENABLED`
     """
 
-    web_notebook_preview: bool = True
+    web_notebook_preview: bool = field(
+        default=True,
+        metadata={"component": ("conversion", "notebook_preview")},
+    )
     """Whether to generate and display notebook page previews in the web UI.
+
+    Aliases `conversion.notebook_preview`.
 
     When disabled, the web UI remains available for file, task, and metadata management,
     but skips CPU-heavy notebook rasterization.
@@ -324,7 +459,41 @@ class ServerConfig(DataClassYAMLMixin):
             raise ValueError("default_user_quota must be a non-negative integer")
         if self.event_log_retention_days < 0:
             raise ValueError("event_log_retention_days must be >= 0")
+        self._root_component_configs: dict[str, dict[str, Any]] = {}
+        self._component_sources: dict[str, ComponentConfigSource] = {}
         self._sync_legacy_gemini_config()
+        self._seed_programmatic_component_sources()
+
+    def _seed_programmatic_component_sources(self) -> None:
+        """Record `ComponentConfigSource.YAML` provenance when `ServerConfig` is constructed with non-default component fields."""
+        for f in fields(self):
+            comp_meta = f.metadata.get("component")
+            if isinstance(comp_meta, str):
+                if getattr(self, f.name):
+                    self._component_sources.setdefault(
+                        comp_meta, ComponentConfigSource.YAML
+                    )
+            elif isinstance(comp_meta, tuple):
+                domain, _ = comp_meta
+                if getattr(self, f.name) != f.default:
+                    self._component_sources.setdefault(
+                        domain, ComponentConfigSource.YAML
+                    )
+        if self.ai.active_provider_types:
+            self._component_sources.setdefault("ai", ComponentConfigSource.YAML)
+
+    @property
+    def root_component_configs(self) -> Mapping[str, dict[str, Any]]:
+        """Root-level `<domain>:` sections loaded from `config.yaml`."""
+        return {
+            domain: copy.deepcopy(cfg)
+            for domain, cfg in self._root_component_configs.items()
+        }
+
+    @property
+    def component_sources(self) -> Mapping[str, ComponentConfigSource]:
+        """Static configuration source (`ENV` or `YAML`) recorded per component domain."""
+        return dict(self._component_sources)
 
     def _sync_legacy_gemini_config(self) -> None:
         """Synchronize legacy top-level `gemini_*` fields with `self.ai`."""
@@ -420,12 +589,51 @@ class ServerConfig(DataClassYAMLMixin):
             logger.info(f"Using config file: {config_file}")
 
         config = cls()
+        raw_yaml_data: dict[str, Any] = {}
         if config_file.exists():
             try:
-                with open(config_file, "r") as f:
-                    config = cls.from_yaml(f.read())
+                raw_text = config_file.read_text()
+                parsed_yaml = yaml.safe_load(raw_text)
+                if isinstance(parsed_yaml, dict):
+                    raw_yaml_data = parsed_yaml
+                config = cls.from_yaml(raw_text)
             except Exception as e:
                 logger.warning(f"Failed to load config file {config_file}: {e}")
+
+        config._component_sources.clear()
+        alias_by_target: dict[tuple[str, str], str] = {
+            comp_meta: f.name
+            for f in fields(cls)
+            if isinstance((comp_meta := f.metadata.get("component")), tuple)
+        }
+        for key, value in raw_yaml_data.items():
+            if (
+                isinstance(key, str)
+                and _COMPONENT_DOMAIN_RE.fullmatch(key)
+                and key != "auth"
+                and isinstance(value, dict)
+            ):
+                if "enabled" in value:
+                    value = {**value, "enabled": _parse_bool(value["enabled"])}
+                config._root_component_configs[key] = copy.deepcopy(value)
+                config._component_sources[key] = ComponentConfigSource.YAML
+                logger.debug(
+                    "Loaded root YAML component section for %r (keys=%s)",
+                    key,
+                    sorted(value.keys()),
+                )
+                for sub_key, sub_val in value.items():
+                    if (attr_name := alias_by_target.get((key, sub_key))) is not None:
+                        setattr(config, attr_name, sub_val)
+
+        for f in fields(cls):
+            yaml_key = f.metadata.get("alias", f.name)
+            if yaml_key in raw_yaml_data:
+                comp_meta = f.metadata.get("component")
+                if isinstance(comp_meta, tuple):
+                    config._component_sources[comp_meta[0]] = ComponentConfigSource.YAML
+        if "ai" in raw_yaml_data or "gemini_api_key" in raw_yaml_data:
+            config._component_sources["ai"] = ComponentConfigSource.YAML
 
         # 4. JWT Secret priority: Env > Config > Database (CoordinationService)
         env_secret = os.getenv("SUPERNOTE_JWT_SECRET")
@@ -454,6 +662,7 @@ class ServerConfig(DataClassYAMLMixin):
             config.mcp_enabled = _get_bool_env(
                 "SUPERNOTE_MCP_ENABLED", config.mcp_enabled
             )
+            config._component_sources["mcp"] = ComponentConfigSource.ENV
             logger.info(f"MCP Enabled: {config.mcp_enabled}")
 
         if os.getenv("SUPERNOTE_MCP_PORT"):
@@ -461,6 +670,7 @@ class ServerConfig(DataClassYAMLMixin):
                 config.mcp_port = int(
                     os.getenv("SUPERNOTE_MCP_PORT", str(config.mcp_port))
                 )
+                config._component_sources["mcp"] = ComponentConfigSource.ENV
                 logger.info(f"Using SUPERNOTE_MCP_PORT: {config.mcp_port}")
             except ValueError:
                 pass
@@ -491,6 +701,7 @@ class ServerConfig(DataClassYAMLMixin):
                 if retention_val < 0:
                     raise ValueError("must be >= 0")
                 config.event_log_retention_days = retention_val
+                config._component_sources["events"] = ComponentConfigSource.ENV
                 logger.info(
                     f"Using SUPERNOTE_EVENT_LOG_RETENTION_DAYS: {config.event_log_retention_days}"
                 )
@@ -505,6 +716,7 @@ class ServerConfig(DataClassYAMLMixin):
 
         if os.getenv("SUPERNOTE_MCP_BASE_URL"):
             config._mcp_base_url = os.getenv("SUPERNOTE_MCP_BASE_URL")
+            config._component_sources["mcp"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_MCP_BASE_URL: {config._mcp_base_url}")
 
         # Legacy support/compatibility if USER sets SUPERNOTE_AUTH_URL_BASE
@@ -554,11 +766,13 @@ class ServerConfig(DataClassYAMLMixin):
 
         if os.getenv("SUPERNOTE_PROXY_MODE"):
             config.proxy_mode = os.getenv("SUPERNOTE_PROXY_MODE")
+            config._component_sources["http"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_PROXY_MODE: {config.proxy_mode}")
 
         if os.getenv("SUPERNOTE_TRUSTED_PROXIES"):
             val = os.getenv("SUPERNOTE_TRUSTED_PROXIES", "")
             config.trusted_proxies = [p.strip() for p in val.split(",") if p.strip()]
+            config._component_sources["http"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_TRUSTED_PROXIES: {config.trusted_proxies}")
 
         if gemini_api_key := os.getenv("SUPERNOTE_GEMINI_API_KEY"):
@@ -566,6 +780,11 @@ class ServerConfig(DataClassYAMLMixin):
             config.ai.providers.setdefault(
                 "gemini", ProviderConfig()
             ).api_key = gemini_api_key
+            config._root_component_configs.setdefault("gemini", {})["api_key"] = (
+                gemini_api_key
+            )
+            config._component_sources["gemini"] = ComponentConfigSource.ENV
+            config._component_sources.setdefault("ai", ComponentConfigSource.ENV)
             logger.info(
                 f"Using SUPERNOTE_GEMINI_API_KEY: xxx...{config.gemini_api_key[-3:]}"
             )
@@ -576,12 +795,14 @@ class ServerConfig(DataClassYAMLMixin):
                 config.ai.ocr.model = gemini_ocr_model
             if config.ai.summary and config.ai.summary.provider == "gemini":
                 config.ai.summary.model = gemini_ocr_model
+            config._component_sources["ai"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_GEMINI_OCR_MODEL: {config.gemini_ocr_model}")
 
         if gemini_embedding_model := os.getenv("SUPERNOTE_GEMINI_EMBEDDING_MODEL"):
             config.gemini_embedding_model = gemini_embedding_model
             if config.ai.embedding and config.ai.embedding.provider == "gemini":
                 config.ai.embedding.model = gemini_embedding_model
+            config._component_sources["ai"] = ComponentConfigSource.ENV
             logger.info(
                 f"Using SUPERNOTE_GEMINI_EMBEDDING_MODEL: {config.gemini_embedding_model}"
             )
@@ -596,6 +817,7 @@ class ServerConfig(DataClassYAMLMixin):
                 ):
                     if model_cfg and model_cfg.provider == "gemini":
                         model_cfg.max_concurrency = config.gemini_max_concurrency
+                config._component_sources["ai"] = ComponentConfigSource.ENV
                 logger.info(
                     f"Using SUPERNOTE_GEMINI_MAX_CONCURRENCY: {config.gemini_max_concurrency}"
                 )
@@ -606,16 +828,19 @@ class ServerConfig(DataClassYAMLMixin):
 
         if prompts_dir := os.getenv("SUPERNOTE_PROMPTS_DIR"):
             config.prompts_dir = prompts_dir
+            config._component_sources["ai"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_PROMPTS_DIR: {config.prompts_dir}")
 
         if os.getenv("SUPERNOTE_METRICS_ENABLED"):
             config.metrics_enabled = _get_bool_env(
                 "SUPERNOTE_METRICS_ENABLED", config.metrics_enabled
             )
+            config._component_sources["metrics"] = ComponentConfigSource.ENV
             logger.info(f"Metrics Enabled: {config.metrics_enabled}")
 
         if metrics_path := os.getenv("SUPERNOTE_METRICS_PATH"):
             config.metrics_path = metrics_path
+            config._component_sources["metrics"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_METRICS_PATH: {config.metrics_path}")
 
         if os.getenv("SUPERNOTE_WEBHOOKS_ENABLED"):
@@ -623,18 +848,29 @@ class ServerConfig(DataClassYAMLMixin):
                 "SUPERNOTE_WEBHOOKS_ENABLED",
                 bool(config.webhooks.get("enabled", False)),
             )
+            config._component_sources["webhooks"] = ComponentConfigSource.ENV
             logger.info(f"Webhooks Enabled: {config.webhooks['enabled']}")
+
+        if os.getenv("SUPERNOTE_WIKI_ENABLED"):
+            config.wiki["enabled"] = _get_bool_env(
+                "SUPERNOTE_WIKI_ENABLED",
+                bool(config.wiki.get("enabled", False)),
+            )
+            config._component_sources["wiki"] = ComponentConfigSource.ENV
+            logger.info(f"Wiki Enabled: {config.wiki['enabled']}")
 
         if os.getenv("SUPERNOTE_WEB_ENABLED"):
             config.web_enabled = _get_bool_env(
                 "SUPERNOTE_WEB_ENABLED", config.web_enabled
             )
+            config._component_sources["web_ui"] = ComponentConfigSource.ENV
             logger.info(f"Web Enabled: {config.web_enabled}")
 
         if os.getenv("SUPERNOTE_WEB_NOTEBOOK_PREVIEW"):
             config.web_notebook_preview = _get_bool_env(
                 "SUPERNOTE_WEB_NOTEBOOK_PREVIEW", config.web_notebook_preview
             )
+            config._component_sources["conversion"] = ComponentConfigSource.ENV
             logger.info(f"Web Notebook Preview: {config.web_notebook_preview}")
 
         if raw_log_level := os.getenv("SUPERNOTE_LOG_LEVEL"):
@@ -655,11 +891,6 @@ class ServerConfig(DataClassYAMLMixin):
             config.trace_log_file = str(
                 Path(config.storage_dir) / "system" / "trace.log"
             )
-
-        if not config_file.exists():
-            logger.info(f"Saving config to {config_file}")
-            config_file.parent.mkdir(parents=True, exist_ok=True)
-            config_file.write_text(cast(str, config.to_yaml()))
 
         return config
 

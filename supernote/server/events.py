@@ -1,10 +1,11 @@
 """In-process asynchronous event bus (`LocalEventBus`) and domain event dataclasses.
 
 Decouples mutating domain services (`supernote.server.services.file.FileService`,
-`supernote.server.services.summary.SummaryService`, `supernote.server.components.schedule.service.ScheduleService`,
+`supernote.server.components.summary.service.SummaryService`, `supernote.server.components.schedule.service.ScheduleService`,
 `supernote.server.services.processor.ProcessorService`) from downstream subscribers:
-- `supernote.server.services.processor.ProcessorService` listens for `NoteUpdatedEvent`, `NoteDeletedEvent`, `SyncCompletedEvent`, and `BlobCleanupEvent`.
-- `supernote.server.components.webhooks.service.WebhookService` listens for `NoteUpdatedEvent` and `NoteProcessingCompletedEvent`.
+- `supernote.server.components.processor.service.ProcessorService` listens for `NoteUpdatedEvent`, `VfsItemPurgedEvent`, and `SyncCompletedEvent`.
+- `supernote.server.services.file.FileService` listens for `BlobCleanupEvent`.
+- `supernote.server.components.webhooks.service.WebhookService` listens for `DomainEventRecorded`.
 - `supernote.server.components.socketio` listens for VFS, summary, and schedule events to broadcast real-time Socket.IO messages to connected tablets and Web UI clients.
 
 See `supernote.guides.architecture`.
@@ -21,7 +22,7 @@ from typing import Any, ClassVar
 from mashumaro import field_options
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from supernote.models.events import DomainEntityType, DomainEventType
+from supernote.models.events import DomainEntityType, DomainEventType, DomainEventVO
 from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import SummaryItem, SummaryTagItem
 
@@ -29,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 _current_actor_var: ContextVar[str | None] = ContextVar(
     "supernote_current_event_actor", default=None
+)
+_current_provenance_var: ContextVar[dict[str, str] | None] = ContextVar(
+    "supernote_current_event_provenance", default=None
 )
 
 
@@ -40,6 +44,46 @@ def bind_event_actor(actor: str | None) -> Generator[None]:
         yield
     finally:
         _current_actor_var.reset(token)
+
+
+MAX_PROVENANCE_CAUSE_SEQ_LENGTH = 64
+MAX_PROVENANCE_REASON_LENGTH = 500
+
+
+@contextmanager
+def bind_event_provenance(
+    *,
+    cause_seq: str | None = None,
+    reason: str | None = None,
+) -> Generator[None]:
+    """Attach optional causal provenance to domain events emitted in this async context.
+
+    Automated clients and MCP tools often mutate server state in reaction to an
+    earlier domain event (for example, creating a task after a notebook page is
+    transcribed). Binding `cause_seq` and `reason` via this context manager
+    merges them into `DomainEvent.to_payload()` for every event recorded in
+    `f_user_event` inside the `with` block—keeping provenance out of domain
+    service method signatures (mirroring `bind_event_actor`).
+
+    Both fields are stripped of surrounding whitespace, omitted when empty, and
+    truncated to `MAX_PROVENANCE_CAUSE_SEQ_LENGTH` (64) and
+    `MAX_PROVENANCE_REASON_LENGTH` (500) characters respectively.
+
+    Example::
+
+        with bind_event_provenance(cause_seq="9001", reason="Extracted from page 2"):
+            await schedule_service.create_task(user_id=user_id, title="Follow up")
+    """
+    provenance: dict[str, str] = {}
+    if cause_seq is not None and (cleaned_seq := cause_seq.strip()):
+        provenance["cause_seq"] = cleaned_seq[:MAX_PROVENANCE_CAUSE_SEQ_LENGTH]
+    if reason is not None and (cleaned_reason := reason.strip()):
+        provenance["reason"] = cleaned_reason[:MAX_PROVENANCE_REASON_LENGTH]
+    token = _current_provenance_var.set(provenance or None)
+    try:
+        yield
+    finally:
+        _current_provenance_var.reset(token)
 
 
 @dataclass
@@ -83,6 +127,8 @@ class DomainEvent(Event, DataClassJSONMixin):
         data = self.to_dict()
         data.pop("user_id", None)
         data.pop("equipment_no", None)
+        if provenance := _current_provenance_var.get():
+            data.update(provenance)
         return data
 
 
@@ -97,11 +143,13 @@ class NoteUpdatedEvent(Event):
 
 
 @dataclass
-class NoteDeletedEvent(Event):
-    """Triggered when a .note file is deleted."""
+class VfsItemPurgedEvent(Event):
+    """Triggered when a VFS file or directory is permanently purged from the recycle bin."""
 
-    file_id: int
+    item_id: int
     user_id: int
+    name: str
+    is_folder: bool = False
 
 
 @dataclass
@@ -287,14 +335,13 @@ class SummaryTagDeletedEvent(Event):
 
 
 @dataclass
-class SummaryUpsertedEvent(DomainEvent):
-    """Triggered when a summary group or leaf summary item is created or updated."""
+class SummaryCreatedEvent(DomainEvent):
+    """Triggered when a summary group or leaf summary item is created."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_UPSERTED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_CREATED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.SUMMARY
 
     summary: SummaryItem
-    is_new: bool
     equipment_no: str | None = None
 
     @property
@@ -304,6 +351,13 @@ class SummaryUpsertedEvent(DomainEvent):
     @property
     def related_file_id(self) -> int | None:
         return self.summary.file_id
+
+
+@dataclass
+class SummaryUpdatedEvent(SummaryCreatedEvent):
+    """Triggered when a summary group or leaf summary item is updated."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_UPDATED
 
 
 @dataclass
@@ -332,7 +386,7 @@ class SummaryDeletedEvent(DomainEvent):
 class VfsItemCreatedEvent(DomainEvent):
     """Triggered when a VFS file or directory is created, uploaded, or restored from recycle."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_CREATED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_CREATED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))
@@ -357,7 +411,7 @@ class VfsItemCreatedEvent(DomainEvent):
 class VfsContentUpdatedEvent(DomainEvent):
     """Triggered when an existing VFS file is overwritten with new content."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_CONTENT_UPDATED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_CONTENT_UPDATED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))
@@ -382,7 +436,7 @@ class VfsContentUpdatedEvent(DomainEvent):
 class VfsItemMovedEvent(DomainEvent):
     """Triggered when a VFS file or directory is renamed in-place or moved to a new directory."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_MOVED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_MOVED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))
@@ -410,7 +464,7 @@ class VfsItemMovedEvent(DomainEvent):
 class VfsItemCopiedEvent(DomainEvent):
     """Triggered when a VFS file or directory is copied."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_COPIED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_COPIED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     source_id: int = field(metadata=field_options(serialize=str))
@@ -439,7 +493,7 @@ class VfsItemCopiedEvent(DomainEvent):
 class VfsItemDeletedEvent(DomainEvent):
     """Triggered when a VFS file or directory is soft-deleted into the recycle bin."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_DELETED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_DELETED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))
@@ -480,6 +534,19 @@ class DomainEventRecorded(Event):
     entity_id: str
     related_file_id: int | None = None
     payload: dict[str, Any] = field(default_factory=dict)
+
+    def to_vo(self) -> DomainEventVO:
+        """Convert this recorded event into its wire `DomainEventVO` representation."""
+        return DomainEventVO(
+            seq=str(self.seq),
+            timestamp=self.timestamp_ms,
+            event_type=self.event_type,
+            actor=self.actor,
+            entity_type=self.entity_type,
+            entity_id=self.entity_id,
+            related_file_id=self.related_file_id,
+            payload=self.payload,
+        )
 
 
 EventHandler = Callable[[Any], Awaitable[Any]]
@@ -522,6 +589,17 @@ class LocalEventBus:
                     task = asyncio.create_task(self._safe_execute(handler, event))
                     self._background_tasks.add(task)
                     task.add_done_callback(self._background_tasks.discard)
+
+    async def wait_idle(self) -> None:
+        """Wait for all scheduled background event handler tasks to complete.
+
+        Non-inline subscribers run as fire-and-forget tasks spawned by `publish()`.
+        Looping until `_background_tasks` is empty also drains any follow-up events
+        published by those handlers, allowing callers (e.g. graceful shutdown or
+        tests) to synchronize deterministically without sleeping.
+        """
+        while self._background_tasks:
+            await asyncio.gather(*tuple(self._background_tasks), return_exceptions=True)
 
     async def _safe_execute(self, handler: EventHandler, event: Event) -> None:
         """Execute handler and log exceptions."""

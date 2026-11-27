@@ -5,19 +5,29 @@ import {
     clearRecycleBin,
     computeSocketSignature,
     connectSocket,
+    createApiKey,
     deleteRecycleItems,
     disconnectSocket,
     fetchAiStatus,
+    fetchApiKeys,
     fetchFiles,
+    fetchOAuthBridgeClient,
+    fetchOAuthGrants,
     fetchProcessingStatus,
     fetchRecycleBin,
     fetchSummaries,
+    fetchSystemComponents,
+    fetchSystemQueueOverview,
     fetchSystemTasks,
     login,
+    retryFailedSystemTasks,
     revertRecycleItems,
+    revokeApiKey,
+    revokeOAuthGrant,
     searchFiles,
     searchSemantic,
     submitOAuthBridgeDecision,
+    updateSystemComponent,
 } from '../../supernote/server/static/js/api/client.js';
 import {
     ApiError,
@@ -159,15 +169,145 @@ test('client.js: searchFiles and searchSemantic normalize wire DTOs', async () =
 
         assert.deepEqual(await searchSemantic('Architecture'), [
             {
-                key: 'p-2',
+                key: '20-2-0',
                 fileId: '20',
                 fileName: 'Spec.note',
                 extension: 'note',
                 pageIndex: 2,
                 pageNumber: 3,
                 score: 0.91,
+                matchPercent: 91,
                 textPreview: 'Architecture notes',
                 date: '2026-06-18',
+            },
+        ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: searchSemantic scopes keys by fileId/pageIndex/idx and clamps hybrid scores', async () => {
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('hybrid-tok');
+        globalThis.fetch = async () =>
+            /** @type {any} */ ({
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    results: [
+                        {
+                            page_id: '',
+                            file_id: '9007199254740993',
+                            file_name: 'Legacy.note',
+                            page_index: 0,
+                            score: 1.04,
+                            text_preview: 'Keywords: #optics',
+                            date: null,
+                        },
+                        {
+                            page_id: '',
+                            file_id: '9007199254740993',
+                            file_name: 'Legacy.note',
+                            page_index: 1,
+                            score: -0.35,
+                            text_preview: '',
+                            date: null,
+                        },
+                        {
+                            page_id: 'shared-page-id',
+                            file_id: 42,
+                            file_name: 'CopyA.note',
+                            page_index: Number.NaN,
+                            score: Number.NaN,
+                            text_preview: 'Copied page A',
+                            date: '2026-04-01',
+                        },
+                        {
+                            page_id: 'shared-page-id',
+                            file_id: 43,
+                            file_name: 'CopyB.note',
+                            pageIndex: Number.POSITIVE_INFINITY,
+                            score: Number.NEGATIVE_INFINITY,
+                            text_preview: 'Copied page B',
+                            date: '2026-04-01',
+                        },
+                        {
+                            page_id: 'chunk-2',
+                            file_id: 42,
+                            file_name: 'CopyA.note',
+                            page_index: 0,
+                            score: 0.5,
+                            text_preview: 'Second chunk on same page',
+                            date: '2026-04-01',
+                        },
+                    ],
+                }),
+            });
+
+        const matches = await searchSemantic('#optics');
+        assert.equal(new Set(matches.map((m) => m.key)).size, matches.length);
+        assert.deepEqual(matches, [
+            {
+                key: '9007199254740993-0-0',
+                fileId: '9007199254740993',
+                fileName: 'Legacy.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 1.04,
+                matchPercent: 100,
+                textPreview: 'Keywords: #optics',
+                date: null,
+            },
+            {
+                key: '9007199254740993-1-1',
+                fileId: '9007199254740993',
+                fileName: 'Legacy.note',
+                extension: 'note',
+                pageIndex: 1,
+                pageNumber: 2,
+                score: -0.35,
+                matchPercent: 0,
+                textPreview: '',
+                date: null,
+            },
+            {
+                key: '42-0-2',
+                fileId: '42',
+                fileName: 'CopyA.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 0,
+                matchPercent: 0,
+                textPreview: 'Copied page A',
+                date: '2026-04-01',
+            },
+            {
+                key: '43-0-3',
+                fileId: '43',
+                fileName: 'CopyB.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 0,
+                matchPercent: 0,
+                textPreview: 'Copied page B',
+                date: '2026-04-01',
+            },
+            {
+                key: '42-0-4',
+                fileId: '42',
+                fileName: 'CopyA.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 0.5,
+                matchPercent: 50,
+                textPreview: 'Second chunk on same page',
+                date: '2026-04-01',
             },
         ]);
     } finally {
@@ -216,11 +356,21 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
                                 retryCount: 0,
                                 updateTime: 1000,
                                 lastError: null,
+                                fileName: 'Weekly.note',
+                                pageIndex: 0,
                             },
                         ],
+                        paused: false,
+                        queueSize: 1,
+                        processingFileIds: [20],
                     }),
                     { status: 200 },
                 );
+            }
+            if (url === '/api/extended/system/tasks/retry') {
+                return new Response(JSON.stringify({ retriedFileIds: ['20'] }), {
+                    status: 200,
+                });
             }
             return new Response(JSON.stringify({ ocrEnabled: true, model: 'gemini' }), {
                 status: 200,
@@ -246,8 +396,29 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
                 retryCount: 0,
                 updateTime: 1000,
                 lastError: null,
+                fileName: 'Weekly.note',
+                pageIndex: 0,
             },
         ]);
+        assert.deepEqual(await fetchSystemQueueOverview(), {
+            tasks: [
+                {
+                    id: 't1',
+                    fileId: '20',
+                    taskType: 'OCR',
+                    key: 'page_0',
+                    status: 'COMPLETED',
+                    retryCount: 0,
+                    updateTime: 1000,
+                    lastError: null,
+                    fileName: 'Weekly.note',
+                    pageIndex: 0,
+                },
+            ],
+            paused: false,
+            queueSize: 1,
+            processingFileIds: ['20'],
+        });
         assert.deepEqual(await fetchAiStatus(), {
             hasApiKey: false,
             ocrEnabled: true,
@@ -258,6 +429,7 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
             embeddingModel: null,
             model: 'gemini',
         });
+        assert.deepEqual(await retryFailedSystemTasks('20'), ['20']);
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
@@ -336,6 +508,13 @@ test('client.js: submitOAuthBridgeDecision sends JSON Accept + token headers and
         );
         assert.equal(calls[0].init.headers['x-access-token'], 'oauth-tok');
         assert.equal(calls[0].init.headers.Accept, 'application/json');
+        assert.deepEqual(JSON.parse(calls[0].init.body), { decision: 'approve' });
+
+        await submitOAuthBridgeDecision('/login-bridge?case=ok', 'deny', 'https://claude.ai/cb');
+        assert.deepEqual(JSON.parse(calls[1].init.body), {
+            decision: 'deny',
+            redirect_uri: 'https://claude.ai/cb',
+        });
 
         await assert.rejects(
             () => submitOAuthBridgeDecision('/login-bridge?case=bad', 'approve'),
@@ -357,6 +536,62 @@ test('client.js: submitOAuthBridgeDecision sends JSON Accept + token headers and
         await logout({ reload: false });
         globalThis.fetch = origFetch;
         globalThis.window = origWindow;
+    }
+});
+
+test('client.js: fetchOAuthBridgeClient GETs /login-bridge/client with the bridge query', async () => {
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('consent-tok');
+        /** @type {Array<{ url: string, init: any }>} */
+        const calls = [];
+        globalThis.fetch = async (url, init) => {
+            calls.push({ url: String(url), init });
+            if (String(url).endsWith('client_id=bad')) {
+                return new Response(
+                    JSON.stringify({
+                        error: 'invalid_client',
+                        error_description: "The client's metadata document is missing or invalid.",
+                    }),
+                    { status: 400 },
+                );
+            }
+            return new Response(
+                JSON.stringify({
+                    client_id: 'https://client.example/client.json',
+                    client_name: 'Example Client',
+                    client_host: 'client.example',
+                    redirect_uri: 'https://client.example/callback',
+                }),
+                { status: 200 },
+            );
+        };
+
+        assert.deepEqual(await fetchOAuthBridgeClient('https://client.example/client.json', ''), {
+            clientName: 'Example Client',
+            clientHost: 'client.example',
+            redirectUri: 'https://client.example/callback',
+        });
+        assert.equal(
+            calls[0].url,
+            '/login-bridge/client?client_id=https%3A%2F%2Fclient.example%2Fclient.json',
+        );
+        assert.equal(calls[0].init.method, 'GET');
+        assert.equal(calls[0].init.headers['x-access-token'], 'consent-tok');
+
+        await fetchOAuthBridgeClient('https://client.example/client.json', 'app:/cb');
+        assert.match(calls[1].url, /&redirect_uri=app%3A%2Fcb$/);
+
+        await assert.rejects(
+            () => fetchOAuthBridgeClient('bad', ''),
+            (err) =>
+                err instanceof ApiError &&
+                err.status === 400 &&
+                /metadata document/.test(err.message),
+        );
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
     }
 });
 
@@ -536,6 +771,168 @@ test('client.js: recycle bin endpoints paginate, normalize, and pass string IDs'
             { url: '/api/file/recycle/delete', body: { idList: ['900719925474099301'] } },
             { url: '/api/file/recycle/clear', body: {} },
         ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: OAuth grant and API key helpers unwrap envelopes and send DELETE by id', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {Array<[string, string, unknown]>} */
+    const calls = [];
+    const grant = {
+        id: 'g1',
+        clientId: 'https://client.example.com/',
+        scopes: ['supernote:all'],
+        createdAt: 1700000000,
+        expiresAt: 1702592000,
+        lastUsedAt: null,
+    };
+    const apiKey = {
+        id: 'k1',
+        name: 'Laptop CLI',
+        keyPrefix: 'sn_01234567...',
+        createdAt: 1700000000,
+        lastUsedAt: null,
+        expiresAt: null,
+    };
+    try {
+        setToken('settings-tok');
+        globalThis.fetch = async (url, init) => {
+            const method = init?.method || 'GET';
+            calls.push([String(url), method, init?.body ? JSON.parse(String(init.body)) : null]);
+            if (url === '/api/extended/oauth/grants') {
+                return new Response(JSON.stringify({ success: true, grants: [grant] }));
+            }
+            if (url === '/api/extended/keys' && method === 'GET') {
+                return new Response(JSON.stringify({ success: true, keys: [apiKey] }));
+            }
+            if (url === '/api/extended/keys' && method === 'POST') {
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        errorCode: null,
+                        id: 'k2',
+                        name: 'Laptop CLI',
+                        key: 'sn_0123456789abcdef0123456789abcdef',
+                        createdAt: 1700000100,
+                        expiresAt: 1702592100,
+                    }),
+                );
+            }
+            return new Response(JSON.stringify({ success: true }));
+        };
+
+        assert.deepEqual(await fetchOAuthGrants(), [grant]);
+        assert.deepEqual(await fetchApiKeys(), [apiKey]);
+        assert.deepEqual(await createApiKey('Laptop CLI', 30), {
+            id: 'k2',
+            name: 'Laptop CLI',
+            key: 'sn_0123456789abcdef0123456789abcdef',
+            createdAt: 1700000100,
+            expiresAt: 1702592100,
+        });
+        await revokeOAuthGrant('g1');
+        await revokeApiKey('k/2');
+
+        assert.deepEqual(calls, [
+            ['/api/extended/oauth/grants', 'GET', null],
+            ['/api/extended/keys', 'GET', null],
+            ['/api/extended/keys', 'POST', { name: 'Laptop CLI', expiresInDays: 30 }],
+            ['/api/extended/oauth/grants/g1', 'DELETE', null],
+            ['/api/extended/keys/k%2F2', 'DELETE', null],
+        ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: revokeOAuthGrant surfaces the server error for an unknown grant', async () => {
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('settings-tok');
+        globalThis.fetch = async () =>
+            new Response(JSON.stringify({ error: 'OAuth grant not found or already revoked' }), {
+                status: 404,
+            });
+        await assert.rejects(
+            revokeOAuthGrant('missing'),
+            (err) =>
+                err instanceof ApiError &&
+                err.status === 404 &&
+                err.message === 'OAuth grant not found or already revoked',
+        );
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: fetchSystemComponents and updateSystemComponent normalize component payloads and return [] on 403', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {Array<[string, string, unknown]>} */
+    const calls = [];
+    const rawWebhookComp = {
+        domain: 'webhooks',
+        enabled: false,
+        running: false,
+        source: 'default',
+        readOnly: false,
+        runtimeConfigurable: true,
+        restartRequired: false,
+        config: { enabled: false },
+        fields: [
+            { name: 'enabled', type: 'boolean', default: false },
+            { name: 'endpoints', type: 'array', default: [] },
+        ],
+    };
+    try {
+        setToken('admin-tok');
+        globalThis.fetch = async (url, init) => {
+            const method = init?.method || 'GET';
+            calls.push([String(url), method, init?.body ? JSON.parse(String(init.body)) : null]);
+            if (url === '/api/extended/system/components' && method === 'GET') {
+                return new Response(
+                    JSON.stringify({ success: true, components: [rawWebhookComp] }),
+                );
+            }
+            if (url === '/api/extended/system/components/webhooks' && method === 'PUT') {
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        component: {
+                            ...rawWebhookComp,
+                            enabled: true,
+                            running: true,
+                            source: 'database',
+                            config: { enabled: true },
+                        },
+                    }),
+                );
+            }
+            return new Response(JSON.stringify({ success: true }));
+        };
+
+        assert.deepEqual(await fetchSystemComponents(), [rawWebhookComp]);
+        assert.deepEqual(await updateSystemComponent('webhooks', { enabled: true }), {
+            ...rawWebhookComp,
+            enabled: true,
+            running: true,
+            source: 'database',
+            config: { enabled: true },
+        });
+        assert.deepEqual(calls, [
+            ['/api/extended/system/components', 'GET', null],
+            ['/api/extended/system/components/webhooks', 'PUT', { config: { enabled: true } }],
+        ]);
+
+        globalThis.fetch = async () =>
+            new Response(JSON.stringify({ error: 'Forbidden: Admin access required' }), {
+                status: 403,
+            });
+        assert.deepEqual(await fetchSystemComponents(), []);
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;

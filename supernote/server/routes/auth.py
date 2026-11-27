@@ -1,15 +1,18 @@
-"""Authentication, user profile, and device binding HTTP routes (`/api/official/user/*`).
+"""Authentication, user profile, device binding, and static API key routes.
 
 Implements the challenge-response login handshake (`handle_random_code`, `handle_login`),
 Admin-First public registration (`handle_register`), password/email updates, login history,
-CSRF token issuance, and hardware equipment binding (`bind_equipment`, `unbind_equipment`,
-`query_user_equipment`). Delegates account and JWT session operations to
-`supernote.server.services.user.UserService` and enforces brute-force protection via
-`supernote.server.utils.rate_limit.RateLimiter`. See `supernote.guides.bootstrap_guide`.
+static Bearer API key management (`/api/extended/keys*`), OAuth client grant
+inspection/revocation (`/api/extended/oauth/grants*`), CSRF token issuance, and hardware
+equipment binding (`bind_equipment`, `unbind_equipment`, `query_user_equipment`). Delegates
+account, API key, and JWT session operations to `supernote.server.services.user.UserService`
+and enforces brute-force protection via `supernote.server.utils.rate_limit.RateLimiter`.
+See `supernote.guides.bootstrap_guide`.
 """
 
+import time
+
 from aiohttp import web
-from mashumaro.exceptions import MissingField
 
 from supernote.models.auth import (
     LoginDTO,
@@ -24,6 +27,12 @@ from supernote.models.equipment import (
     UnbindEquipmentDTO,
     UserEquipmentDTO,
 )
+from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    CreateApiKeyDTO,
+    CreateApiKeyResponseVO,
+    OAuthGrantListResponseVO,
+)
 from supernote.models.user import (
     LoginRecordDTO,
     RetrievePasswordDTO,
@@ -36,7 +45,7 @@ from supernote.models.user import (
     UserQueryVO,
     UserRegisterDTO,
 )
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import (
     CONFIG_KEY,
     FILE_SERVICE_KEY,
@@ -61,6 +70,7 @@ from supernote.server.utils.rate_limit import (
     RESET_KEY_IP,
     RateLimitExceeded,
 )
+from supernote.server.utils.request import parse_json_dto
 
 from .decorators import interactive_session_only, public_route
 
@@ -102,12 +112,11 @@ async def handle_activate_equipment(request: web.Request) -> web.Response:
 async def handle_equipment_unlink(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/equipment/unlink
     # Purpose: Device requests to unlink itself from the account/server.
-    req_data = await request.json()
     try:
-        unlink_req = UnbindEquipmentDTO.from_dict(req_data)
+        unlink_req = await parse_json_dto(request, UnbindEquipmentDTO)
         if not unlink_req.equipment_no:
-            raise ValueError("Missing equipmentNo")
-    except (MissingField, ValueError):
+            raise InvalidInputError("Missing equipmentNo")
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -128,12 +137,11 @@ async def handle_equipment_unlink(request: web.Request) -> web.Response:
 async def handle_check_user_exists(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/check/exists/server
     # Purpose: Check if the user exists on this server and return server/user routing metadata.
-    req_data = await request.json()
     try:
-        user_check_req = UserCheckDTO.from_dict(req_data)
+        user_check_req = await parse_json_dto(request, UserCheckDTO)
         if not user_check_req.email:
-            raise ValueError("Missing email")
-    except (MissingField, ValueError):
+            raise InvalidInputError("Missing email")
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -161,10 +169,9 @@ async def handle_query_token(request: web.Request) -> web.Response:
 async def handle_random_code(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/query/random/code
     # Purpose: Get challenge for password hashing
-    req_data = await request.json()
     try:
-        code_req = RandomCodeDTO.from_dict(req_data)
-    except (MissingField, ValueError):
+        code_req = await parse_json_dto(request, RandomCodeDTO)
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -192,10 +199,9 @@ async def handle_login(request: web.Request) -> web.Response:
         return web.json_response(BaseResponse().to_dict())
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
-    req_data = await request.json()
     try:
-        login_req = LoginDTO.from_dict(req_data)
-    except (MissingField, ValueError):
+        login_req = await parse_json_dto(request, LoginDTO)
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -230,10 +236,9 @@ async def handle_login(request: web.Request) -> web.Response:
 async def handle_bind_equipment(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/user/bindEquipment
     # Purpose: Bind the device to the account.
-    req_data = await request.json()
     try:
-        bind_req = BindEquipmentDTO.from_dict(req_data)
-    except (MissingField, ValueError):
+        bind_req = await parse_json_dto(request, BindEquipmentDTO)
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Missing data").to_dict(), status=400
         )
@@ -257,12 +262,11 @@ async def handle_bind_equipment(request: web.Request) -> web.Response:
 async def handle_query_equipment_by_no(request: web.Request) -> web.Response:
     # Endpoint: POST /api/equipment/query/by/equipmentno
     # Purpose: Query equipment binding status by device serial number.
-    req_data = await request.json()
     try:
-        dto = UserEquipmentDTO.from_dict(req_data)
+        dto = await parse_json_dto(request, UserEquipmentDTO)
         if not dto.equipment_no:
-            raise ValueError("Missing equipmentNo")
-    except (MissingField, ValueError):
+            raise InvalidInputError("Missing equipmentNo")
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -327,8 +331,7 @@ async def handle_user_query_info(request: web.Request) -> web.Response:
         if not account:
             raise SupernoteError("Unauthorized", status_code=401)
 
-        data = await request.json() if request.content_length else {}
-        dto = UserQueryDTO.from_dict(data)
+        dto = await parse_json_dto(request, UserQueryDTO, allow_empty=True)
         equipment_no = dto.equipment_no or request.get(REQUEST_EQUIPMENT_NO_KEY)
 
         user_service: UserService = request.app[USER_SERVICE_KEY]
@@ -368,11 +371,10 @@ async def handle_register(request: web.Request) -> web.Response:
     """Register a new user."""
     # Endpoint: POST /api/user/register
 
-    req_data = await request.json()
     try:
-        dto = UserRegisterDTO.from_dict(req_data)
-    except (MissingField, ValueError) as e:
-        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+        dto = await parse_json_dto(request, UserRegisterDTO)
+    except InvalidInputError as e:
+        return e.to_response()
 
     try:
         await _check_ip_rate_limit(request)
@@ -444,12 +446,11 @@ async def handle_update_password(request: web.Request) -> web.Response:
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    req_data = await request.json()
     try:
-        dto = UpdatePasswordDTO.from_dict(req_data)
+        dto = await parse_json_dto(request, UpdatePasswordDTO)
         user_service: UserService = request.app[USER_SERVICE_KEY]
         await user_service.update_password(str(account), dto)
-    except (MissingField, ValueError) as e:
+    except (InvalidInputError, ValueError) as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
     return web.json_response(BaseResponse().to_dict())
 
@@ -464,12 +465,11 @@ async def handle_update_email(request: web.Request) -> web.Response:
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    req_data = await request.json()
     try:
-        dto = UpdateEmailDTO.from_dict(req_data)
+        dto = await parse_json_dto(request, UpdateEmailDTO)
         user_service: UserService = request.app[USER_SERVICE_KEY]
         await user_service.update_email(str(account), dto)
-    except (MissingField, ValueError) as e:
+    except (InvalidInputError, ValueError) as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
     return web.json_response(BaseResponse().to_dict())
 
@@ -484,10 +484,9 @@ async def handle_retrieve_password(request: web.Request) -> web.Response:
             status=403,
         )
 
-    req_data = await request.json()
     try:
-        dto = RetrievePasswordDTO.from_dict(req_data)
-    except (MissingField, ValueError):
+        dto = await parse_json_dto(request, RetrievePasswordDTO)
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -542,12 +541,11 @@ async def handle_login_record(request: web.Request) -> web.Response:
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    req_data = await request.json()
     try:
-        dto = LoginRecordDTO.from_dict(req_data)
+        dto = await parse_json_dto(request, LoginRecordDTO)
         page_no = int(dto.page_no or 1)
         page_size = int(dto.page_size or 20)
-    except (MissingField, ValueError):
+    except (InvalidInputError, ValueError):
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -565,3 +563,99 @@ async def handle_login_record(request: web.Request) -> web.Response:
             # ... other standard response fields
         }
     )
+
+
+@routes.get("/api/extended/keys")
+@interactive_session_only
+async def handle_list_api_keys(request: web.Request) -> web.Response:
+    """List active static Bearer API keys for the authenticated user."""
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    keys = await user_service.list_api_keys(user_id)
+    return web.json_response(ApiKeyListResponseVO(keys=keys).to_dict())
+
+
+@routes.post("/api/extended/keys")
+@interactive_session_only
+async def handle_create_api_key(request: web.Request) -> web.Response:
+    """Generate and return a new static Bearer API key."""
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        req_dto = await parse_json_dto(request, CreateApiKeyDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
+
+    expires_at: int | None = None
+    if req_dto.expires_in_days is not None:
+        if req_dto.expires_in_days <= 0 or req_dto.expires_in_days > 3650:
+            return web.json_response(
+                {"error": "expiresInDays must be between 1 and 3650"}, status=400
+            )
+        expires_at = int(time.time()) + req_dto.expires_in_days * 86400
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    try:
+        raw_token, vo = await user_service.create_api_key(
+            user_id, req_dto.name, expires_at=expires_at
+        )
+    except ValueError as err:
+        return web.json_response({"error": str(err)}, status=400)
+
+    return web.json_response(
+        CreateApiKeyResponseVO(
+            id=vo.id,
+            name=vo.name,
+            key=raw_token,
+            created_at=vo.created_at,
+            expires_at=vo.expires_at,
+        ).to_dict()
+    )
+
+
+@routes.delete("/api/extended/keys/{key_id}")
+@interactive_session_only
+async def handle_delete_api_key(request: web.Request) -> web.Response:
+    """Revoke an existing static Bearer API key."""
+    user_email = request[REQUEST_USER_KEY]
+    key_id = request.match_info["key_id"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+
+    revoked = await user_service.revoke_api_key(user_id, key_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "API key not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())
+
+
+@routes.get("/api/extended/oauth/grants")
+@interactive_session_only
+async def handle_list_oauth_grants(request: web.Request) -> web.Response:
+    """List MCP OAuth clients the authenticated user has authorized."""
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    grants = await user_service.list_oauth_grants(user_id)
+    return web.json_response(OAuthGrantListResponseVO(grants=grants).to_dict())
+
+
+@routes.delete("/api/extended/oauth/grants/{grant_id}")
+@interactive_session_only
+async def handle_revoke_oauth_grant(request: web.Request) -> web.Response:
+    """Disconnect an MCP OAuth client, ending its access and refresh tokens."""
+    user_email = request[REQUEST_USER_KEY]
+    grant_id = request.match_info["grant_id"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+
+    revoked = await user_service.revoke_oauth_grant(user_id, grant_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "OAuth grant not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())

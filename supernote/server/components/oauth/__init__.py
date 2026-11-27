@@ -1,9 +1,13 @@
-"""OAuth 2.1 / IndieAuth Authorization Server component (`OAuthComponent`).
+"""OAuth 2.1 Authorization Server component (`OAuthComponent`).
 
-Encapsulates the OAuth 2.1 provider, token models, and ASGI HTTP endpoints
-(`/authorize`, `/token`, `/revoke`, `/login-bridge`, `/.well-known/oauth-authorization-server`)
-behind a standalone vertical component so REST and MCP consumers depend on `oauth`
-rather than coupling directly to the underlying OAuth library.
+Implements OAuth 2.1 authorization for MCP and third-party clients on the
+primary HTTP server, including client metadata discovery, interactive login and
+consent bridging, and token issuance/revocation. By encapsulating the
+Starlette/MCP OAuth provider behind a vertical component, the rest of the server
+stays decoupled from the underlying OAuth library while `mcp` declares a clean
+dependency on `oauth`.
+
+Provides `OAuthComponent`.
 """
 
 from __future__ import annotations

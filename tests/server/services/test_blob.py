@@ -523,3 +523,29 @@ def test_get_available_bytes(tmp_path: Path) -> None:
 
     with patch.object(shutil, "disk_usage", side_effect=OSError("disk error")):
         assert storage.get_available_bytes() is None
+
+
+async def test_get_bytes_returns_full_content(tmp_path: Path) -> None:
+    storage = LocalBlobStorage(tmp_path)
+    await storage.put("test-bucket", "bytes-blob", b"hello world")
+
+    assert await storage.get_bytes("test-bucket", "bytes-blob") == b"hello world"
+    assert (
+        await storage.get_bytes("test-bucket", "bytes-blob", max_bytes=11)
+        == b"hello world"
+    )
+
+
+async def test_get_bytes_enforces_max_bytes(tmp_path: Path) -> None:
+    storage = LocalBlobStorage(tmp_path)
+    await storage.put("test-bucket", "oversized-blob", b"0123456789")
+
+    with pytest.raises(ValueError, match="exceeds maximum allowed size of 5 bytes"):
+        await storage.get_bytes("test-bucket", "oversized-blob", max_bytes=5)
+
+
+async def test_get_bytes_raises_for_missing_blob(tmp_path: Path) -> None:
+    storage = LocalBlobStorage(tmp_path)
+
+    with pytest.raises(FileNotFoundError):
+        await storage.get_bytes("test-bucket", "missing-blob")

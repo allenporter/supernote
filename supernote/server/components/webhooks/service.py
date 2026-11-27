@@ -1,11 +1,12 @@
-"""Outbound webhook dispatch for server events.
+"""Outbound webhook dispatch for recorded domain events.
 
-Listens on the internal `supernote.server.events.LocalEventBus` and,
-for every configured endpoint subscribed to a given event name (`note.sync_completed`,
-`note.processing_completed`), sends an HMAC-SHA256 signed HTTP `POST` notification
-(`X-Supernote-Signature`, `X-Supernote-Event`) with payload models from
-`supernote.models.webhook`. Delivery is best-effort with bounded concurrency and retry
-backoff: a slow or failing endpoint is logged and skipped, never blocking device sync.
+Listens for `DomainEventRecorded` on `supernote.server.events.LocalEventBus` and,
+for every configured endpoint matching a given `DomainEventType` (exact name,
+namespace prefix wildcard such as `note.*` / `file.*`, or `*`), sends an
+HMAC-SHA256 signed HTTP `POST` notification (`X-Supernote-Signature`,
+`X-Supernote-Event`) carrying a `supernote.models.events.DomainEventVO` JSON
+payload. Delivery is best-effort with bounded concurrency and retry backoff: a
+slow or failing endpoint is logged and skipped, never blocking device sync.
 See `supernote.guides.webhooks_and_integrations` and `supernote.guides.configuration`.
 """
 
@@ -13,25 +14,15 @@ import asyncio
 import hashlib
 import hmac
 import logging
-import time
-from pathlib import PurePosixPath
 
 import aiohttp
 from yarl import URL
 
-from supernote.models.webhook import (
-    EVENT_NOTE_PROCESSING_COMPLETED,
-    EVENT_NOTE_SYNC_COMPLETED,
-    NoteProcessingCompletedPayload,
-    NoteSyncCompletedPayload,
-    WebhookFileVO,
-    WebhookPayload,
-)
+from supernote.models.events import DomainEventVO
 from supernote.server.events import (
+    DomainEventRecorded,
     Event,
     LocalEventBus,
-    NoteProcessingCompletedEvent,
-    NoteUpdatedEvent,
 )
 from supernote.server.services.user import UserService
 
@@ -82,6 +73,15 @@ def _redact_url(raw_url: str) -> str:
         return "<invalid-url>"
 
 
+def _event_matches(pattern: str, event_type: str) -> bool:
+    """Return whether `event_type` matches an exact name, `<ns>.*` prefix, or `*`."""
+    if pattern == "*":
+        return True
+    if pattern.endswith(".*"):
+        return event_type.startswith(pattern[:-1])
+    return event_type == pattern
+
+
 class WebhookService:
     """Dispatches signed outbound webhook notifications for subscribed events."""
 
@@ -114,9 +114,8 @@ class WebhookService:
                 continue
             self._endpoints_by_user.setdefault(user.id, []).append(endpoint)
         self._session = aiohttp.ClientSession()
-        self.event_bus.subscribe(NoteUpdatedEvent, self._handle_note_updated)
         self.event_bus.subscribe(
-            NoteProcessingCompletedEvent, self._handle_note_processing_completed
+            DomainEventRecorded, self._handle_domain_event_recorded
         )
         logger.info(
             f"WebhookService started with {len(self.config.endpoints)} endpoint(s)."
@@ -136,48 +135,25 @@ class WebhookService:
         return [
             ep
             for ep in self._endpoints_by_user.get(user_id, ())
-            if not ep.events or event_name in ep.events
+            if not ep.events
+            or any(_event_matches(pattern, event_name) for pattern in ep.events)
         ]
 
-    async def _handle_note_updated(self, event: Event) -> None:
-        """Translate a NoteUpdatedEvent into a note.sync_completed webhook."""
-        if not isinstance(event, NoteUpdatedEvent):
+    async def _handle_domain_event_recorded(self, event: Event) -> None:
+        """Dispatch a recorded domain event as a `DomainEventVO` webhook."""
+        if not isinstance(event, DomainEventRecorded):
             return
-        payload = NoteSyncCompletedPayload(
-            event=EVENT_NOTE_SYNC_COMPLETED,
-            timestamp=int(time.time()),
-            file=WebhookFileVO(
-                id=event.file_id,
-                name=PurePosixPath(event.file_path).name,
-                path=event.file_path,
-            ),
-        )
-        await self.dispatch(payload, user_id=event.user_id)
+        await self.dispatch(event.to_vo(), user_id=event.user_id)
 
-    async def _handle_note_processing_completed(self, event: Event) -> None:
-        """Translate a NoteProcessingCompletedEvent into a note.processing_completed webhook."""
-        if not isinstance(event, NoteProcessingCompletedEvent):
-            return
-        payload = NoteProcessingCompletedPayload(
-            event=EVENT_NOTE_PROCESSING_COMPLETED,
-            timestamp=int(time.time()),
-            file=WebhookFileVO(
-                id=event.file_id,
-                name=PurePosixPath(event.file_path).name,
-                path=event.file_path,
-            ),
-        )
-        await self.dispatch(payload, user_id=event.user_id)
-
-    async def dispatch(self, payload: WebhookPayload, *, user_id: int) -> None:
-        """Send `payload` to every configured endpoint subscribed to `payload.event` for `user_id`.
+    async def dispatch(self, payload: DomainEventVO, *, user_id: int) -> None:
+        """Send `payload` to every configured endpoint subscribed to `payload.event_type` for `user_id`.
 
         An endpoint with no `events` configured receives every event for its
         configured user. Never raises: endpoints are notified concurrently and
         independently, and one endpoint failing has no effect on delivery to
         the others.
         """
-        event_name = payload.event
+        event_name = payload.event_type
         endpoints = self._matching_endpoints(user_id, event_name)
         if not endpoints:
             return

@@ -17,7 +17,7 @@ class WebhooksComponent:
     """Vertical component wrapping `WebhookService` lifecycle."""
 
     domain = "webhooks"
-    dependencies: tuple[str, ...] = ()
+    dependencies: tuple[str, ...] = ("events",)
     platforms: tuple[str, ...] = ()
 
     def __init__(self) -> None:

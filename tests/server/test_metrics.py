@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Any
 
+import aiohttp
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, make_mocked_request
@@ -12,18 +13,18 @@ from supernote.server.ai.models.embedding import (
     EmbeddingTaskType,
     InstrumentedEmbeddingModel,
 )
-from supernote.server.ai.models.gemini.backend import GeminiBackend
-from supernote.server.ai.models.gemini.embedding import GeminiEmbeddingModel
-from supernote.server.ai.models.gemini.ocr import GeminiOcrModel
-from supernote.server.ai.models.gemini.summary import GeminiSummaryModel
 from supernote.server.ai.models.ocr import InstrumentedOcrModel
-from supernote.server.ai.models.openai.backend import OpenAIBackend
-from supernote.server.ai.models.openai.embedding import OpenAIEmbeddingModel
-from supernote.server.ai.models.openai.ocr import OpenAIOcrModel
-from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import InstrumentedSummaryModel
 from supernote.server.app import create_app
+from supernote.server.components.gemini.backend import GeminiBackend
+from supernote.server.components.gemini.embedding import GeminiEmbeddingModel
+from supernote.server.components.gemini.ocr import GeminiOcrModel
+from supernote.server.components.gemini.summary import GeminiSummaryModel
 from supernote.server.components.metrics.http import metrics_middleware
+from supernote.server.components.openai.backend import OpenAIBackend
+from supernote.server.components.openai.embedding import OpenAIEmbeddingModel
+from supernote.server.components.openai.ocr import OpenAIOcrModel
+from supernote.server.components.openai.summary import OpenAISummaryModel
 from supernote.server.config import ServerConfig
 from supernote.server.metrics import (
     PIPELINE_DURATION_BUCKETS,
@@ -31,7 +32,6 @@ from supernote.server.metrics import (
     AIStage,
     NoteProcessingMode,
     init_ai_metrics,
-    init_mcp_metrics,
     init_note_processing_metrics,
     init_processor_module_metrics,
     record_ai_tokens,
@@ -268,7 +268,7 @@ async def test_http_cancelled_request_records_499_without_duration() -> None:
 
 
 async def test_metrics_disabled(
-    server_config: ServerConfig, aiohttp_client: Any
+    server_config: ServerConfig, aiohttp_client: Any, session_manager: Any
 ) -> None:
     """Verify that the metrics endpoint is not registered when metrics_enabled is False."""
     server_config.metrics_enabled = False
@@ -336,7 +336,14 @@ async def test_gemini_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
             }
         )
 
+    gemini: GeminiBackend | None = None
+
+    async def _close_gemini(_app: web.Application) -> None:
+        if gemini is not None:
+            await gemini.close()
+
     app = web.Application()
+    app.on_cleanup.append(_close_gemini)
     app.router.add_post(
         "/v1beta/models/{model}:generateContent", handle_generate_content
     )
@@ -610,12 +617,20 @@ async def test_openai_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
             }
         )
 
+    session = aiohttp.ClientSession()
+
+    async def _close_session(_app: web.Application) -> None:
+        await session.close()
+
     app = web.Application()
+    app.on_cleanup.append(_close_session)
     app.router.add_post("/v1/chat/completions", handle_chat)
     app.router.add_post("/v1/embeddings", handle_embeddings)
     server = await aiohttp_server(app)
 
-    backend = OpenAIBackend(str(server.make_url("/v1")), provider="ollama")
+    backend = OpenAIBackend(
+        str(server.make_url("/v1")), provider="ollama", session=session
+    )
     ocr_model = InstrumentedOcrModel(OpenAIOcrModel(backend, "gemma-vision"))
     summary_model = InstrumentedSummaryModel(
         OpenAISummaryModel(backend, "gemma-vision")
@@ -1050,13 +1065,4 @@ def test_startup_zero_seeding_for_counters_and_histograms() -> None:
             {"provider": "seed-prov", "model": "seed-ocr", "stage": "ocr"},
         )
         == 0.0
-    )
-
-    init_mcp_metrics()
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_mcp_tool_duration_seconds_count",
-            {"tool": "list_notebooks"},
-        )
-        is not None
     )

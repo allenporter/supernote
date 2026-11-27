@@ -36,15 +36,15 @@ from supernote.models.socket import (
     SocketMessageData,
     SocketTaskMessageData,
 )
-from supernote.server.config import ServerConfig
 from supernote.server.events import (
     DomainEventRecorded,
     LocalEventBus,
     ScheduleUpdatedEvent,
+    SummaryCreatedEvent,
     SummaryDeletedEvent,
     SummaryTagDeletedEvent,
     SummaryTagUpsertedEvent,
-    SummaryUpsertedEvent,
+    SummaryUpdatedEvent,
     SyncCompletedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
@@ -55,6 +55,8 @@ from supernote.server.services.user import UserService
 from supernote.server.socket_auth import verify_handshake_signature
 
 logger = logging.getLogger(__name__)
+
+SOCKETIO_PATH = "/socket.io/"
 
 SOCKETIO_MANAGER_KEY: web.AppKey["SocketIOServerManager"] = web.AppKey(
     "socketio_manager"
@@ -136,11 +138,9 @@ class SocketIOServerManager:
 
     def __init__(
         self,
-        config: ServerConfig,
         user_service: UserService,
         event_bus: LocalEventBus | None = None,
     ) -> None:
-        self.config = config
         self.user_service = user_service
         self.event_bus = event_bus
         self._sio = _CompatAsyncServer(
@@ -160,10 +160,42 @@ class SocketIOServerManager:
         """Access the underlying AsyncServer instance."""
         return self._sio
 
-    def attach_to_app(self, app: web.Application) -> None:
-        """Attach the Socket.IO server instance to an aiohttp web Application."""
-        self._sio.attach(app)
-        app[SOCKETIO_MANAGER_KEY] = self
+    async def _handle_socket_request(self, request: web.Request) -> web.StreamResponse:
+        """Serve a Socket.IO request, rejecting unusable WebSocket upgrades.
+
+        `engineio` fails an upgrade silently when a reverse proxy strips the
+        `Upgrade`/`Connection` headers, leaving an orphaned session behind. Check
+        first so the client gets a 400 and the server logs something actionable.
+        """
+        if (
+            request.method == "GET"
+            and request.query.get("transport") == "websocket"
+            and not web.WebSocketResponse().can_prepare(request).ok
+        ):
+            logger.warning(
+                "WebSocket upgrade rejected for %s: Upgrade=%r Connection=%r. "
+                "Check the reverse proxy forwards the Upgrade and "
+                "Connection: upgrade headers.",
+                request.path,
+                request.headers.get("Upgrade"),
+                request.headers.get("Connection"),
+            )
+            return web.Response(
+                status=400,
+                text=(
+                    "WebSocket upgrade rejected: missing or invalid Upgrade/"
+                    "Connection headers. Check reverse proxy forwarding."
+                ),
+            )
+        return await self._sio.handle_request(request)
+
+    def attach_to_router(self, router: web.UrlDispatcher) -> None:
+        """Register Socket.IO HTTP/WebSocket handlers on an aiohttp router."""
+        # Register these instead of ``self._sio.attach(app)`` so unusable
+        # WebSocket upgrades are rejected before engineio creates a session.
+        router.add_get(SOCKETIO_PATH, self._handle_socket_request)
+        router.add_post(SOCKETIO_PATH, self._handle_socket_request)
+        router.add_route("OPTIONS", SOCKETIO_PATH, self._handle_socket_request)
 
     async def _send_error(self, sid: str, status: HTTPStatus, message: str) -> None:
         """Send a SocketMessageData error response to a specific session ID."""
@@ -312,7 +344,8 @@ class SocketIOServerManager:
         self.event_bus.subscribe(
             SummaryTagDeletedEvent, self._handle_summary_tag_deleted
         )
-        self.event_bus.subscribe(SummaryUpsertedEvent, self._handle_summary_upserted)
+        self.event_bus.subscribe(SummaryCreatedEvent, self._handle_summary_changed)
+        self.event_bus.subscribe(SummaryUpdatedEvent, self._handle_summary_changed)
         self.event_bus.subscribe(SummaryDeletedEvent, self._handle_summary_deleted)
         self.event_bus.subscribe(VfsItemCreatedEvent, self._handle_vfs_item_created)
         self.event_bus.subscribe(VfsItemMovedEvent, self._handle_vfs_item_moved)
@@ -439,11 +472,13 @@ class SocketIOServerManager:
             ),
         )
 
-    async def _handle_summary_upserted(self, event: SummaryUpsertedEvent) -> None:
-        """Emit an ADD_DIGEST or UPDATE_DIGEST DIGEST-SYN notification when a summary group or item is upserted."""
+    async def _handle_summary_changed(self, event: SummaryCreatedEvent) -> None:
+        """Emit an ADD_DIGEST or UPDATE_DIGEST DIGEST-SYN notification when a summary group or item is created or updated."""
         now_ms = int(time.time() * 1000)
         action = (
-            SocketIoAction.ADD_DIGEST if event.is_new else SocketIoAction.UPDATE_DIGEST
+            SocketIoAction.UPDATE_DIGEST
+            if isinstance(event, SummaryUpdatedEvent)
+            else SocketIoAction.ADD_DIGEST
         )
         summary = event.summary
         is_group = summary.is_summary_group == BooleanEnum.YES

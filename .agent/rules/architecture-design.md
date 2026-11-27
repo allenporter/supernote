@@ -28,3 +28,9 @@ Before adding a method, parameter, or dependency to an interface or base class, 
 6. **Ground Analysis in Verified Facts & Take a Clear Stance**:
    - In research and architectural reviews, explicitly separate verified code facts from unverified documentation or inference, and re-verify tool/CLI availability (e.g. `which gh && gh auth status`) before reporting an environment block.
    - When evaluating design options, define any referenced option inline, commit to one clear recommendation anchored to the concrete use case, and avoid hedging with alternatives that conflict with project principles.
+
+7. **Treat Empirical AI/Quality Claims as Hypotheses & Run Fair Evals**:
+   - For empirical questions (LLM synthesis quality, prompt design, chunking, ordering, retrieval/ranking), never dismiss a user's alternative or assert an untested intuition as fact—label it explicitly as an unverified hypothesis until measured.
+   - Always include the user's proposed alternative as an explicit head-to-head arm in the same experiment alongside the current baseline; never run a single arm and declare victory.
+   - Build evals that stress real production constraints (scale, noise ratio, candidate/context limits, undated or messy inputs). If a toy dataset trivially hits 100% on the first pass, treat the dataset as too easy rather than proof that the design is optimal.
+   - Be transparent about eval limits: note single-run LLM variance and synthetic-dataset bias honestly, and keep raw run artifacts/logs inspectable so every reported metric is verifiable.

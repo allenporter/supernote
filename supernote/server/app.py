@@ -2,8 +2,10 @@
 
 `create_app` initializes core infrastructure (`ServerCore`, `ComponentLoader`,
 database/VFS/auth/processor services, and core route tables) and lazily registers
-enabled built-in vertical components (`http`, `mcp`, `metrics`, `oauth`, `schedule`,
-`socketio`, `web_ui`, `webhooks`) via `supernote.server.components.load_builtin_components`.
+enabled built-in vertical components (`ai`, `apple`, `events`, `fake_ai`,
+`gemini`, `http`, `mcp`, `metrics`, `oauth`, `openai`, `processor`, `schedule`,
+`search`, `socketio`, `summary`, `transcript`, `web_ui`, `webhooks`) via
+`supernote.server.components.load_builtin_components`.
 
 During `on_startup`, the server runs Alembic migrations, initializes `UrlSigner`,
 runs `component_loader.async_setup_all` and the `http` platform pass
@@ -15,76 +17,46 @@ See `supernote.guides.bootstrap_guide` and `supernote.guides.architecture`.
 import asyncio
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 from aiohttp import web
 
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.migrations import run_migrations
+from supernote.server.keys import (
+    BLOB_STORAGE_KEY,
+    COMPONENT_LOADER_KEY,
+    CONFIG_KEY,
+    COORDINATION_SERVICE_KEY,
+    CORE_KEY,
+    EVENT_BUS_KEY,
+    FILE_SERVICE_KEY,
+    RATE_LIMITER_KEY,
+    SESSION_MANAGER_KEY,
+    URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
+)
 
-from .ai.models.embedding import create_embedding_model
-from .ai.models.ocr import create_ocr_model
-from .ai.models.summary import create_summary_model
 from .components import load_builtin_components
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .core import ComponentLoader, ServerCore
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
-from .keys import (
-    BLOB_STORAGE_KEY,
-    COMPONENT_LOADER_KEY,
-    CONFIG_KEY,
-    CONVERSION_SERVICE_KEY,
-    COORDINATION_SERVICE_KEY,
-    CORE_KEY,
-    EMBEDDING_MODEL_KEY,
-    EVENT_BUS_KEY,
-    EVENT_LOG_SERVICE_KEY,
-    FILE_SERVICE_KEY,
-    HTTP_REGISTRAR_KEY,
-    INTEGRITY_SERVICE_KEY,
-    MCP_REGISTRAR_KEY,
-    OCR_MODEL_KEY,
-    PROCESSOR_SERVICE_KEY,
-    RATE_LIMITER_KEY,
-    SEARCH_SERVICE_KEY,
-    SESSION_MANAGER_KEY,
-    SUMMARY_MODEL_KEY,
-    SUMMARY_SERVICE_KEY,
-    URL_SIGNER_KEY,
-    USER_SERVICE_KEY,
-)
 from .routes import (
     admin,
     auth,
-    events,
-    extended,
     file_device,
     file_web,
     oss,
-    summary,
     system,
 )
 from .services.blob import LocalBlobStorage
-from .services.conversion import ConversionService
 from .services.coordination import CoordinationService, SqliteCoordinationService
-from .services.event_log import EventLogService
 from .services.file import FileService
-from .services.integrity import IntegrityService
-from .services.processor import ProcessorService
-from .services.processor_modules.embedding import EmbeddingModule
-from .services.processor_modules.ocr import OcrModule
-from .services.processor_modules.page_hashing import PageHashingModule
-from .services.processor_modules.png_conversion import PngConversionModule
-from .services.processor_modules.summary import SummaryModule
-from .services.search import SearchService
-from .services.summary import SummaryService
 from .services.user import UserService
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 from .utils.hashing import get_md5_hash
-from .utils.prompt_loader import PROMPT_LOADER
 from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
@@ -124,13 +96,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app[BLOB_STORAGE_KEY] = blob_storage
     event_bus = LocalEventBus()
     app[EVENT_BUS_KEY] = event_bus
-    event_log_service = EventLogService(
-        session_manager=session_manager,
-        coordination_service=coordination_service,
-        event_bus=event_bus,
-        retention_days=config.event_log_retention_days,
-    )
-    app[EVENT_LOG_SERVICE_KEY] = event_log_service
 
     user_service = create_user_service(
         config.auth, coordination_service, session_manager
@@ -145,40 +110,8 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app[USER_SERVICE_KEY] = user_service
     app[FILE_SERVICE_KEY] = file_service
-    app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
-    ocr_model = create_ocr_model(config)
-    summary_model = create_summary_model(config)
-    embedding_model = create_embedding_model(config)
-    app[OCR_MODEL_KEY] = ocr_model
-    app[SUMMARY_MODEL_KEY] = summary_model
-    app[EMBEDDING_MODEL_KEY] = embedding_model
-
-    if config.prompts_dir:
-        PROMPT_LOADER.configure(Path(config.prompts_dir))
-
-    summary_service = SummaryService(user_service, session_manager, event_bus)
-    app[SUMMARY_SERVICE_KEY] = summary_service
-
-    search_service = SearchService(session_manager, embedding_model)
-    app[SEARCH_SERVICE_KEY] = search_service
 
     app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
-
-    processor_service = ProcessorService(
-        event_bus,
-        session_manager,
-        file_service,
-        summary_service,
-        coordination_service,
-        event_log_service=event_log_service,
-    )
-    app[PROCESSOR_SERVICE_KEY] = processor_service
-    app[CONVERSION_SERVICE_KEY] = ConversionService(
-        session_manager=session_manager,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        processor_service=processor_service,
-    )
 
     core = ServerCore(
         config=config,
@@ -194,32 +127,12 @@ def create_app(config: ServerConfig) -> web.Application:
     app[CORE_KEY] = core
     app[COMPONENT_LOADER_KEY] = component_loader
 
-    component_configs = {
-        "mcp": {"enabled": config.mcp_enabled},
-        "metrics": {"enabled": config.metrics_enabled},
-        "oauth": {"enabled": config.mcp_enabled},
-        "web_ui": {"enabled": config.web_enabled},
-        "webhooks": config.webhooks,
-    }
+    load_builtin_components(component_loader, {})
+    config_comp: Any = component_loader.get("config")
+    component_configs = (
+        config_comp.build_static_configs(config) if config_comp is not None else {}
+    )
     load_builtin_components(component_loader, component_configs)
-
-    # Register modules
-    png_enabled = (ocr_model is not None) or (
-        config.web_enabled and config.web_notebook_preview
-    )
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        png=PngConversionModule(file_service=file_service) if png_enabled else None,
-        ocr=OcrModule(file_service=file_service, ocr_model=ocr_model),
-        embedding=EmbeddingModule(
-            file_service=file_service, embedding_model=embedding_model
-        ),
-        summary=SummaryModule(
-            file_service=file_service,
-            summary_service=summary_service,
-            summary_model=summary_model,
-        ),
-    )
 
     # Register routes
     app.add_routes(system.routes)
@@ -228,9 +141,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(file_web.routes)
     app.add_routes(file_device.routes)
     app.add_routes(oss.routes)
-    app.add_routes(summary.routes)
-    app.add_routes(extended.routes)
-    app.add_routes(events.routes)
 
     async def on_startup_handler(app: web.Application) -> None:
         logger.info("Running database migrations...")
@@ -242,15 +152,18 @@ def create_app(config: ServerConfig) -> web.Application:
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
-        await component_loader.async_setup_all(core, component_configs)
-        http_registrar = app[HTTP_REGISTRAR_KEY]
-        await component_loader.async_load_platform("http", core, http_registrar)
-        http_registrar.apply_to_app(app)
-        if (mcp_registrar := app.get(MCP_REGISTRAR_KEY)) is not None:
-            await component_loader.async_load_platform("mcp", core, mcp_registrar)
+        config_comp: Any = component_loader.get("config")
+        if config_comp is not None:
+            resolved_configs = await config_comp.async_resolve_startup_configs(core)
+            load_builtin_components(component_loader, resolved_configs)
+        else:
+            resolved_configs = component_configs
+
+        await component_loader.async_setup_all(core, resolved_configs)
+        await component_loader.async_load_all_platforms(core)
 
         logger.info("Starting background services...")
-        await processor_service.start()
+        await file_service.start()
         await component_loader.async_start_all(core)
         logger.info("Startup sequence complete.")
 
@@ -258,7 +171,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
     async def on_shutdown_handler(app: web.Application) -> None:
         await component_loader.async_stop_all(core)
-        await processor_service.stop()
         await session_manager.close()
 
     app.on_shutdown.append(on_shutdown_handler)

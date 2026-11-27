@@ -32,6 +32,7 @@ def test_server_config_defaults(tmp_path: Path) -> None:
     assert config.port == 8080
     assert config.storage_dir == "storage"
     assert config.auth.secret_key == ""
+    assert not (config_dir / "config.yaml").exists()
 
 
 def test_server_config_load_from_file(tmp_path: Path) -> None:
@@ -181,6 +182,17 @@ def test_server_config_webhooks_enabled_env_var_override(tmp_path: Path) -> None
     with patch.dict(os.environ, {"SUPERNOTE_WEBHOOKS_ENABLED": "true"}):
         config = ServerConfig.load(config_dir)
         assert config.webhooks["enabled"] is True
+
+
+def test_server_config_wiki_enabled_env_var_override(tmp_path: Path) -> None:
+    """SUPERNOTE_WIKI_ENABLED overrides the config file value."""
+    config_dir = tmp_path / "config"
+    with patch.dict(os.environ, {"SUPERNOTE_WIKI_ENABLED": "true"}):
+        config = ServerConfig.load(config_dir)
+        assert config.wiki["enabled"] is True
+    with patch.dict(os.environ, {"SUPERNOTE_WIKI_ENABLED": "false"}):
+        config = ServerConfig.load(config_dir)
+        assert config.wiki["enabled"] is False
 
 
 def test_server_config_proxy_env_vars(tmp_path: Path) -> None:
@@ -333,6 +345,11 @@ def test_server_config_legacy_gemini_syncs_to_ai(tmp_path: Path) -> None:
         model="gemini-3.5-flash-lite",
         max_concurrency=5,
     )
+    assert default_gemini.ai.embedding == ModelConfig(
+        provider="gemini",
+        model="gemini-embedding-2",
+        max_concurrency=5,
+    )
 
     direct = ServerConfig(
         gemini_api_key="legacy-key",
@@ -387,7 +404,7 @@ def test_server_config_legacy_gemini_syncs_to_ai(tmp_path: Path) -> None:
 
 
 def test_model_config_validation() -> None:
-    """ModelConfig validates non-empty provider, model, and positive max_concurrency."""
+    """ModelConfig validates non-empty provider, model, positive max_concurrency, and prompt_override."""
     with pytest.raises(ValueError, match="non-empty provider"):
         ModelConfig(provider="  ", model="gemini-3.6-flash")
 
@@ -396,6 +413,20 @@ def test_model_config_validation() -> None:
 
     with pytest.raises(ValueError, match="max_concurrency must be >= 1"):
         ModelConfig(provider="gemini", model="gemini-3.6-flash", max_concurrency=0)
+
+    with pytest.raises(ValueError, match="prompt_override must be non-empty"):
+        ModelConfig(provider="local", model="DeepSeek-OCR-8bit", prompt_override="")
+
+    with pytest.raises(ValueError, match="prompt_override must be non-empty"):
+        ModelConfig(provider="local", model="DeepSeek-OCR-8bit", prompt_override="   ")
+
+    cfg = ModelConfig(
+        provider="local",
+        model="DeepSeek-OCR-8bit",
+        max_concurrency=1,
+        prompt_override="Convert the document to markdown.",
+    )
+    assert cfg.prompt_override == "Convert the document to markdown."
 
 
 def test_server_config_trace_log_flags(tmp_path: Path) -> None:
@@ -554,3 +585,70 @@ def test_event_log_retention_days_config_and_env(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         ServerConfig(event_log_retention_days=-1)
+
+
+def test_server_config_default_component_sources(tmp_path: Path) -> None:
+    """Unconfigured `ServerConfig.load` records no static `component_sources` and no active AI provider types."""
+    default_cfg = ServerConfig.load(tmp_path / "missing")
+    assert default_cfg.component_sources == {}
+    assert default_cfg.root_component_configs == {}
+    assert default_cfg.ai.active_provider_types == set()
+
+
+def test_server_config_yaml_and_env_component_sources(tmp_path: Path) -> None:
+    """Root `<domain>:` YAML sections record `'yaml'` provenance and `SUPERNOTE_*` env vars override with `'env'`."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    with open(config_dir / "config.yaml", "w") as f:
+        yaml.safe_dump(
+            {
+                "mcp": {"enabled": False},
+                "webhooks": {"enabled": True, "endpoints": []},
+                "wiki": {"enabled": True, "debounce_seconds": 30},
+            },
+            f,
+        )
+
+    yaml_cfg = ServerConfig.load(config_dir)
+    assert yaml_cfg.mcp_enabled is False
+    assert yaml_cfg.component_sources["mcp"] == "yaml"
+    assert yaml_cfg.component_sources["webhooks"] == "yaml"
+    assert yaml_cfg.component_sources["wiki"] == "yaml"
+    assert yaml_cfg.root_component_configs["mcp"] == {"enabled": False}
+
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_MCP_ENABLED": "true",
+            "SUPERNOTE_WEBHOOKS_ENABLED": "false",
+            "SUPERNOTE_WIKI_ENABLED": "false",
+        },
+    ):
+        env_cfg = ServerConfig.load(config_dir)
+
+    assert env_cfg.mcp_enabled is True
+    assert env_cfg.component_sources["mcp"] == "env"
+    assert env_cfg.component_sources["webhooks"] == "env"
+    assert env_cfg.component_sources["wiki"] == "env"
+    assert env_cfg.webhooks["enabled"] is False
+    assert env_cfg.wiki["enabled"] is False
+
+
+def test_ai_config_effective_text_fallback() -> None:
+    """`AiConfig.effective_text` prefers explicit `text` and falls back to `summary`."""
+    assert AiConfig().effective_text is None
+
+    summary_cfg = ModelConfig(provider="gemini", model="gemini-3.5-flash-lite")
+    text_cfg = ModelConfig(provider="gemini", model="gemini-3.6-flash")
+
+    summary_only = AiConfig(summary=summary_cfg)
+    assert summary_only.effective_text == summary_cfg
+
+    both = AiConfig(summary=summary_cfg, text=text_cfg)
+    assert both.effective_text == text_cfg
+
+    legacy = ServerConfig(gemini_api_key="test-key")
+    assert legacy.ai.text is None
+    assert legacy.ai.effective_text == legacy.ai.summary
+    assert legacy.ai.effective_text is not None
+    assert legacy.ai.effective_text.provider == "gemini"

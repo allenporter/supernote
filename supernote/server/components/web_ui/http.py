@@ -38,7 +38,7 @@ async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
             headers={"Cache-Control": "no-cache"},
         )
 
-    core.app.router.add_get("/", handle_index)
-    core.app.router.add_static("/static/", path=static_path, name="static")
+    registrar.router.add_get("/", handle_index)
+    registrar.router.add_static("/static/", path=static_path, name="static")
     registrar.add_public_prefix("/static/")
     registrar.add_middleware(static_cache_control_middleware)

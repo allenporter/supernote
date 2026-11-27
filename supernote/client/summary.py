@@ -2,11 +2,12 @@
 
 This module provides `supernote.client.summary.SummaryClient` for CRUD and binary synchronization
 of device-authored and AI-generated summaries (`add_summary`, `update_summary`, `delete_summary`,
-`query_summaries`, `upload_summary_apply`, `download_summary`), summary groups (`add_summary_group`,
+`query_summaries`, `upload_summary_apply`, `download_summary`, `summary_to_pdf`, `summary_to_png`), summary groups (`add_summary_group`,
 `query_summary_groups`, `query_summary_md5_hash`), and tags (`add_tag`, `query_tags`). Models are
 defined in `supernote.models.summary`. See `supernote.client` and `supernote.guides.summary_api`.
 """
 
+from supernote.models.file_device import PdfVO, PngVO
 from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
@@ -150,6 +151,20 @@ class SummaryClient:
         dto = DownloadSummaryDTO(id=summary_id)
         return await self._client.post_json(
             "/api/file/download/summary", DownloadSummaryVO, json=dto.to_dict()
+        )
+
+    async def summary_to_pdf(self, summary_id: int) -> PdfVO:
+        """Render summary handwriting to PDF and return a signed download URL."""
+        dto = DownloadSummaryDTO(id=summary_id)
+        return await self._client.post_json(
+            "/api/extended/file/summary/to/pdf", PdfVO, json=dto.to_dict()
+        )
+
+    async def summary_to_png(self, summary_id: int) -> PngVO:
+        """Render summary handwriting to per-page PNGs and return signed download URLs."""
+        dto = DownloadSummaryDTO(id=summary_id)
+        return await self._client.post_json(
+            "/api/extended/file/summary/to/png", PngVO, json=dto.to_dict()
         )
 
     async def query_summary_hash(self, dto: QuerySummaryDTO) -> QuerySummaryMD5HashVO:

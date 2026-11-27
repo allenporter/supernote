@@ -13,7 +13,7 @@ async def test_user_event_crud_and_non_recycled_autoincrement(
     first = UserEventDO(
         user_id=1,
         timestamp_ms=1_700_000_000_000,
-        event_type="vfs.created",
+        event_type="file.created",
         actor="user:web",
         entity_type="file",
         entity_id="101",
@@ -31,7 +31,7 @@ async def test_user_event_crud_and_non_recycled_autoincrement(
         )
     ).scalar_one()
     assert fetched.user_id == 1
-    assert fetched.event_type == "vfs.created"
+    assert fetched.event_type == "file.created"
     assert fetched.related_file_id == 101
     assert fetched.payload == {"path": "/NOTE/todo.note", "is_folder": False}
 

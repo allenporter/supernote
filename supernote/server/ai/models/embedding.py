@@ -3,8 +3,8 @@
 An embedding model maps text into a fixed-length vector of floating-point
 numbers representing its semantic meaning, allowing notebook pages and search
 queries to be compared by cosine similarity. Models built by
-`create_embedding_model` are wrapped in `ValidatingEmbeddingModel`, which
-guarantees that returned vectors are non-empty and have a finite non-zero norm.
+`AiRegistrar.create_embedding_model` are wrapped in `ValidatingEmbeddingModel`,
+which guarantees that returned vectors are non-empty and have a finite non-zero norm.
 """
 
 from __future__ import annotations
@@ -14,13 +14,9 @@ import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
 from supernote.server.ai.base import AIError
 from supernote.server.metrics import AIStage, init_ai_metrics, track_ai_request
-
-if TYPE_CHECKING:
-    from supernote.server.config import ServerConfig
 
 __all__ = [
     "ConcurrencyLimitedEmbeddingModel",
@@ -28,7 +24,6 @@ __all__ = [
     "EmbeddingTaskType",
     "InstrumentedEmbeddingModel",
     "ValidatingEmbeddingModel",
-    "create_embedding_model",
     "validate_embedding_vector",
 ]
 
@@ -162,48 +157,3 @@ class ConcurrencyLimitedEmbeddingModel(EmbeddingModel):
     ) -> list[float]:
         async with self._semaphore:
             return await self._model.embed(text, task_type=task_type)
-
-
-def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
-    """Create the configured `EmbeddingModel` with validation, telemetry, and concurrency limiting.
-
-    Wrapper order matters: `ConcurrencyLimitedEmbeddingModel` is outermost so
-    semaphore queue wait is excluded from `InstrumentedEmbeddingModel` latency,
-    and `ValidatingEmbeddingModel` is innermost so rejected vectors are recorded
-    as `status="failure"`.
-    """
-    model_cfg = config.ai.embedding
-    if model_cfg is None:
-        return None
-
-    model: EmbeddingModel | None
-    provider_type = config.ai.provider_type(model_cfg.provider)
-    if provider_type == "gemini":
-        from supernote.server.ai.models.gemini.embedding import (  # noqa: PLC0415
-            create_embedding_model as create_gemini_embedding_model,
-        )
-
-        model = create_gemini_embedding_model(config)
-    elif provider_type == "openai":
-        from supernote.server.ai.models.openai.embedding import (  # noqa: PLC0415
-            create_embedding_model as create_openai_embedding_model,
-        )
-
-        model = create_openai_embedding_model(config)
-    elif provider_type == "fake":
-        from supernote.server.ai.models.fake.embedding import (  # noqa: PLC0415
-            create_embedding_model as create_fake_embedding_model,
-        )
-
-        model = create_fake_embedding_model(config)
-    else:
-        raise ValueError(
-            f"Unsupported embedding model provider type: {provider_type!r}"
-        )
-
-    if model is None:
-        return None
-    return ConcurrencyLimitedEmbeddingModel(
-        InstrumentedEmbeddingModel(ValidatingEmbeddingModel(model)),
-        max_concurrency=model_cfg.max_concurrency,
-    )

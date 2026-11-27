@@ -11,7 +11,11 @@ from supernote.models.extended import (
     NoteLinkVO,
     NotePageMetadataVO,
     NoteTitleVO,
+    OAuthGrantListResponseVO,
+    OAuthGrantVO,
     PageTranscriptVO,
+    RetrySystemTasksDTO,
+    RetrySystemTasksVO,
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
@@ -59,8 +63,15 @@ def test_system_task_models() -> None:
         retry_count=0,
         update_time=123456,
         last_error=None,
+        file_name="Weekly Review.note",
+        page_index=2,
     )
-    list_vo = SystemTaskListVO(tasks=[task])
+    list_vo = SystemTaskListVO(
+        tasks=[task],
+        paused=False,
+        queue_size=1,
+        processing_file_ids=[772252421643567298],
+    )
     data = list_vo.to_dict()
     assert data == {
         "success": True,
@@ -76,10 +87,28 @@ def test_system_task_models() -> None:
                 "retryCount": 0,
                 "updateTime": 123456,
                 "lastError": None,
+                "fileName": "Weekly Review.note",
+                "pageIndex": 2,
             }
         ],
+        "paused": False,
+        "queueSize": 1,
+        "processingFileIds": ["772252421643567298"],
     }
     assert SystemTaskListVO.from_dict(data) == list_vo
+
+    retry_dto = RetrySystemTasksDTO(file_id=772252421643567298)
+    assert retry_dto.to_dict() == {"fileId": "772252421643567298"}
+    assert RetrySystemTasksDTO.from_dict(retry_dto.to_dict()) == retry_dto
+
+    retry_vo = RetrySystemTasksVO(retried_file_ids=[772252421643567298])
+    assert retry_vo.to_dict() == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "retriedFileIds": ["772252421643567298"],
+    }
+    assert RetrySystemTasksVO.from_dict(retry_vo.to_dict()) == retry_vo
 
 
 def test_file_processing_status_models() -> None:
@@ -236,6 +265,34 @@ def test_api_key_models() -> None:
     assert ApiKeyListResponseVO.from_dict(list_vo.to_dict()) == list_vo
 
 
+def test_oauth_grant_models() -> None:
+    grant_vo = OAuthGrantVO(
+        id="0a1b2c3d4e5f6a7b",
+        client_id="https://client.example.com/",
+        scopes=["supernote:all"],
+        created_at=1700000000,
+        expires_at=1702592000,
+        last_used_at=1700000500,
+    )
+    list_vo = OAuthGrantListResponseVO(grants=[grant_vo])
+    assert list_vo.to_dict() == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "grants": [
+            {
+                "id": "0a1b2c3d4e5f6a7b",
+                "clientId": "https://client.example.com/",
+                "scopes": ["supernote:all"],
+                "createdAt": 1700000000,
+                "expiresAt": 1702592000,
+                "lastUsedAt": 1700000500,
+            }
+        ],
+    }
+    assert OAuthGrantListResponseVO.from_dict(list_vo.to_dict()) == list_vo
+
+
 def test_web_note_cover_models() -> None:
     req = WebNoteCoverRequestDTO(file_id=9101)
     assert req.to_dict() == {"fileId": "9101"}
@@ -310,7 +367,17 @@ def test_web_note_metadata_models() -> None:
         equipment="N5",
         total_pages=2,
         keywords={"Sprint": [0, 1]},
-        titles=[NoteTitleVO(page_index=0, level=2)],
+        titles=[
+            NoteTitleVO(
+                page_index=0,
+                level=2,
+                text="Sprint goals",
+                style="1157254",
+                rect=[480, 691, 582, 178],
+                bitmap_md5="b094a9f71c442cf2a0544d737603b0dc",
+                image_url="https://host/api/oss/title/1/abc?signature=x",
+            )
+        ],
         links=[
             NoteLinkVO(
                 page_index=1,
@@ -341,7 +408,17 @@ def test_web_note_metadata_models() -> None:
         "equipment": "N5",
         "totalPages": 2,
         "keywords": {"Sprint": [0, 1]},
-        "titles": [{"pageIndex": 0, "level": 2}],
+        "titles": [
+            {
+                "pageIndex": 0,
+                "level": 2,
+                "text": "Sprint goals",
+                "style": "1157254",
+                "rect": [480, 691, 582, 178],
+                "bitmapMd5": "b094a9f71c442cf2a0544d737603b0dc",
+                "imageUrl": "https://host/api/oss/title/1/abc?signature=x",
+            }
+        ],
         "links": [
             {
                 "pageIndex": 1,

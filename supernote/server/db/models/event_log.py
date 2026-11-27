@@ -2,7 +2,7 @@
 
 This module defines `UserEventDO`, keyed by `(user_id, seq)` with a monotonic 64-bit Snowflake
 sequence cursor (`seq`) to power incremental change feeds via
-`supernote.server.services.event_log.EventLogService`. See `supernote.server.db.models`.
+`supernote.server.components.events.service.EventLogService`. See `supernote.server.db.models`.
 """
 
 import time
@@ -43,13 +43,13 @@ class UserEventDO(Base):
     """Event recording timestamp in UTC epoch milliseconds."""
 
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    """Namespaced domain event type (e.g. 'vfs.created', 'note.page_transcribed')."""
+    """Namespaced domain event type (e.g. 'file.created', 'note.page_transcribed')."""
 
     actor: Mapped[str] = mapped_column(String(64), nullable=False)
     """Originating actor identifier (e.g. 'device:<sn>', 'user:web', 'system:processor')."""
 
     entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    """Target entity category ('file', 'note_page', 'schedule_task', 'summary', 'summary_tag')."""
+    """Target entity category ('file', 'note_page', 'schedule_task', 'summary')."""
 
     entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
     """Stable target entity identifier."""

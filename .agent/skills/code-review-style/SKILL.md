@@ -5,7 +5,7 @@ description: Prescriptive step-by-step workflow for reviewing code diffs, pull r
 
 # Code Review Workflow Skill
 
-Execute this prescriptive task list when reviewing code changes, auditing PRs, or validating refactored codebase components. For detailed design rationale and examples, refer to [docs/code_review_style.md](../../../docs/code_review_style.md).
+Execute this prescriptive task list when reviewing code changes, auditing PRs, or validating refactored codebase components. For detailed design rationale and examples, refer to [docs/architecture/code_review_style.md](../../../docs/architecture/code_review_style.md).
 
 ---
 

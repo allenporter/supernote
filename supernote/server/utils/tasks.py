@@ -1,6 +1,6 @@
 """Database checkpoint helpers (`get_task`, `update_task_status`) for `SystemTaskDO`.
 
-Used by `supernote.server.services.processor_modules.ProcessorModule` to read and atomically
+Used by `supernote.server.components.processor.ProcessorModule` to read and atomically
 upsert per-file and per-page pipeline task states (`ProcessingStatus`) with SQLite write-retry
 backoff (`DB_WRITE_MAX_RETRIES`). See `supernote.guides.note_processing_design`.
 """
@@ -26,16 +26,18 @@ logger = logging.getLogger(__name__)
 
 async def get_task(
     session_manager: DatabaseSessionManager,
+    user_id: int,
     file_id: int,
     task_type: str,
     key: str,
 ) -> SystemTaskDO | None:
-    """Retrieve a SystemTaskDO by file_id, task_type, and key."""
+    """Retrieve a SystemTaskDO by user_id, file_id, task_type, and key."""
     async with session_manager.session() as session:
         return (
             (
                 await session.execute(
                     select(SystemTaskDO)
+                    .where(SystemTaskDO.user_id == user_id)
                     .where(SystemTaskDO.file_id == file_id)
                     .where(SystemTaskDO.task_type == task_type)
                     .where(SystemTaskDO.key == key)
@@ -48,6 +50,7 @@ async def get_task(
 
 async def update_task_status(
     session_manager: DatabaseSessionManager,
+    user_id: int,
     file_id: int,
     task_type: str,
     key: str,
@@ -68,9 +71,9 @@ async def update_task_status(
                 # We must provide 'id' and 'retry_count' manually for the INSERT part.
                 sql = text(
                     """
-                    INSERT INTO f_system_task (id, file_id, task_type, key, status, data, last_error, retry_count, create_time, update_time)
-                    VALUES (:id, :file_id, :task_type, :key, :status, :data, :error, 0, :now, :now)
-                    ON CONFLICT(file_id, task_type, key) DO UPDATE SET
+                    INSERT INTO f_system_task (id, user_id, file_id, task_type, key, status, data, last_error, retry_count, create_time, update_time)
+                    VALUES (:id, :user_id, :file_id, :task_type, :key, :status, :data, :error, 0, :now, :now)
+                    ON CONFLICT(user_id, file_id, task_type, key) DO UPDATE SET
                         status = excluded.status,
                         data = excluded.data,
                         last_error = excluded.last_error,
@@ -87,6 +90,7 @@ async def update_task_status(
                     sql,
                     {
                         "id": next_id(),
+                        "user_id": user_id,
                         "file_id": file_id,
                         "task_type": task_type,
                         "key": key,

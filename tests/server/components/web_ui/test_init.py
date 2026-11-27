@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-from supernote.server.components.web_ui import WebUiComponent
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
+from tests.server.components.conftest import LoadComponents
 
 
-async def test_web_ui_component_lifecycle(component_core: ServerCore) -> None:
-    component = WebUiComponent()
+async def test_web_ui_component_lifecycle(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    loader = await load_components("web_ui")
+    component = loader.get("web_ui")
     assert isinstance(component, Component)
     assert component.domain == "web_ui"
     assert component.dependencies == ()
     assert component.platforms == ("http",)
 
-    loader = ComponentLoader()
-    loader.register(component)
-
-    await loader.async_setup_all(component_core, {})
-    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)
     await loader.async_stop_all(component_core)

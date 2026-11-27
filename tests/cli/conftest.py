@@ -2,8 +2,10 @@
 
 import hashlib
 import os
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
@@ -32,10 +34,10 @@ class CliServerEnv:
 
 
 @pytest.fixture(autouse=True)
-def isolated_cli_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def isolated_cli_home(tmp_path: Path) -> Generator[Path]:
     """Redirect HOME to tmp_path so ~/.cache/supernote.pkl is isolated per test."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    return tmp_path
+    with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+        yield tmp_path
 
 
 @pytest.fixture
@@ -59,9 +61,9 @@ def server_config(
             secret_key="test-secret-key-32-characters-long!!",
         ),
         ai=AiConfig(
-            ocr=ModelConfig(provider="fake", model="fake-ocr-v1"),
-            summary=ModelConfig(provider="fake", model="fake-summary-v1"),
-            embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
+            ocr=ModelConfig(provider="fake_ai", model="fake-ocr-v1"),
+            summary=ModelConfig(provider="fake_ai", model="fake-summary-v1"),
+            embedding=ModelConfig(provider="fake_ai", model="fake-embedding-v1"),
         ),
     )
 

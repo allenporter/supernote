@@ -1,9 +1,10 @@
-"""OAuth 2.1 / IndieAuth DTOs, VOs, and user-scoped token models."""
+"""OAuth 2.1 DTOs, VOs, and user-scoped token models."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self
 
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -12,8 +13,10 @@ from mcp.server.auth.provider import (
     AuthorizationCode,
     RefreshToken,
 )
+from pydantic import model_validator
 
 __all__ = [
+    "LoginBridgeClientVO",
     "LoginBridgeDecision",
     "LoginBridgeRequestDTO",
     "LoginBridgeResponseVO",
@@ -45,12 +48,29 @@ class LoginBridgeRequestDTO(DataClassJSONMixin):
 
     decision: LoginBridgeDecision = LoginBridgeDecision.APPROVE
 
+    redirect_uri: str | None = None
+    """Redirect URI the user was shown; the decision is refused if it has changed."""
+
 
 @dataclass
 class LoginBridgeResponseVO(DataClassJSONMixin):
     """Redirect response VO returned by POST /login-bridge."""
 
     redirect_url: str
+
+
+@dataclass
+class LoginBridgeClientVO(DataClassJSONMixin):
+    """Client details for the consent card, returned by GET /login-bridge/client."""
+
+    client_name: str
+    """Name from the client's metadata document, or its host if it has none."""
+
+    client_host: str
+    """Host serving the client's metadata document, in ASCII (punycode) form."""
+
+    redirect_uri: str
+    """Redirect URI an approval or denial will be sent to."""
 
 
 @dataclass
@@ -74,6 +94,17 @@ class SupernoteAccessToken(AccessToken):
     """OAuth 2.1 access token associated with a Supernote user account."""
 
     user_id: int
+    """Authenticated Supernote user ID."""
+
+    actor: str = ""
+    """Canonical domain event actor identifier (defaults to `oauth:<client_id>`)."""
+
+    @model_validator(mode="after")
+    def _ensure_canonical_actor(self) -> Self:
+        if not self.actor.strip():
+            client_id = (self.client_id or "").strip() or "unknown"
+            self.actor = f"oauth:{client_id}"[:64]
+        return self
 
 
 class SupernoteRefreshToken(RefreshToken):

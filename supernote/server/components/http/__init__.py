@@ -19,7 +19,6 @@ from supernote.models.base import create_error_response
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_actor
 from supernote.server.keys import (
-    HTTP_REGISTRAR_KEY,
     REQUEST_ACTOR_KEY,
     REQUEST_EQUIPMENT_NO_KEY,
     REQUEST_USER_KEY,
@@ -27,12 +26,24 @@ from supernote.server.keys import (
 )
 from supernote.server.trace import trace_middleware
 from supernote.server.utils.auth_utils import get_token_from_request
+from supernote.server.utils.request import (
+    parse_dict_dto,
+    parse_json_dto,
+    parse_json_object,
+    parse_query_dto,
+)
+
+from .config import HttpConfig
 
 __all__ = [
     "HTTP_REGISTRAR_KEY",
     "HttpComponent",
     "HttpRegistrar",
     "jwt_auth_middleware",
+    "parse_dict_dto",
+    "parse_json_dto",
+    "parse_json_object",
+    "parse_query_dto",
 ]
 
 
@@ -93,12 +104,18 @@ async def jwt_auth_middleware(
 class HttpRegistrar:
     """Registrar passed into ``<component>.http:async_setup_http(core, registrar)``."""
 
-    def __init__(self) -> None:
+    def __init__(self, router: web.UrlDispatcher) -> None:
+        self._router = router
         self._outer_middlewares: list[Middleware] = []
         self._inner_middlewares: list[Middleware] = []
         self._public_prefixes: list[str] = []
         self._public_resources: list[web.AbstractResource] = []
         self._known_resource_paths: set[str] = set()
+
+    @property
+    def router(self) -> web.UrlDispatcher:
+        """Primary `aiohttp` router for registering component HTTP routes."""
+        return self._router
 
     def add_middleware(
         self,
@@ -172,25 +189,50 @@ class HttpRegistrar:
         return frozenset(self._known_resource_paths)
 
 
+HTTP_REGISTRAR_KEY: web.AppKey[HttpRegistrar] = web.AppKey("http_registrar")
+"""Typed `AppKey` exposing the active `HttpRegistrar` on `core.app`.
+
+Used at request time by `jwt_auth_middleware` (to check registered public
+prefixes and ASGI resources) and `metrics` (to resolve bounded route labels)
+without coupling core `keys.py` to the `http` component.
+"""
+
+
 class HttpComponent:
     """Platform host component for HTTP proxy handling, middlewares, and auth exemptions."""
 
     domain = "http"
     dependencies: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ()
+    hosted_platforms: tuple[str, ...] = ("http",)
+
+    def __init__(self) -> None:
+        self._registrar: HttpRegistrar | None = None
+
+    def get_platform_registrar(self) -> HttpRegistrar:
+        """Return the `HttpRegistrar` initialized during `async_setup`."""
+        assert self._registrar is not None
+        return self._registrar
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Configure reverse-proxy handling and initialize `HttpRegistrar` on ``core.app``."""
-        if core.config.proxy_mode == "strict":
-            trusted = [[ip] for ip in core.config.trusted_proxies]
+        cfg = HttpConfig.from_dict(dict(config))
+        if cfg.proxy_mode == "strict":
+            trusted = [[ip] for ip in cfg.trusted_proxies]
             await aiohttp_remotes.setup(
                 core.app,
                 aiohttp_remotes.XForwardedStrict(trusted),
             )
-        elif core.config.proxy_mode == "relaxed":
+        elif cfg.proxy_mode == "relaxed":
             await aiohttp_remotes.setup(core.app, aiohttp_remotes.XForwardedRelaxed())
 
-        core.app[HTTP_REGISTRAR_KEY] = HttpRegistrar()
+        registrar = HttpRegistrar(core.app.router)
+        self._registrar = registrar
+        core.app[HTTP_REGISTRAR_KEY] = registrar
+
+    async def async_finalize_platforms(self, core: ServerCore) -> None:
+        """Mount deferred public resources and assemble the ordered middleware pipeline."""
+        self.get_platform_registrar().apply_to_app(core.app)
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; `aiohttp` starts serving after `on_startup` completes."""

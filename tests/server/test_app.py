@@ -6,16 +6,17 @@ when deployed behind a reverse proxy, with different proxy modes.
 
 import argparse
 import dataclasses
-import json
 import logging
+import os
 import subprocess
 import sys
-import time
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+from aiohttp import web
 from aiohttp.test_utils import TestClient
-from pytest_aiohttp import AiohttpClient
+from pytest_aiohttp import AiohttpClient, AiohttpServer
 from sqlalchemy import delete, select
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
@@ -24,23 +25,33 @@ from supernote.server.app import (
     create_app,
     run,
 )
+from supernote.server.components.ai import (
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+    TEXT_MODEL_KEY,
+)
+from supernote.server.components.config.service import async_save_component_config
+from supernote.server.components.conversion.processor import (
+    PngConversionModule,
+)
+from supernote.server.components.fake_ai import FakeAiComponent
+from supernote.server.components.gemini import GeminiComponent
+from supernote.server.components.integrity import INTEGRITY_SERVICE_KEY
+from supernote.server.components.openai import OpenAIComponent
+from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
+from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.components.webhooks import WebhooksComponent
-from supernote.server.config import ServerConfig
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
     COMPONENT_LOADER_KEY,
     COORDINATION_SERVICE_KEY,
     CORE_KEY,
-    INTEGRITY_SERVICE_KEY,
-    PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.processor_modules.png_conversion import (
-    PngConversionModule,
-)
-from supernote.server.services.user import OAUTH_ACCESS_TOKEN_KEY_PREFIX
 from supernote.server.trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 
 
@@ -229,6 +240,7 @@ async def test_static_frontend_cache_control_no_cache(
 async def test_static_frontend_disabled_when_web_enabled_false(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: Any,
 ) -> None:
     """Verify that index and static routes are not registered when web_enabled is False."""
     disabled_config = dataclasses.replace(server_config, web_enabled=False)
@@ -251,14 +263,16 @@ async def test_static_frontend_disabled_when_web_enabled_false(
         (False, True, None, False),
     ],
 )
-def test_png_module_registration_matrix(
+async def test_png_module_registration_matrix(
+    aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: Any,
     web_enabled: bool,
     web_notebook_preview: bool,
     gemini_api_key: str | None,
     expected_png: bool,
 ) -> None:
-    """Verify PngConversionModule is only registered when OCR or web notebook preview is active."""
+    """Verify PngConversionModule is only enabled when OCR or web notebook preview is active."""
     cfg = dataclasses.replace(
         server_config,
         web_enabled=web_enabled,
@@ -266,8 +280,11 @@ def test_png_module_registration_matrix(
         gemini_api_key=gemini_api_key,
     )
     app = create_app(cfg)
+    await aiohttp_client(app)
     page_modules = app[PROCESSOR_SERVICE_KEY].page_modules
-    has_png = any(isinstance(m, PngConversionModule) for m in page_modules)
+    has_png = any(
+        isinstance(m, PngConversionModule) and m.enabled for m in page_modules
+    )
     assert has_png is expected_png
 
 
@@ -296,23 +313,23 @@ async def test_bootstrap_ephemeral_user(client: TestClient) -> None:
 
 
 def test_run_configures_default_info_level_and_sanitized_access_logger(
-    monkeypatch: pytest.MonkeyPatch,
     server_config: ServerConfig,
 ) -> None:
     """Verify run() defaults root logging to INFO and wires SanitizedAccessLogger into web.run_app."""
-    monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
     cfg = dataclasses.replace(server_config, log_level="INFO")
-    monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: cfg)
-
     captured_kwargs: dict[str, Any] = {}
 
     def fake_run_app(app: Any, **kwargs: Any) -> None:
         captured_kwargs["app"] = app
         captured_kwargs.update(kwargs)
 
-    monkeypatch.setattr("supernote.server.app.web.run_app", fake_run_app)
-
-    run(argparse.Namespace(config_dir=None))
+    with (
+        patch.dict(os.environ, {}, clear=False),
+        patch.object(ServerConfig, "load", return_value=cfg),
+        patch("supernote.server.app.web.run_app", fake_run_app),
+    ):
+        os.environ.pop("SUPERNOTE_LOG_LEVEL", None)
+        run(argparse.Namespace(config_dir=None))
 
     assert logging.getLogger().level == logging.INFO
     assert logging.getLogger("aiosqlite").level == logging.INFO
@@ -322,30 +339,31 @@ def test_run_configures_default_info_level_and_sanitized_access_logger(
 
 
 def test_run_respects_config_and_env_log_level(
-    monkeypatch: pytest.MonkeyPatch,
     server_config: ServerConfig,
 ) -> None:
     """Verify run() applies config.log_level while keeping noisy library loggers at INFO+."""
-    monkeypatch.setattr("supernote.server.app.web.run_app", lambda *_a, **_kw: None)
-
     try:
-        monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
-        debug_cfg = dataclasses.replace(server_config, log_level="DEBUG")
-        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: debug_cfg)
+        with patch("supernote.server.app.web.run_app", lambda *_a, **_kw: None):
+            debug_cfg = dataclasses.replace(server_config, log_level="DEBUG")
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch.object(ServerConfig, "load", return_value=debug_cfg),
+            ):
+                os.environ.pop("SUPERNOTE_LOG_LEVEL", None)
+                run(argparse.Namespace(config_dir=None))
+            assert logging.getLogger().level == logging.DEBUG
+            assert logging.getLogger("aiosqlite").level == logging.INFO
+            assert logging.getLogger("asyncio").level == logging.INFO
 
-        run(argparse.Namespace(config_dir=None))
-        assert logging.getLogger().level == logging.DEBUG
-        assert logging.getLogger("aiosqlite").level == logging.INFO
-        assert logging.getLogger("asyncio").level == logging.INFO
-
-        monkeypatch.setenv("SUPERNOTE_LOG_LEVEL", "WARNING")
-        warn_cfg = dataclasses.replace(server_config, log_level="WARNING")
-        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: warn_cfg)
-
-        run(argparse.Namespace(config_dir=None))
-        assert logging.getLogger().level == logging.WARNING
-        assert logging.getLogger("aiosqlite").level == logging.WARNING
-        assert logging.getLogger("asyncio").level == logging.WARNING
+            warn_cfg = dataclasses.replace(server_config, log_level="WARNING")
+            with (
+                patch.dict(os.environ, {"SUPERNOTE_LOG_LEVEL": "WARNING"}),
+                patch.object(ServerConfig, "load", return_value=warn_cfg),
+            ):
+                run(argparse.Namespace(config_dir=None))
+            assert logging.getLogger().level == logging.WARNING
+            assert logging.getLogger("aiosqlite").level == logging.WARNING
+            assert logging.getLogger("asyncio").level == logging.WARNING
     finally:
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger("aiosqlite").setLevel(logging.INFO)
@@ -384,22 +402,10 @@ async def test_jwt_auth_middleware_accepts_oauth_token_on_file_apis_and_blocks_i
 ) -> None:
     """Verify OAuth 2.1 Bearer tokens authenticate file/extended APIs and are blocked on @interactive_session_only routes."""
     user_service = client.app[USER_SERVICE_KEY]
-    coordination_service = client.app[COORDINATION_SERVICE_KEY]
     user_id = await user_service.get_user_id("test@example.com")
 
-    oauth_token = "oauth_rest_api_test_token"
-    await coordination_service.set_value(
-        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{oauth_token}",
-        json.dumps(
-            {
-                "token": oauth_token,
-                "user_id": user_id,
-                "client_id": "composer_app",
-                "scopes": ["supernote:all"],
-                "expires_at": int(time.time()) + 3600,
-            }
-        ),
-        ttl=3600,
+    oauth_token, _ = await user_service.create_oauth_grant(
+        user_id, "composer_app", ["supernote:all"]
     )
     oauth_headers = {"Authorization": f"Bearer {oauth_token}"}
 
@@ -424,6 +430,7 @@ async def test_jwt_auth_middleware_accepts_oauth_token_on_file_apis_and_blocks_i
 async def test_create_app_wires_server_core_and_skips_disabled_webhooks(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: Any,
 ) -> None:
     """Verify `create_app` exposes `ServerCore` + `ComponentLoader` and omits disabled webhooks."""
     config = dataclasses.replace(server_config, web_enabled=False)
@@ -466,3 +473,140 @@ async def test_create_app_registers_and_runs_webhooks_component_when_enabled(
     test_client = await aiohttp_client(app)
     resp = await test_client.get("/api/health")
     assert resp.status == 200
+
+
+async def test_create_app_loads_fake_ai_only_when_configured(
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+    session_manager: Any,
+) -> None:
+    """Verify `create_app` registers `fake_ai` only when configured and resolves models via `AiRegistrar` on startup."""
+    default_app = create_app(dataclasses.replace(server_config, web_enabled=False))
+    assert default_app[COMPONENT_LOADER_KEY].get("fake_ai") is None
+
+    fake_config = dataclasses.replace(
+        server_config,
+        web_enabled=False,
+        ai=AiConfig(
+            providers={"local_fake": ProviderConfig(type="Fake_Ai")},
+            ocr=ModelConfig(provider="local_fake", model="fake-ocr"),
+            embedding=ModelConfig(provider="local_fake", model="fake-embed"),
+        ),
+    )
+    fake_app = create_app(fake_config)
+    assert isinstance(fake_app[COMPONENT_LOADER_KEY].get("fake_ai"), FakeAiComponent)
+
+    await aiohttp_client(fake_app)
+    ocr_model = fake_app[OCR_MODEL_KEY]
+    assert ocr_model is not None
+    assert ocr_model.model_id == "fake-ocr"
+    assert fake_app[EMBEDDING_MODEL_KEY] is not None
+    assert fake_app[SEARCH_SERVICE_KEY].embedding_model is fake_app[EMBEDDING_MODEL_KEY]
+
+
+async def test_startup_loads_db_persisted_component_when_not_overridden_by_yaml_or_env(
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+    session_manager: Any,
+) -> None:
+    """Verify `on_startup` resolves DB-persisted component config and enables opt-in components."""
+    config = dataclasses.replace(server_config, web_enabled=False)
+    app = create_app(config)
+    assert app[COMPONENT_LOADER_KEY].get("webhooks") is None
+
+    await async_save_component_config(
+        app[COORDINATION_SERVICE_KEY],
+        "webhooks",
+        {
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "http://127.0.0.1:9999/db-startup-hook",
+                    "user": "test@example.com",
+                    "secret": "db-secret",
+                }
+            ],
+        },
+    )
+
+    await aiohttp_client(app)
+    comp = app[COMPONENT_LOADER_KEY].get("webhooks")
+    assert isinstance(comp, WebhooksComponent)
+
+
+async def test_app_shutdown_closes_shared_ai_backend_sessions(
+    aiohttp_client: AiohttpClient,
+    aiohttp_server: AiohttpServer,
+    server_config: ServerConfig,
+    session_manager: Any,
+) -> None:
+    """App shutdown closes open OpenAI and Gemini HTTP sessions without leaking."""
+
+    async def handle_openai_chat(request: web.Request) -> web.Response:
+        return web.json_response({"choices": [{"message": {"content": "transcribed"}}]})
+
+    async def handle_gemini_generate(request: web.Request) -> web.Response:
+        return web.json_response(
+            {"candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]}
+        )
+
+    fake_ai_app = web.Application()
+    fake_ai_app.router.add_post("/v1/chat/completions", handle_openai_chat)
+    fake_ai_app.router.add_post(
+        "/v1beta/models/{model}:generateContent", handle_gemini_generate
+    )
+    ai_srv = await aiohttp_server(fake_ai_app)
+
+    config = dataclasses.replace(
+        server_config,
+        web_enabled=False,
+        ai=AiConfig(
+            providers={
+                "openai": ProviderConfig(base_url=str(ai_srv.make_url("/v1"))),
+                "gemini": ProviderConfig(
+                    api_key="test-key", base_url=str(ai_srv.make_url("/"))
+                ),
+            },
+            ocr=ModelConfig(provider="openai", model="gemma-vision"),
+            summary=ModelConfig(provider="openai", model="gemma"),
+            embedding=ModelConfig(provider="openai", model="nomic-embed-text"),
+            text=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        ),
+    )
+    app = create_app(config)
+    test_client = await aiohttp_client(app)
+
+    ocr_model = app[OCR_MODEL_KEY]
+    summary_model = app[SUMMARY_MODEL_KEY]
+    embedding_model = app[EMBEDDING_MODEL_KEY]
+    text_model = app[TEXT_MODEL_KEY]
+    assert ocr_model is not None
+    assert summary_model is not None
+    assert embedding_model is not None
+    assert text_model is not None
+
+    openai_comp = app[COMPONENT_LOADER_KEY].get("openai")
+    gemini_comp = app[COMPONENT_LOADER_KEY].get("gemini")
+    assert isinstance(openai_comp, OpenAIComponent)
+    assert isinstance(gemini_comp, GeminiComponent)
+    openai_session = openai_comp.session
+    gemini_session = gemini_comp.session
+    assert openai_session is not None
+    assert gemini_session is not None
+    assert list(gemini_comp._backends) == ["gemini"]
+    gemini_backend = gemini_comp._backends["gemini"]
+    assert gemini_backend._session is gemini_session
+
+    assert await ocr_model.extract_text(b"png", "hi") == "transcribed"
+    assert await text_model.generate_json("hi", response_schema={"type": "object"}) == {
+        "ok": True
+    }
+
+    assert not openai_session.closed
+    assert not gemini_session.closed
+    assert gemini_backend._client is not None
+
+    await test_client.close()
+    assert openai_session.closed
+    assert gemini_session.closed
+    assert gemini_backend._client is None

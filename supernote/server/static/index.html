@@ -18,8 +18,9 @@
         {
           "imports": {
             "vue": "https://unpkg.com/vue@3.5.46/dist/vue.esm-browser.js",
-            "marked": "https://unpkg.com/marked@18.2.1/lib/marked.esm.js",
-            "dompurify": "https://unpkg.com/dompurify@3.5.0/dist/purify.es.mjs"
+            "marked": "https://unpkg.com/marked@18.3.0/lib/marked.esm.js",
+            "dompurify": "https://unpkg.com/dompurify@3.5.0/dist/purify.es.mjs",
+            "mermaid": "https://unpkg.com/mermaid@12.3.0/dist/mermaid.esm.min.mjs"
           }
         }
     </script>
@@ -44,7 +45,8 @@
                                 </svg>
                             </div>
                             <div class="flex items-baseline gap-1.5 min-w-0">
-                                <span class="text-sm sm:text-base font-bold tracking-tight text-slate-900 truncate"><span v-if="isLoggedIn && !pendingOAuthRequest" class="hidden sm:inline">Open </span><template v-else>Open </template>Private Cloud</span>
+                                <span :class="isLoggedIn && !pendingOAuthRequest ? 'hidden sm:inline' : ''"
+                                    class="text-sm sm:text-base font-bold tracking-tight text-slate-900 truncate">Open Private Cloud</span>
                                 <span class="hidden md:inline text-xs font-mono font-medium uppercase tracking-widest text-stone-500 shrink-0">for Supernote</span>
                             </div>
                         </button>
@@ -54,19 +56,35 @@
                     <div v-if="isLoggedIn && !pendingOAuthRequest" class="flex items-center gap-0.5 sm:gap-1 bg-stone-200/70 p-0.5 sm:p-1 rounded-xl border border-stone-300/40 shrink-0">
                         <button @click="switchTab('files')" type="button"
                             :class="activeTab === 'files' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
                             <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
                             </svg>
                             <span>Files</span>
                         </button>
-                        <button @click="switchTab('tasks')" type="button"
+                        <button v-if="isTabAvailable('digests')" @click="switchTab('digests')" type="button"
+                            :class="activeTab === 'digests' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
+                            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                            </svg>
+                            <span>Digests</span>
+                        </button>
+                        <button v-if="isTabAvailable('tasks')" @click="switchTab('tasks')" type="button"
                             :class="activeTab === 'tasks' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
                             <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
                             <span>Tasks<span class="hidden sm:inline"> &amp; Schedule</span></span>
+                        </button>
+                        <button v-if="isTabAvailable('wiki')" @click="switchTab('wiki')" type="button"
+                            :class="activeTab === 'wiki' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
+                            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                            </svg>
+                            <span>Wiki</span>
                         </button>
                     </div>
 
@@ -84,16 +102,17 @@
                                 <kbd class="hidden md:inline-block px-1.5 py-0.5 bg-stone-100 text-stone-600 text-[10px] font-mono rounded border border-stone-200/80">{{ searchShortcutLabel }}</kbd>
                             </button>
 
-                            <button @click="openSystemPanel" type="button"
-                                aria-label="System Status"
-                                title="System Status"
+                            <button @click="openSettingsPanel('access')" type="button"
+                                aria-label="Settings"
+                                title="Settings & System"
                                 class="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-slate-900 hover:bg-stone-200/60 transition-colors">
-                                <svg class="w-4 h-4 text-stone-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-4 h-4 text-stone-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
-                                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
                                     </path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                 </svg>
-                                <span class="hidden md:inline">System</span>
+                                <span class="hidden md:inline">Settings</span>
                             </button>
 
                             <div class="h-4 w-px bg-stone-200 hidden sm:block"></div>
@@ -124,6 +143,7 @@
                     :completed-outcome="oauthCompletedOutcome"
                     @approve="handleOAuthApprove"
                     @deny="handleOAuthDeny"
+                    @retry="handleOAuthRetry"
                     @dismiss="dismissOAuthConsent"></oauth-consent-card>
                 <template v-else-if="activeTab === 'files'">
                     <!-- Directory Browser View -->
@@ -187,9 +207,20 @@
                     </div>
                 </template>
 
+                <!-- Digests & Summaries Browser Panel -->
+                <template v-else-if="activeTab === 'digests'">
+                    <digest-panel @open-file="openItem"></digest-panel>
+                </template>
+
                 <!-- Tasks & Schedule Dashboard Panel -->
                 <template v-else-if="activeTab === 'tasks'">
                     <task-panel :focus-task="focusedTaskRequest"></task-panel>
+                </template>
+
+                <!-- LLM Wiki Panel -->
+                <template v-else-if="activeTab === 'wiki'">
+                    <wiki-panel :initial-slug="selectedWikiSlug" @select-slug="navigateToWikiSlug"
+                        @open-file="handleSystemOpenFile" @open-task="handleSearchSelectTask"></wiki-panel>
                 </template>
             </template>
 
@@ -203,8 +234,12 @@
                 @close="closeSearchModal"
                 @select-file="handleSearchSelectFile" @select-task="handleSearchSelectTask"></search-modal>
 
-            <!-- System Panel -->
-            <system-panel v-if="isLoggedIn && !pendingOAuthRequest && showSystemPanel" @close="closeSystemPanel" @open-file="handleSystemOpenFile"></system-panel>
+            <!-- Unified Settings & System Modal -->
+            <settings-panel v-if="isLoggedIn && !pendingOAuthRequest && showSystemPanel"
+                :active-section="settingsModalTab"
+                @switch-section="setSettingsModalTab"
+                @close="closeSystemPanel"
+                @open-file="handleSystemOpenFile"></settings-panel>
         </main>
 
         <!-- Toast Notifications Stack -->

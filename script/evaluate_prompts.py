@@ -3,7 +3,6 @@
 
 import argparse
 import asyncio
-import dataclasses
 import io
 import json
 import os
@@ -15,14 +14,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from supernote.notebook import Notebook, PngConverter, load_notebook
-from supernote.server.ai.models.ocr import OcrModel, create_ocr_model
-from supernote.server.ai.models.summary import SummaryModel, create_summary_model
+from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import (
     PageMetadata,
     format_ocr_prompt,
     format_summary_prompt,
 )
-from supernote.server.config import ServerConfig
+from supernote.server.components.ai import AiRegistrar
+from supernote.server.components.ai.config import AiComponentConfig
+from supernote.server.components.gemini.backend import GeminiBackend
+from supernote.server.components.gemini.ocr import GeminiOcrModel
+from supernote.server.components.gemini.summary import GeminiSummaryModel
+from supernote.server.config import ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.utils.note_content import format_page_metadata
 from supernote.server.utils.prompt_loader import PromptId, PromptLoader
 
@@ -281,14 +285,22 @@ async def main_async() -> None:
         print("Loading default prompts from package resources.")
         prompt_loader = PromptLoader()
 
-    ocr_config = dataclasses.replace(
-        config, gemini_api_key=api_key, gemini_ocr_model=ocr_model_name
+    ai_cfg = AiComponentConfig(
+        providers={"gemini": ProviderConfig(api_key=api_key)},
+        ocr=ModelConfig(provider="gemini", model=ocr_model_name),
+        summary=ModelConfig(provider="gemini", model=summary_model_name),
     )
-    summary_config = dataclasses.replace(
-        config, gemini_api_key=api_key, gemini_ocr_model=summary_model_name
+    ai_registrar = AiRegistrar()
+    ai_registrar.register_ocr(
+        "gemini",
+        lambda p, m: GeminiOcrModel(GeminiBackend(api_key, provider=p), m),
     )
-    ocr_model = create_ocr_model(ocr_config)
-    summary_model = create_summary_model(summary_config)
+    ai_registrar.register_summary(
+        "gemini",
+        lambda p, m: GeminiSummaryModel(GeminiBackend(api_key, provider=p), m),
+    )
+    ocr_model = ai_registrar.create_ocr_model(ai_cfg)
+    summary_model = ai_registrar.create_summary_model(ai_cfg)
     if ocr_model is None or summary_model is None:
         print("Error: Failed to initialize OCR or Summary model.", file=sys.stderr)
         sys.exit(1)

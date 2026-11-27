@@ -1,6 +1,5 @@
 import asyncio
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +8,6 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 
 
-@pytest.mark.asyncio
 async def test_web_upload_triggers_processing(
     web_client: WebClient,
     db_session: "AsyncSession",

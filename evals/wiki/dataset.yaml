@@ -1,0 +1,630 @@
+---
+name: supernote-wiki-backfill-v1
+description: >-
+  Repeatable 18-notebook (60+ OCR pages, including a 24-page daily journal and
+  3-4 page project/reading notebooks) + 8-task personal knowledge corpus for
+  evaluating multi-chunk LLM Wiki backfill quality.
+notebooks:
+  - file_name: Aurora_Hardware_Spec.note
+    description: 4-page project notebook for the Aurora Home Server build.
+    pages:
+      - page_index: 0
+        page_id: P20261001090000AURORA0001
+        text_content: |-
+          Aurora Home Server - Initial Spec (Oct 1)
+          Goal: Quiet, low-power NAS + Docker host in hallway closet.
+          - CPU: Intel Core i3-14100 or Ryzen 5 PRO 5650G
+          - RAM: 32GB non-ECC DDR4 (initial plan)
+          - OS candidate: Unraid vs TrueNAS Scale
+          - Storage: 4x 12TB Exos in RAIDZ1
+          - Budget target: $1,100
+          Notes: Ask Bob about idle power draw on his Ryzen build.
+      - page_index: 1
+        page_id: P20261001091500AURORA0002
+        text_content: |-
+          Aurora Services & Power Plan (Oct 2)
+          - Supernote Private Cloud (Docker)
+          - Immich photo backup for family
+          - Home Assistant + Zigbee coordinator
+          - Offsite encrypted backup via restic to Backblaze B2
+          Need UPS (CyberPower 1000VA) before moving closet rack.
+      - page_index: 2
+        page_id: P20261019090000AURORA0003
+        text_content: |-
+          Aurora BOM Revision (Oct 19)
+          After talking with Bob:
+          - Switched from 32GB non-ECC to 64GB ECC DDR4 for ZFS scrubbing safety
+          - Confirmed TrueNAS Scale 24.10 over Unraid (native ZFS snapshots + Docker)
+          - Ordered Ryzen 5 PRO 5650G, ASRock Rack B550D4-4L, Fractal Node 804
+          - Total BOM landed at $1,240 (slightly over $1,100 target due to ECC)
+      - page_index: 3
+        page_id: P20261105190000AURORA0004
+        text_content: |-
+          Aurora Build & Burn-in Log (Nov 5)
+          - Assembled Ryzen 5 PRO 5650G + 64GB ECC in Fractal Node 804
+          - Installed TrueNAS Scale 24.10; created 4x12TB RAIDZ1 pool ("tank")
+          - 24h memtest86+ passed with 0 errors; smartctl long test clean
+          - Idle power draw measured at 28W at the wall (better than Bob's 34W!)
+          - Migrated Supernote Private Cloud container and Immich onto Aurora.
+
+  - file_name: Q4_Roadmap.note
+    description: 4-page engineering notebook for Q4 Cloud Release v0.28.
+    pages:
+      - page_index: 0
+        page_id: P20261008100000Q4ROAD001
+        text_content: |-
+          Q4 Cloud Release (v0.28) Roadmap
+          Target launch: Nov 15 (tentative)
+          Core deliverables:
+          1. LLM Wiki backfill & Obsidian .zip export (owner: Alice)
+          2. Hybrid search latency under 150ms p95 (owner: Bob)
+          3. Mobile Web UI viewer polish (owner: Maya)
+          Risks:
+          - Gemini rate limits during multi-notebook backfill
+          - SQLite busy timeout under concurrent OCR + wiki compile
+      - page_index: 1
+        page_id: P20261011140000Q4ROAD002
+        text_content: |-
+          SQLite & Concurrency Notes (Oct 11)
+          - Checked WAL checkpoint interval after reading Kleppmann DDIA Ch 3
+          - Set busy_timeout=5000ms and synchronous=NORMAL on SQLite connections
+          - Keep LLM HTTP calls strictly outside open SQLite transactions
+          - Alice adding per-user asyncio.Lock around wiki compile passes
+      - page_index: 2
+        page_id: P20261014110000Q4ROAD003
+        text_content: |-
+          Design Sync - Oct 14
+          Attendees: Al1ce, Bob, Maya
+          - Al1ce demonstrated wiki backfill prototype; early feedback says
+            batching 5 notebooks at a time without progress visibility is confusing.
+          - Bob confirmed hybrid search p95 dropped to 118ms after SQLite index fix.
+          - Decision: Move Q4 Cloud Release (v0.28) deadline from Nov 15 to Nov 22
+            so we have a full week for wiki backfill QA.
+          - Maya to prepare mobile 375px layout checklist.
+      - page_index: 3
+        page_id: P20261110160000Q4ROAD004
+        text_content: |-
+          v0.28 Release QA Checklist (Nov 10)
+          - [x] Hybrid search p95 < 150ms verified (118ms)
+          - [x] Mobile 375px drawer & header overflow audit (Maya)
+          - [ ] Verify Obsidian .zip export on macOS (Alice)
+          - [ ] Multi-chunk wiki backfill eval on 15+ notebooks with Gemini
+
+  - file_name: Kyoto_Trip_Plan.note
+    description: 4-page travel notebook for the Kyoto Autumn Trip with Maya and Leo.
+    pages:
+      - page_index: 0
+        page_id: P20261010140000KYOTO0001
+        text_content: |-
+          Kyoto Autumn Trip (Nov 24 - Dec 1)
+          Travelers: Me, Maya, Leo
+          Lodging (initial): Booked Gion Ryokan (refundable) for 5 nights.
+          Flight: SFO -> KIX direct on JAL JL001 (12:30pm departure).
+          Must-see spots:
+          - Fushimi Inari at 6:30am to beat crowds
+          - Arashiyama bamboo grove + Tenryu-ji
+          - Nishiki Market food walk
+      - page_index: 1
+        page_id: P20261102090000KYOTO0002
+        text_content: |-
+          Kyoto Lodging Update (Nov 2)
+          - Cancelled Gion Ryokan and switched to Higashiyama Machiya townhouse
+            (more space for Maya and Leo, quieter side street, kitchen included).
+          - Check-in code is in confirmation email from Maya.
+          - Closer to Kiyomizu-dera for early morning walks.
+      - page_index: 2
+        page_id: P20261106150000KYOTO0003
+        text_content: |-
+          Kyoto Food & Day Trips (Nov 6)
+          - Reserved Kichi Kichi omurice for Nov 26 dinner (3 seats)
+          - Ramen Sen-no-Kaze near Kawaramachi
+          - Day trip to Nara deer park + Todai-ji (Nov 27)
+          - Uji matcha tasting afternoon on the way back from Nara
+      - page_index: 3
+        page_id: P20261112180000KYOTO0004
+        text_content: |-
+          Kyoto Packing & Tech Checklist (Nov 12)
+          - Supernote Nomad + ceramic pen + folio
+          - USB-C 65W GaN charger + Japan plug adapter
+          - Activate Japan eSIM before boarding
+          - Verify WireGuard VPN to Aurora Home Server (10.0.30.10) works on LTE
+          - Warm layers & rain shell for early morning Fushimi Inari hike with Leo
+
+  - file_name: Reading_Notes_DDIA.note
+    description: 3-page book notes on Designing Data-Intensive Applications.
+    pages:
+      - page_index: 0
+        page_id: P20261012200000DDIA00001
+        text_content: |-
+          Designing Data-Intensive Applications - Martin Kleppmann
+          Ch 3 Storage & Retrieval:
+          - LSM-trees optimize write throughput via sequential append + compaction
+          - B-trees give predictable read latency and in-place page updates
+          - Write-ahead log (WAL) ensures crash recovery in SQLite & Postgres
+          Relevant to Q4 Cloud Release: check SQLite WAL checkpoint interval!
+      - page_index: 1
+        page_id: P20261017210000DDIA00002
+        text_content: |-
+          DDIA Ch 5 Replication:
+          - Single-leader replication: simple read-your-writes consistency for leader reads
+          - Replication lag pitfalls: monotonic reads, consistent prefix reads
+          - For personal Supernote cloud on Aurora, single-node SQLite + restic B2
+            avoids distributed split-brain complexity entirely.
+      - page_index: 2
+        page_id: P20261025210000DDIA00003
+        text_content: |-
+          DDIA Ch 7 Transactions:
+          - Snapshot isolation prevents dirty reads and non-repeatable reads
+          - Optimistic concurrency (version numbers) beats long locks for interactive UIs
+          - Matches our Wiki page `expected_version` optimistic locking design.
+
+  - file_name: Garden_Journal_Oct.note
+    description: 3-page seasonal garden and composting log.
+    pages:
+      - page_index: 0
+        page_id: P20261016073000GARDEN01
+        text_content: |-
+          Garden Journal - Oct 16
+          - Pulled spent heirloom tomato vines (Cherokee Purple did best)
+          - Turned compost bin #2; added dry oak leaves for carbon balance
+          - Soil test on raised bed A showed slightly low nitrogen; add alfalfa meal
+      - page_index: 1
+        page_id: P20261024080000GARDEN02
+        text_content: |-
+          Garlic Planting - Oct 24
+          - Planted 40 garlic cloves (Music hardneck variety) in raised bed B
+          - Mulched with 3 inches of clean straw before first frost
+          - Check garlic sprouts in raised bed B in late February
+      - page_index: 2
+        page_id: P20261115090000GARDEN03
+        text_content: |-
+          Spring Irrigation & Seed Plan (Nov 15)
+          - Drip irrigation parts list: 1/2" main poly tube, pressure regulator,
+            Orbit B-hyve smart timer (integrate with Home Assistant on Aurora!)
+          - Seed list: Cherokee Purple tomatoes, Genovese basil, sugar snap peas.
+          - Install automated drip irrigation timer before May.
+
+  - file_name: Daily_Journal_Fall_2026.note
+    description: >-
+      24-page daily bullet journal spanning Oct 1 through Nov 18 with recurring
+      projects, workouts, people, errands, and evolving decisions.
+    pages:
+      - page_index: 0
+        page_id: P20261001080000DAYLOG01
+        text_content: |-
+          Oct 1 Thursday
+          • Drafted initial Aurora Home Server spec (32GB RAM, Unraid vs TrueNAS)
+          • Email Bob about Ryzen 5 PRO idle watts
+          o 17:30 Strength training: Squat 3x5 @ 205 lbs, Bench 3x5 @ 155 lbs
+          • Pick up groceries: milk, bananas, eggs
+      - page_index: 1
+        page_id: P20261003080000DAYLOG02
+        text_content: |-
+          Oct 3 Saturday
+          o 09:00 Farmers market with Maya — bought heirloom tomatoes and sourdough
+          • Reviewed Q4 Cloud Release v0.28 scope with Alice over Slack
+          • Started sketching hallway closet rack airflow for Aurora
+          • Walked 4 miles around the park
+      - page_index: 2
+        page_id: P20261005080000DAYLOG03
+        text_content: |-
+          Oct 5 Monday
+          * • Q4 Cloud Release (v0.28): initial target Nov 15
+            - Alice owning SQLite WAL lock contention benchmarks
+            - Maya reviewing mobile Web UI layout
+          o 18:00 Strength training: Deadlift 3x5 @ 255 lbs, Overhead Press 3x5 @ 100 lbs
+          • Read DDIA Chapter 1 on reliability & maintainability
+      - page_index: 3
+        page_id: P20261006080000DAYLOG04
+        text_content: |-
+          Oct 6 Tuesday
+          o 12:30 Coffee with Bob — he recommended TrueNAS Scale over Unraid
+            and strongly advised ECC memory for ZFS on Aurora.
+          • Ordered CyberPower 1000VA UPS for hallway closet
+          • Checked JAL direct flights SFO -> KIX for late November Kyoto trip
+      - page_index: 4
+        page_id: P20261008080000DAYLOG05
+        text_content: |-
+          Oct 8 Thursday
+          • Wrote Q4 Roadmap notebook; listed Gemini rate limits as top wiki risk
+          o 17:45 Strength training: Deadlift 3x5 @ 265 lbs, Squat 3x5 @ 215 lbs
+          • Leo asked if we can include a Nara day trip during Kyoto Autumn Trip
+          • Paid utility bill and cleaned kitchen pantry
+      - page_index: 5
+        page_id: P20261010080000DAYLOG06
+        text_content: |-
+          Oct 10 Saturday
+          • Booked refundable Gion Ryokan for Kyoto Autumn Trip (5 nights)
+          • Booked JAL JL001 SFO->KIX for Nov 24 - Dec 1 (Me, Maya, Leo)
+          • Read DDIA Chapter 2 (data models & graph queries)
+          • Mowed lawn and raked oak leaves for compost pile
+      - page_index: 6
+        page_id: P20261012080000DAYLOG07
+        text_content: |-
+          Oct 12 Monday
+          • Finished DDIA Chapter 3 (LSM-trees vs B-trees and WAL)
+          • Shared SQLite WAL notes with Alice for Q4 Cloud Release
+          o 18:00 Strength training: Bench 3x5 @ 160 lbs, Barbell Row 3x5 @ 145 lbs
+          • Schedule annual physical with Dr. Patel
+      - page_index: 7
+        page_id: P20261014080000DAYLOG08
+        text_content: |-
+          Oct 14 Wednesday
+          o 11:00 Design Sync with Al1ce, Bob, and Maya:
+            - Moved Q4 Cloud Release deadline from Nov 15 to Nov 22
+            - Bob got hybrid search p95 down to 118ms!
+            - Wiki backfill UI needs queue preview and progress bar
+          • Ordered 4x 12TB Exos drives for Aurora Home Server
+      - page_index: 8
+        page_id: P20261016080000DAYLOG09
+        text_content: |-
+          Oct 16 Friday
+          • Pulled heirloom tomato vines in garden; turned compost bin #2
+          o 17:30 Strength training: Squat 3x5 @ 220 lbs, Deadlift 1x5 @ 270 lbs
+          • Started reading The Design of Everyday Things (Don Norman)
+          • Dinner with Maya — discussed switching Kyoto lodging to a machiya
+      - page_index: 9
+        page_id: P20261018080000DAYLOG10
+        text_content: |-
+          Oct 18 Sunday
+          • Mapped home network VLANs: VLAN 10 Trusted, VLAN 20 IoT, VLAN 30 Aurora
+          • Assigned static IP 10.0.30.10 to Aurora Home Server
+          • Tested WireGuard VPN handshake from phone
+          • Prepped raised bed B for garlic planting next weekend
+      - page_index: 10
+        page_id: P20261019080000DAYLOG11
+        text_content: |-
+          Oct 19 Monday
+          * X Finalized Aurora Home Server BOM:
+            - Switched from 32GB non-ECC to 64GB ECC DDR4 + TrueNAS Scale
+            - Ordered Ryzen 5 PRO 5650G and Fractal Node 804 case
+          • CyberPower 1000VA UPS arrived; tested battery self-check
+          o 18:00 Strength training: Bench 3x5 @ 165 lbs, Overhead Press 3x5 @ 105 lbs
+      - page_index: 11
+        page_id: P20261021080000DAYLOG12
+        text_content: |-
+          Oct 21 Wednesday
+          • Alice fixed SQLite WAL lock timeout in Q4 Cloud Release
+          • Bob verifying Docker image stays under 160MB RAM
+          o 17:45 Strength training: Deadlift 3x5 @ 275 lbs (new PR!)
+          • Picked up wood screws and painter's tape at hardware store
+      - page_index: 12
+        page_id: P20261023080000DAYLOG13
+        text_content: |-
+          Oct 23 Friday
+          o 09:30 Annual checkup with Dr. Patel — bloodwork normal, Vitamin D low
+            (start 2000 IU daily). Reminder: book dentist cleaning in Dec.
+          • Finished Ch 1-3 of The Design of Everyday Things (discoverability & feedback)
+          • Applied Norman's conceptual model principle to Wiki Backfill UI notes
+      - page_index: 13
+        page_id: P20261024080000DAYLOG14
+        text_content: |-
+          Oct 24 Saturday
+          • Planted 40 Music hardneck garlic cloves in raised bed B; mulched with straw
+          • Fractal Node 804 case and 64GB ECC RAM delivered for Aurora
+          • Watched movie with Maya and Leo
+          • Baked sourdough loaf
+      - page_index: 14
+        page_id: P20261027080000DAYLOG15
+        text_content: |-
+          Oct 27 Tuesday
+          • Reviewed Maya's mobile 375px layout checklist for Q4 Cloud Release
+          • Tested restic dry-run backup script against Backblaze B2 bucket
+          o 18:00 Strength training: Squat 3x5 @ 220 lbs, Bench 3x5 @ 165 lbs
+          • Called Dr. Kim's office — booked dentist cleaning for Dec 8 at 10:00am
+      - page_index: 15
+        page_id: P20261030080000DAYLOG16
+        text_content: |-
+          Oct 30 Friday
+          • Ryzen 5 PRO 5650G arrived — all Aurora Home Server parts on hand!
+          • Alice opened PR for wiki status progress counts
+          • Maya found a great Higashiyama Machiya townhouse for Kyoto Autumn Trip
+          • Bought Halloween candy for neighborhood kids
+      - page_index: 16
+        page_id: P20261102080000DAYLOG17
+        text_content: |-
+          Nov 2 Monday
+          • Kyoto Autumn Trip update: Cancelled Gion Ryokan and switched to
+            Higashiyama Machiya townhouse (quieter street, room for Maya and Leo)
+          • Reserved Kichi Kichi omurice for Nov 26 dinner
+          o 17:45 Strength training: Squat 3x5 @ 225 lbs, Overhead Press 3x5 @ 110 lbs
+          • Reminded Alice to verify Obsidian .zip export on macOS
+      - page_index: 17
+        page_id: P20261105080000DAYLOG18
+        text_content: |-
+          Nov 5 Thursday
+          • Assembled Aurora Home Server (Ryzen 5 PRO + 64GB ECC + TrueNAS Scale)
+          • Created 4x12TB RAIDZ1 pool ("tank"); idle power measured at 28W!
+          • Texted Bob the 28W Kill-A-Watt photo — beats his 34W box
+          • Migrated Supernote Private Cloud container and Immich onto Aurora
+      - page_index: 18
+        page_id: P20261107080000DAYLOG19
+        text_content: |-
+          Nov 7 Saturday
+          • Configured daily ZFS snapshots on Aurora tank pool
+          • Set up Home Assistant + Zigbee coordinator on VLAN 20
+          o 10:00 Trail hike with Leo (6 miles, 1,100 ft gain)
+          • Planned Nara + Uji day trip itinerary for Kyoto
+      - page_index: 19
+        page_id: P20261109080000DAYLOG20
+        text_content: |-
+          Nov 9 Monday
+          • Q4 Cloud Release v0.28 freeze approaching (Nov 22 launch)
+          • Ran full Playwright visual audit with Maya on desktop and 375px mobile
+          o 18:00 Strength training: Deadlift 3x5 @ 275 lbs, Bench 3x5 @ 170 lbs
+          • Ordered Japan eSIM QR code for Kyoto trip
+      - page_index: 20
+        page_id: P20261112080000DAYLOG21
+        text_content: |-
+          Nov 12 Thursday
+          • Wrote Kyoto packing checklist (Supernote Nomad, GaN charger, warm layers)
+          • Verified WireGuard VPN to Aurora (10.0.30.10) over cellular LTE
+          • Checked off UPS task; still need to finish restic B2 cron on Aurora
+          • Dinner with Bob — discussed wiki backfill eval harness design
+      - page_index: 21
+        page_id: P20261114080000DAYLOG22
+        text_content: |-
+          Nov 14 Saturday
+          • Checked compost bin #2 temperature (135F — active breakdown!)
+          • Drafted spring drip irrigation parts list (Orbit B-hyve + Home Assistant)
+          o 16:00 Strength training: Squat 3x5 @ 225 lbs, Pull-ups 3x8
+          • Confirmed Higashiyama Machiya check-in code with Maya
+      - page_index: 22
+        page_id: P20261116080000DAYLOG23
+        text_content: |-
+          Nov 16 Monday
+          • Alice verified Obsidian .zip export opens cleanly in Obsidian on macOS
+          • Bob confirmed hybrid search p95 remains steady at 118ms on Aurora
+          • Reviewed Vitamin D bottle — need refill after Kyoto trip
+          • Cleaned desk and charged Supernote Nomad to 100%
+      - page_index: 23
+        page_id: P20261118080000DAYLOG24
+        text_content: |-
+          Nov 18 Wednesday
+          • Final pre-release check for Q4 Cloud Release v0.28 (shipping Nov 22)
+          • Restored a test Supernote notebook from Aurora restic snapshot — verified!
+          o 17:45 Strength training: Deadlift 3x5 @ 280 lbs (new PR!), OHP 3x5 @ 110 lbs
+          • Almost ready for Kyoto Autumn Trip next Tuesday!
+
+  - file_name: Network_Topology.note
+    description: 2-page home network VLAN and WireGuard diagram notes.
+    pages:
+      - page_index: 0
+        page_id: P20261018150000NETTOP01
+        text_content: |-
+          Home Network & Aurora Placement
+          - Modem -> OPNsense router -> 2.5GbE managed switch
+          - VLAN 10: Trusted devices (laptops, Supernote Nomad)
+          - VLAN 20: IoT (Home Assistant Zigbee bridge, cameras)
+          - VLAN 30: Aurora Home Server (static IP 10.0.30.10)
+      - page_index: 1
+        page_id: P20261018151500NETTOP02
+        text_content: |-
+          Remote Access & WireGuard VPN
+          - WireGuard tunnel terminated on OPNsense (UDP 51820)
+          - Allows Supernote Nomad cloud sync to Aurora while traveling in Kyoto
+          - Firewall rule: VPN peers can reach 10.0.30.10:8080 (Supernote) & Immich only
+
+  - file_name: Reading_Notes_Design.note
+    description: 2-page book notes on The Design of Everyday Things.
+    pages:
+      - page_index: 0
+        page_id: P20261023210000DESIGN01
+        text_content: |-
+          The Design of Everyday Things - Don Norman
+          Key principles:
+          - Discoverability: users should immediately see what actions are possible
+          - Feedback: every action needs clear, immediate confirmation of state
+          - Conceptual models: hide internal mechanics (like DB cursors) behind
+            a clear mental model of progress.
+      - page_index: 1
+        page_id: P20261023212000DESIGN02
+        text_content: |-
+          Applying Don Norman to Supernote Web UI (Q4 Cloud Release)
+          - Show exact upcoming notebook filenames before running wiki backfill
+          - Provide live progress bar + Stop button for multi-chunk runs
+          - Separate calm informational lint notices from actionable warnings
+
+  - file_name: Health_And_Appointments.note
+    description: 2-page health and dental appointment tracker.
+    pages:
+      - page_index: 0
+        page_id: P20261108100000HEALTH01
+        text_content: |-
+          Health & Appointments
+          - Dr. Patel (Primary Care): Oct 23 annual physical complete. Vitamin D slightly low,
+            taking 2000 IU daily. Next checkup Oct 2027.
+          - Dentist (Dr. Kim): Cleaning scheduled for Dec 8 at 10:00am.
+      - page_index: 1
+        page_id: P20261108101000HEALTH02
+        text_content: |-
+          Strength Training Progression (Oct-Nov)
+          - Deadlift: 255 -> 265 -> 275 -> 280 lbs (3x5)
+          - Squat: 205 -> 215 -> 220 -> 225 lbs (3x5)
+          - Bench: 155 -> 160 -> 165 -> 170 lbs (3x5)
+          - Goal: keep 3x/week lifting consistency through Kyoto trip.
+
+  - file_name: Grocery_Errands_Oct.note
+    description: Low-signal everyday errands scratchpad.
+    pages:
+      - page_index: 0
+        page_id: P20261021170000ERRAND01
+        text_content: |-
+          Saturday Errands
+          - Trader Joe's: oat milk, coffee beans, sourdough, avocados, eggs
+          - Hardware store: 3/8 inch wood screws, painter's tape
+          - Drop off library books
+          - Pick up dry cleaning before 5pm
+
+  - file_name: Weekly_Log_Oct_W1.note
+    description: Weekly summary roll-up for Week 40.
+    pages:
+      - page_index: 0
+        page_id: P20261005080000WKLYW1001
+        text_content: |-
+          Week 40 Review: Oct 5 - Oct 11
+          - Kicked off Q4 Cloud Release (v0.28) with Alice, Bob, and Maya
+          - Bob advised TrueNAS Scale + ECC RAM for Aurora Home Server
+          - Booked JAL flights for Kyoto Autumn Trip
+          - Hit 265 lbs deadlift and read DDIA Ch 1-2
+
+  - file_name: Weekly_Log_Oct_W3.note
+    description: Weekly summary roll-up for Week 42.
+    pages:
+      - page_index: 0
+        page_id: P20261019083000WKLYW301
+        text_content: |-
+          Week 42 Review: Oct 19 - Oct 25
+          - Ordered finalized Aurora BOM (64GB ECC DDR4 + TrueNAS Scale + Ryzen 5 PRO)
+          - Q4 Cloud Release (v0.28) moved to Nov 22; WAL timeout fixed by Alice
+          - Hit 275 lbs deadlift PR; annual checkup with Dr. Patel completed
+          - Planted garlic in raised bed B
+
+  - file_name: Design_Sync_Oct14.note
+    description: Standalone meeting note with OCR typo Al1ce.
+    pages:
+      - page_index: 0
+        page_id: P20261014110000DSYNC001
+        text_content: |-
+          Design Sync - Oct 14 (Quick Capture)
+          Attendees: Al1ce, Bob, Maya
+          - Al1ce demoed wiki backfill; agreed to add queue preview + progress bar
+          - Bob: hybrid search p95 = 118ms
+          - Launch target moved to Nov 22
+
+  - file_name: Daily_Nov_02.note
+    description: Standalone daily scratch note for Nov 2.
+    pages:
+      - page_index: 0
+        page_id: P20261102080000DAILY112
+        text_content: |-
+          Nov 2 Quick Note
+          - Switched Kyoto lodging from Gion Ryokan to Higashiyama Machiya
+          - Kichi Kichi reservation confirmed for Nov 26
+          - Remind Alice about macOS Obsidian .zip export check
+
+  - file_name: Aurora_Build_Log.note
+    description: Standalone hardware rack temperature & wattage log.
+    pages:
+      - page_index: 0
+        page_id: P20261105190000AURBLD01
+        text_content: |-
+          Aurora Closet Rack Telemetry (Nov 5)
+          - Idle wattage: 28W at wall (TrueNAS Scale 24.10, 4x12TB RAIDZ1)
+          - Drive temps: 33C-35C under scrub
+          - Supernote Cloud + Immich containers migrated cleanly
+
+  - file_name: Packing_And_Flights.note
+    description: Quick travel logistics card for Kyoto trip.
+    pages:
+      - page_index: 0
+        page_id: P20261112180000PACK0001
+        text_content: |-
+          Kyoto Flights & Check-in Card
+          - JAL JL001 SFO->KIX Nov 24 12:30pm, return Dec 1
+          - Higashiyama Machiya (code from Maya)
+          - WireGuard VPN to Aurora verified
+
+  - file_name: Garden_Spring_Prep.note
+    description: Quick shopping list for spring garden irrigation.
+    pages:
+      - page_index: 0
+        page_id: P20261115090000GARDSP01
+        text_content: |-
+          Spring Drip Irrigation Shopping List
+          - Orbit B-hyve smart timer (link to Home Assistant on Aurora)
+          - 1/2" poly tubing + 1/4" emitter line + pressure regulator
+          - Seeds: Cherokee Purple tomatoes, Genovese basil
+
+  - file_name: Quick_Sketch_Scratchpad.note
+    description: Un-OCR'd drawing scratchpad (tests untranscribed file handling).
+    pages: []
+
+  - file_name: Blank_Meeting_Template.note
+    description: Un-OCR'd template notebook (tests untranscribed file handling).
+    pages: []
+
+tasks:
+  - task_id: task-aurora-ups
+    title: Order CyberPower 1000VA UPS for Aurora Home Server
+    detail: Install UPS in hallway closet before migrating Immich
+    status: completed
+    importance: high
+  - task_id: task-aurora-backup
+    title: Configure restic offsite backup to Backblaze B2 on Aurora
+    detail: Daily encrypted snapshot of Supernote and Immich datasets
+    status: needsAction
+    importance: high
+  - task_id: task-q4-release
+    title: Ship Q4 Cloud Release v0.28
+    detail: Final QA with Alice, Bob, and Maya by Nov 22
+    status: needsAction
+    importance: high
+  - task_id: task-q4-obsidian
+    title: Verify Obsidian .zip export on macOS
+    detail: Assigned to Alice before v0.28 tag
+    status: completed
+    importance: normal
+  - task_id: task-kyoto-esim
+    title: Activate Japan eSIM for Kyoto Autumn Trip
+    detail: Confirm WireGuard VPN back to Aurora works over cellular
+    status: needsAction
+    importance: normal
+  - task_id: task-kyoto-machiya
+    title: Confirm Higashiyama Machiya check-in code with Maya
+    detail: Replaced Gion Ryokan booking
+    status: completed
+    importance: normal
+  - task_id: task-dentist-dec
+    title: Dentist cleaning with Dr. Kim
+    detail: Dec 8 at 10:00am
+    status: needsAction
+    importance: low
+  - task_id: task-garden-drip
+    title: Order Orbit B-hyve drip irrigation timer for raised beds
+    detail: Connect to Home Assistant on Aurora before May
+    status: needsAction
+    importance: low
+
+expectations:
+  concepts:
+    - name: Aurora Home Server
+      kind: project
+      keywords: [aurora, truenas, home server]
+    - name: Kyoto Autumn Trip
+      kind: project
+      keywords: [kyoto, higashiyama, japan]
+    - name: Q4 Cloud Release
+      kind: project
+      keywords: [q4, v0.28, cloud release, roadmap]
+    - name: Alice
+      kind: entity
+      keywords: [alice]
+    - name: Maya
+      kind: entity
+      keywords: [maya]
+    - name: Bob
+      kind: entity
+      keywords: [bob]
+    - name: Strength Training
+      kind: topic
+      keywords: [strength, deadlift, squat, lifting]
+    - name: Reading Notes
+      kind: topic
+      keywords: [reading, kleppmann, don norman, everyday things]
+    - name: Garden
+      kind: topic
+      keywords: [garden, compost, garlic, drip irrigation]
+  facts:
+    - name: Aurora switched to TrueNAS Scale
+      keywords: [truenas]
+    - name: Aurora upgraded to 64GB ECC RAM
+      keywords: [64gb]
+    - name: Q4 Cloud Release moved to Nov 22
+      keywords: [nov 22, november 22]
+    - name: Kyoto lodging switched to Higashiyama Machiya
+      keywords: [higashiyama]
+    - name: Hybrid search p95 reached 118ms
+      keywords: [118ms]
+    - name: Aurora idle power draw 28W
+      keywords: [28w]

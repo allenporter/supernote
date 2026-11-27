@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import os
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -125,7 +126,16 @@ def test_add_parser() -> None:
     )
     assert parsed.type == "ocr"
     assert parsed.file_id == 123
+    assert parsed.cascade is False
     assert parsed.func == reprocess
+
+    parsed_custom = parser.parse_args(
+        ["admin", "reprocess", "--type", "CUSTOM_STAGE", "--cascade", "--file-id", "7"]
+    )
+    assert parsed_custom.type == "CUSTOM_STAGE"
+    assert parsed_custom.cascade is True
+    assert parsed_custom.file_id == 7
+    assert parsed_custom.func == reprocess
 
     parsed = parser.parse_args(
         [
@@ -242,14 +252,16 @@ def test_admin_url_flag_overrides_cached_url(
 
 
 def test_reset_password_mismatch(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     args = argparse.Namespace(
         url="http://localhost:8080", email="user@example.com", password=None
     )
     prompts = iter(["pass1", "pass2"])
-    monkeypatch.setattr("getpass.getpass", lambda *_: next(prompts))
-    with pytest.raises(SystemExit) as exc_info:
+    with (
+        patch("getpass.getpass", lambda *_: next(prompts)),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         reset_password(args)
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
@@ -328,6 +340,7 @@ async def test_reprocess_success(
     async with cli_env.session_manager.session() as session:
         session.add(
             SystemTaskDO(
+                user_id=1,
                 file_id=42,
                 task_type="SUMMARY_GENERATION",
                 key="global",
@@ -452,6 +465,7 @@ async def test_list_tasks_cli(
     async with cli_env.session_manager.session() as session:
         session.add(
             SystemTaskDO(
+                user_id=1,
                 file_id=42,
                 task_type="OCR_EXTRACTION",
                 key="page_1",

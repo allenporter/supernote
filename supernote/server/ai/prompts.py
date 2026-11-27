@@ -23,6 +23,7 @@ __all__ = [
     "PageMetadata",
     "SummaryResponse",
     "SummarySegment",
+    "format_image_ocr_prompt",
     "format_ocr_prompt",
     "format_summary_prompt",
     "get_summary_json_schema",
@@ -147,6 +148,20 @@ def format_ocr_prompt(
         return f"{metadata_block}\n\n{prompt}"
     clause = _VOCABULARY_CLAUSE.format(terms=", ".join(terms))
     return f"{metadata_block}\n\n{prompt}\n\n{clause}"
+
+
+def format_image_ocr_prompt(
+    page_metadata: PageMetadata,
+    *,
+    custom_type: str | None = None,
+    prompt_loader: PromptLoader = PROMPT_LOADER,
+) -> str:
+    """Format the transcription and visual-description prompt for a standalone image."""
+    prompt = prompt_loader.get_prompt(
+        PromptId.IMAGE_TRANSCRIPTION, custom_type=custom_type
+    )
+    header = f"Image Filename: {page_metadata.file_name or 'image'}"
+    return f"{header}\n\n{prompt}"
 
 
 def format_summary_prompt(

@@ -5,7 +5,9 @@
  * - `#/files` and `#/files/<dirId>`
  * - `#/file/<fileId>` and `#/file/<fileId>?page=<1-based>`
  * - `#/recycle`
+ * - `#/digests`
  * - `#/tasks`
+ * - `#/settings`
  * - `#/system`
  * - `#/login?return_to=...` (OAuth 2.1 `/login-bridge` consent handoff)
  *
@@ -88,11 +90,26 @@ export function parseUrlHash(hashString) {
     if (parts[0] === 'system') {
         return { tab: 'system', view: 'grid', dirId: '0', showSystem: true };
     }
+    if (parts[0] === 'digests') {
+        return { tab: 'digests', view: 'grid', dirId: '0', showSystem: false };
+    }
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
     }
+    if (parts[0] === 'wiki') {
+        return {
+            tab: 'wiki',
+            view: 'grid',
+            dirId: '0',
+            wikiSlug: parts.slice(1).join('/'),
+            showSystem: false,
+        };
+    }
     if (parts[0] === 'recycle') {
         return { tab: 'files', view: 'recycle', dirId: '0', showSystem: false };
+    }
+    if (parts[0] === 'settings') {
+        return { tab: 'settings', view: 'grid', dirId: '0', showSystem: false };
     }
     if (parts[0] === 'file' && parts[1]) {
         return {
@@ -114,16 +131,34 @@ export function parseUrlHash(hashString) {
  * @param {string | number | null} dirId
  * @param {string} viewState
  * @param {{ id?: string | number } | null} fileObj
- * @param {boolean} [showSystem=false]
+ * @param {boolean | 'settings' | 'system'} [showSystem=false]
  * @param {number | null} [pageIndex=null]
+ * @param {string} [wikiSlug='']
  * @returns {string}
  */
-export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false, pageIndex = null) {
+export function buildUrlHash(
+    tab,
+    dirId,
+    viewState,
+    fileObj,
+    showSystem = false,
+    pageIndex = null,
+    wikiSlug = '',
+) {
+    if (showSystem === 'settings' || tab === 'settings') {
+        return '#/settings';
+    }
     if (showSystem || tab === 'system') {
         return '#/system';
     }
+    if (tab === 'digests') {
+        return '#/digests';
+    }
     if (tab === 'tasks') {
         return '#/tasks';
+    }
+    if (tab === 'wiki') {
+        return wikiSlug ? `#/wiki/${wikiSlug}` : '#/wiki';
     }
     if (viewState === 'recycle') {
         return '#/recycle';
@@ -150,6 +185,7 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
  * @param {import('vue').Ref<string[]>} options.selectedIds
  * @param {(() => void) | null} [options.onOAuthRouteEnter=null]
  * @param {(() => void) | null} [options.onOAuthRouteClear=null]
+ * @param {(tab: string) => boolean} [options.isTabAvailable] Whether a host tab's backing server component is running; unavailable tabs route to Files.
  */
 export function useRouter({
     isLoggedIn,
@@ -160,9 +196,11 @@ export function useRouter({
     selectedIds,
     onOAuthRouteEnter = null,
     onOAuthRouteClear = null,
+    isTabAvailable = () => true,
 }) {
-    const activeTab = ref('files'); // 'files' | 'tasks'
-    const view = ref('grid'); // 'grid' | 'viewer'
+    const activeTab = ref('files'); // 'files' | 'digests' | 'tasks' | 'wiki'
+    const selectedWikiSlug = ref('');
+    const view = ref('grid'); // 'grid' | 'viewer' | 'recycle'
     /** @type {import('vue').Ref<FileItem | null>} */
     const selectedFile = ref(null);
     /** @type {import('vue').Ref<number | null>} */
@@ -171,6 +209,8 @@ export function useRouter({
     /** @type {import('vue').Ref<BreadcrumbItem[]>} */
     const breadcrumbs = ref([{ id: '0', name: 'Cloud' }]);
     const showSystemPanel = ref(false);
+    /** @type {import('vue').Ref<'access' | 'system'>} */
+    const settingsModalTab = ref('access');
     /** @type {import('vue').Ref<OAuthBridgeRequest | null>} */
     const pendingOAuthRequest = ref(null);
 
@@ -195,9 +235,11 @@ export function useRouter({
         recycleOpenedFromHistory = false;
         systemOpenedFromHistory = false;
         activeTab.value = 'files';
+        selectedWikiSlug.value = '';
         resetViewerSelection();
         breadcrumbs.value = [{ id: '0', name: 'Cloud' }];
         showSystemPanel.value = false;
+        settingsModalTab.value = 'access';
     }
 
     /**
@@ -230,13 +272,19 @@ export function useRouter({
 
     function updateUrl(replace = false) {
         if (!isLoggedIn.value || pendingOAuthRequest.value) return;
+        const modalRoute = showSystemPanel.value
+            ? settingsModalTab.value === 'access'
+                ? 'settings'
+                : 'system'
+            : false;
         const targetHash = buildUrlHash(
             activeTab.value,
             currentDirectoryId.value,
             view.value,
             selectedFile.value,
-            showSystemPanel.value,
+            modalRoute,
             selectedPageIndex.value,
+            selectedWikiSlug.value,
         );
         lastSyncedHash = targetHash;
         if (window.location.hash !== targetHash) {
@@ -252,11 +300,13 @@ export function useRouter({
     /**
      * @param {boolean} isInitial
      * @param {number} seq
+     * @param {'access' | 'system'} [section='system']
      */
-    async function restoreSystemView(isInitial, seq) {
+    async function restoreSystemView(isInitial, seq, section = 'system') {
+        settingsModalTab.value = section;
         showSystemPanel.value = true;
         resetViewerSelection();
-        if (activeTab.value === 'system') {
+        if (activeTab.value === 'system' || activeTab.value === 'settings') {
             activeTab.value = 'files';
         }
         const targetDirId = String(currentDirectoryId.value || '0');
@@ -423,14 +473,31 @@ export function useRouter({
         const parsed = parseUrlHash(isStaleLoginHash ? '#/files' : rawHash);
 
         if (parsed.tab === 'system' || parsed.showSystem) {
-            await restoreSystemView(isInitial, seq);
+            await restoreSystemView(isInitial, seq, 'system');
+            return;
+        }
+        if (parsed.tab === 'settings') {
+            await restoreSystemView(isInitial, seq, 'access');
             return;
         }
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
 
-        if (parsed.tab === 'tasks') {
-            activeTab.value = 'tasks';
+        const isOptionalTab =
+            parsed.tab === 'digests' || parsed.tab === 'tasks' || parsed.tab === 'wiki';
+        if (isOptionalTab && !isTabAvailable(parsed.tab)) {
+            lastSyncedHash = '#/files';
+            window.history.replaceState(null, '', '#/files');
+            activeTab.value = 'files';
+            viewerOpenedFromHistory = false;
+            await restoreDirectoryState('0', isInitial, seq);
+            return;
+        }
+        if (isOptionalTab) {
+            activeTab.value = parsed.tab;
+            if (parsed.tab === 'wiki') {
+                selectedWikiSlug.value = parsed.wikiSlug || '';
+            }
             resetViewerSelection();
             viewerOpenedFromHistory = false;
             return;
@@ -469,9 +536,12 @@ export function useRouter({
     }
 
     /**
-     * @param {'files' | 'tasks'} tab
+     * @param {'files' | 'digests' | 'tasks' | 'wiki'} tab
      */
     async function switchTab(tab) {
+        if (!isTabAvailable(tab)) {
+            tab = 'files';
+        }
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
         activeTab.value = tab;
@@ -486,6 +556,17 @@ export function useRouter({
             );
         } else {
             updateUrl();
+        }
+    }
+
+    /**
+     * @param {string} slug
+     * @param {boolean} [replace=false]
+     */
+    function navigateToWikiSlug(slug, replace = false) {
+        selectedWikiSlug.value = slug || '';
+        if (activeTab.value === 'wiki' && !showSystemPanel.value) {
+            updateUrl(replace);
         }
     }
 
@@ -519,10 +600,29 @@ export function useRouter({
         );
     }
 
-    function openSystemPanel() {
+    /**
+     * @param {'access' | 'system'} [section='access']
+     */
+    function openSettingsPanel(section = 'access') {
+        settingsModalTab.value = section === 'system' ? 'system' : 'access';
         systemOpenedFromHistory = true;
         showSystemPanel.value = true;
         updateUrl();
+    }
+
+    function openSystemPanel() {
+        openSettingsPanel('system');
+    }
+
+    /**
+     * @param {'access' | 'system'} section
+     */
+    function setSettingsModalTab(section) {
+        const nextSection = section === 'system' ? 'system' : 'access';
+        if (settingsModalTab.value === nextSection && showSystemPanel.value) return;
+        settingsModalTab.value = nextSection;
+        showSystemPanel.value = true;
+        updateUrl(true);
     }
 
     async function closeSystemPanel() {
@@ -588,6 +688,7 @@ export function useRouter({
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
         activeTab.value = 'files';
+        selectedWikiSlug.value = '';
         resetViewerSelection();
         viewerOpenedFromHistory = false;
         currentDirectoryId.value = String(target.id);
@@ -605,7 +706,9 @@ export function useRouter({
     async function openItem(item) {
         if (!item) return;
         const replaceModalHistory = systemOpenedFromHistory && inAppHistoryDepth > 0;
-        const wasSystemUrl = window.location.hash.startsWith('#/system');
+        const wasSystemUrl =
+            window.location.hash.startsWith('#/system') ||
+            window.location.hash.startsWith('#/settings');
 
         if (item.isDirectory) {
             const targetId = String(item.id);
@@ -696,20 +799,25 @@ export function useRouter({
 
     return {
         activeTab,
+        selectedWikiSlug,
         view,
         selectedFile,
         selectedPageIndex,
         selectedPageJumpSeq,
         breadcrumbs,
         showSystemPanel,
+        settingsModalTab,
         pendingOAuthRequest,
         syncFromUrl,
         updateUrl,
         clearOAuthRoute,
         switchTab,
+        navigateToWikiSlug,
         openRecycleBin,
         closeRecycleBin,
+        openSettingsPanel,
         openSystemPanel,
+        setSettingsModalTab,
         closeSystemPanel,
         closeViewer,
         handleViewerPageChange,

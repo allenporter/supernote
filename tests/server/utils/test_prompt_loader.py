@@ -85,3 +85,18 @@ def test_reload_prompts(mock_resources_dir: Path, tmp_path: Path) -> None:
 
     loader.configure(new_prompts_dir)
     assert loader.get_prompt(PromptId.SUMMARY_GENERATION) == "New Summary"
+
+
+@pytest.mark.parametrize(
+    ("prompt_id", "expected_marker"),
+    [
+        (PromptId.WIKI_COMPILE, "WikiCompilePlan"),
+        (PromptId.WIKI_CONFLICT, "WikiConflictResolution"),
+        (PromptId.WIKI_LINT, "WikiLintReport"),
+    ],
+)
+def test_builtin_wiki_prompts_load(prompt_id: PromptId, expected_marker: str) -> None:
+    """Built-in default wiki prompts load cleanly via `PromptLoader`."""
+    loader = PromptLoader()
+    text = loader.get_prompt(prompt_id)
+    assert expected_marker in text

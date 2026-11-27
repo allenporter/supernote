@@ -458,6 +458,16 @@ class ScheduleService:
     ) -> ScheduleTaskDO | None:
         """Update a task."""
         updates = {k: v for k, v in kwargs.items() if k in TASK_ALLOWED_UPDATE_FIELDS}
+        if (
+            isinstance(title := updates.get("title"), str)
+            and len(title) > MAX_TITLE_LENGTH
+        ):
+            raise ValueError("Title is too long")
+        if (
+            isinstance(detail := updates.get("detail"), str)
+            and len(detail) > MAX_DETAIL_LENGTH
+        ):
+            raise ValueError("Detail is too long")
         if (target_group_id := updates.get("task_list_id")) is not None:
             if not target_group_id or not await self.get_group(
                 user_id, target_group_id

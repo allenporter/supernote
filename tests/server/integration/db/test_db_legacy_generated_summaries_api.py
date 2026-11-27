@@ -14,20 +14,25 @@ from supernote.client.client import Client
 from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.summary import QuerySummaryDTO
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.app import create_app
+from supernote.server.components.conversion.processor import (
+    PngConversionModule,
+)
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.note_metadata.processor import NoteMetadataModule
+from supernote.server.components.processor import ProcessorService
+from supernote.server.components.processor.page_hashing import PageHashingModule
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY
+from supernote.server.components.summary.processor import SummaryModule
+from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.migrations import run_migrations
 from supernote.server.keys import (
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
     SESSION_MANAGER_KEY,
-    SUMMARY_SERVICE_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.processor import ProcessorService
-from supernote.server.services.processor_modules.page_hashing import PageHashingModule
-from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.utils.paths import get_ai_summaries_group_id, get_summary_id
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent.parent / "fixtures"
@@ -140,10 +145,12 @@ async def test_migrated_legacy_generated_summaries_api_query(tmp_path: Path) -> 
             event_bus=app[EVENT_BUS_KEY],
             session_manager=app[SESSION_MANAGER_KEY],
             file_service=app[FILE_SERVICE_KEY],
-            summary_service=app[SUMMARY_SERVICE_KEY],
         )
         processor.register_modules(
             hashing=PageHashingModule(app[FILE_SERVICE_KEY]),
+            metadata=NoteMetadataModule(app[FILE_SERVICE_KEY]),
+            png=PngConversionModule(app[FILE_SERVICE_KEY]),
+            ocr=OcrModule(app[FILE_SERVICE_KEY], ocr_model=None),
             summary=SummaryModule(
                 app[FILE_SERVICE_KEY], app[SUMMARY_SERVICE_KEY], fake_summary_model
             ),

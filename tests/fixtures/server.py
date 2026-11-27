@@ -37,10 +37,15 @@ if TYPE_CHECKING:
 
     from supernote.client.admin import AdminClient
     from supernote.client.client import Client
+    from supernote.client.config import ConfigClient
     from supernote.client.device import DeviceClient
+    from supernote.client.events import EventsClient
+    from supernote.client.extended import ExtendedClient
     from supernote.client.login_client import LoginClient
+    from supernote.client.schedule import ScheduleClient
     from supernote.client.summary import SummaryClient
     from supernote.client.web import WebClient
+    from supernote.client.wiki import WikiClient
     from supernote.server.config import ServerConfig
     from supernote.server.db.session import DatabaseSessionManager
     from supernote.server.services.blob import BlobStorage
@@ -200,6 +205,24 @@ async def test_user_id(
 ) -> int:
     """Return the database ID assigned to the default test user."""
     return await user_service.get_user_id(TEST_USERNAME)
+
+
+@pytest.fixture
+async def admin_user_id(
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> int:
+    """Promote the default test user to admin and return its database ID."""
+    from sqlalchemy import update  # noqa: PLC0415
+
+    from supernote.server.db.models.user import UserDO  # noqa: PLC0415
+
+    async with session_manager.session() as session:
+        await session.execute(
+            update(UserDO).where(UserDO.id == test_user_id).values(is_admin=True)
+        )
+        await session.commit()
+    return test_user_id
 
 
 @pytest.fixture(name="auth_headers")
@@ -384,10 +407,14 @@ def web_client(authenticated_client: Client) -> Generator[WebClient]:
 
 
 @pytest.fixture
-def admin_client(authenticated_client: Client) -> AdminClient:
-    """Create an AdminClient."""
+def admin_client(
+    authenticated_client: Client,
+    admin_user_id: int,
+) -> AdminClient:
+    """Create an AdminClient authenticated as an admin user."""
     from supernote.client.admin import AdminClient  # noqa: PLC0415
 
+    _ = admin_user_id
     return AdminClient(authenticated_client)
 
 
@@ -408,3 +435,43 @@ def summary_client(authenticated_client: Client) -> SummaryClient:
     from supernote.client.summary import SummaryClient  # noqa: PLC0415
 
     return SummaryClient(authenticated_client)
+
+
+@pytest.fixture
+def extended_client(authenticated_client: Client) -> ExtendedClient:
+    """Create an authenticated ExtendedClient against the test server."""
+    from supernote.client.extended import ExtendedClient  # noqa: PLC0415
+
+    return ExtendedClient(authenticated_client)
+
+
+@pytest.fixture
+def schedule_client(authenticated_client: Client) -> ScheduleClient:
+    """Create an authenticated ScheduleClient against the test server."""
+    from supernote.client.schedule import ScheduleClient  # noqa: PLC0415
+
+    return ScheduleClient(authenticated_client)
+
+
+@pytest.fixture
+def config_client(authenticated_client: Client) -> ConfigClient:
+    """Create an authenticated ConfigClient against the test server."""
+    from supernote.client.config import ConfigClient  # noqa: PLC0415
+
+    return ConfigClient(authenticated_client)
+
+
+@pytest.fixture
+def events_client(authenticated_client: Client) -> EventsClient:
+    """Create an authenticated EventsClient against the test server."""
+    from supernote.client.events import EventsClient  # noqa: PLC0415
+
+    return EventsClient(authenticated_client)
+
+
+@pytest.fixture
+def wiki_client(authenticated_client: Client) -> WikiClient:
+    """Create an authenticated WikiClient against the test server."""
+    from supernote.client.wiki import WikiClient  # noqa: PLC0415
+
+    return WikiClient(authenticated_client)

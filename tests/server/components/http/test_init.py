@@ -9,12 +9,12 @@ from aiohttp import web
 
 from supernote.server.components.http import (
     HTTP_REGISTRAR_KEY,
-    HttpComponent,
     HttpRegistrar,
     jwt_auth_middleware,
 )
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
 from supernote.server.trace import trace_middleware
+from tests.server.components.conftest import LoadComponents
 
 
 def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
@@ -26,7 +26,9 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     async def inner_mw(request: web.Request, handler: Any) -> web.StreamResponse:
         return await handler(request)
 
-    registrar = HttpRegistrar()
+    app = web.Application()
+    registrar = HttpRegistrar(app.router)
+    assert registrar.router is app.router
     registrar.add_middleware(outer_mw, pre_auth=True)
     registrar.add_middleware(inner_mw)
     registrar.add_public_prefix("/socket.io")
@@ -46,7 +48,6 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     assert registrar.public_resources == (resource,)
     assert registrar.known_resource_paths == frozenset({"/authorize", "/token"})
 
-    app = web.Application()
     registrar.apply_to_app(app)
     # mount_resources is idempotent on repeat calls
     registrar.mount_resources(app)
@@ -59,18 +60,38 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     ]
 
 
-async def test_http_component_lifecycle(component_core: ServerCore) -> None:
-    component = HttpComponent()
+async def test_http_component_lifecycle(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    loader = await load_components("http")
+    component = loader.get("http")
     assert isinstance(component, Component)
     assert component.domain == "http"
     assert component.dependencies == ()
     assert component.platforms == ()
 
-    loader = ComponentLoader()
-    loader.register(component)
+    registrar = component_core.app[HTTP_REGISTRAR_KEY]
+    assert isinstance(registrar, HttpRegistrar)
+    assert registrar.router is component_core.app.router
 
-    await loader.async_setup_all(component_core, {})
-    assert isinstance(component_core.app[HTTP_REGISTRAR_KEY], HttpRegistrar)
-
-    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)
+
+
+async def test_http_component_proxy_modes_and_validation(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    await load_components(
+        "http",
+        configs={"http": {"proxy_mode": "strict", "trusted_proxies": ["10.0.0.1"]}},
+        start=False,
+    )
+    assert len(component_core.app.middlewares) >= 1
+
+    with pytest.raises(ValueError, match="http.proxy_mode must be one of"):
+        await load_components(
+            "http",
+            configs={"http": {"proxy_mode": "invalid"}},
+            start=False,
+        )

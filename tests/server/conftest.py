@@ -13,15 +13,15 @@ from unittest.mock import patch
 import pytest
 
 import supernote.server.db.models  # noqa: F401
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.summary import SummaryService
 from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 
 
@@ -51,11 +51,18 @@ def patch_run_migrations() -> Generator[None]:
 
 
 @pytest.fixture
+def event_bus() -> LocalEventBus:
+    """Provide a shared LocalEventBus for server service and component tests."""
+    return LocalEventBus()
+
+
+@pytest.fixture
 def file_service(
     storage_root: Path,
     blob_storage: BlobStorage,
     user_service: UserService,
     session_manager: DatabaseSessionManager,
+    event_bus: LocalEventBus,
 ) -> FileService:
     """Provide a FileService wired to the test storage and session manager."""
     return FileService(
@@ -63,7 +70,7 @@ def file_service(
         blob_storage=blob_storage,
         user_service=user_service,
         session_manager=session_manager,
-        event_bus=LocalEventBus(),
+        event_bus=event_bus,
     )
 
 

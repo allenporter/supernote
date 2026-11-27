@@ -16,14 +16,13 @@ Live priorities and active tracks are organized in **[ROADMAP.md](../ROADMAP.md)
 
 ### Testing
 
-This project uses `pytest` and `pytest-asyncio` for testing.
+This project uses `pytest` and `pytest-asyncio` with Home Assistant–style component testing norms:
 
-- **Framework**: Use `pytest`.
-- **Async**: We use async auto mode.
-- **Fixtures**: Common fixtures are defined in `tests/conftest.py`.
-- **Structure**:
-    - **Model Tests**: Unit tests for data models (serialization).
-    - **API Tests**: Functional tests for endpoints.
+- **High-level boundaries first**: Exercise HTTP routes through the typed async SDK clients (`DeviceClient`, `WebClient`, `ExtendedClient`, `AdminClient`, `SummaryClient`, `ScheduleClient`, `EventsClient`, `WikiClient`, `ConfigClient`), MCP tools through `mcp_session` + `call_mcp_tool`, and server components through the `load_components` fixture.
+- **Fakes over mocks**: Prefer the real in-process SQLite `session_manager`, `LocalBlobStorage`, `LocalEventBus`, and `fake_ai` providers over `unittest.mock`; reserve mocks for external SDK boundaries, env/clock control, and targeted fault injection.
+- **Async auto mode**: `pyproject.toml` configures `asyncio_mode = "auto"`, so write plain `async def test_...():` functions without `@pytest.mark.asyncio`.
+- **Shared fixtures**: Server and typed-client harness fixtures live in `tests/fixtures/server.py`, core service fixtures in `tests/server/conftest.py`, and component/MCP harness fixtures in `tests/server/components/conftest.py`.
+- **Structure**: Mirror component modules 1:1 (`supernote/server/components/<domain>/<module>.py` ↔ `tests/server/components/<domain>/test_<module>.py`).
 
 ### Typing & Data Models
 
@@ -33,9 +32,9 @@ This project uses `pytest` and `pytest-asyncio` for testing.
 
 ### Server Architecture
 
-- **Routes**: `supernote/server/routes/` - keep handlers thin.
-- **Services**: `supernote/server/services/` - contain business logic.
-- **Dependency Injection**: Services are injected into route handlers.
+The server is built around a concrete core host (`ServerCore` in `supernote/server/core.py`) for device sync, VFS, auth, and SQLite coordination, plus 23 lazy-loaded vertical components under `supernote/server/components/<domain>/` registered in `BUILTIN_COMPONENTS`. Each component declares its dependencies and platform modules (`http.py`, `mcp.py`, `processor.py`, `ocr.py`, `summary.py`, `embedding.py`, `text.py`) so disabled domains are never imported.
+
+See the [Server Component Catalog](./architecture/components.md), [ADR 0001](./architecture/adr/0001-server-core-component-architecture.md), and [Server & Sync Protocol Architecture](./architecture/server_architecture.md) before adding routes, services, or new components.
 
 ---
 

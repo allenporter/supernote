@@ -38,14 +38,14 @@ repos:
         entry: biome check --write --error-on-warnings supernote/server/static/js tests/frontend
         language: node
         additional_dependencies:
-          - "@biomejs/biome@2.6.8"
+          - "@biomejs/biome@2.6.9"
         files: '^(biome\.json|supernote/server/static/js/.*\.(js|d\.ts)|tests/frontend/.*\.mjs)$'
         pass_filenames: false
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3
     hooks:
       - id: codespell
-        exclude: '^evals/ocr/(dataset\.yaml|results/.*\.json)$'
+        exclude: '^evals/(ocr|search)/(dataset\.yaml|results/.*\.json)$'
         args:
           - --ignore-words-list=folde,linkprotocal
   - repo: https://github.com/adrienverge/yamllint.git

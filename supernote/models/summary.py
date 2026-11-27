@@ -32,10 +32,12 @@ from .base import BaseResponse, BooleanEnum
 class SummaryItem(DataClassJSONMixin):
     """A Summary instance representing content derived from a source file (e.g., OCR, user notes)."""
 
-    id: int | None = None
+    id: int | None = field(metadata=field_options(serialize=str), default=None)
     """Internal database ID."""
 
-    file_id: int | None = field(metadata=field_options(alias="fileId"), default=None)
+    file_id: int | None = field(
+        metadata=field_options(alias="fileId", serialize=str), default=None
+    )
     """The numeric ID of the source file in the cloud storage."""
 
     name: str | None = None
@@ -148,7 +150,7 @@ class SummaryItem(DataClassJSONMixin):
 class SummaryTagItem(DataClassJSONMixin):
     """Summary tag metadata."""
 
-    id: int | None = None
+    id: int | None = field(metadata=field_options(serialize=str), default=None)
     """Internal database ID."""
 
     name: str | None = None
@@ -179,7 +181,7 @@ class SummaryInfoItem(DataClassJSONMixin):
     clients to compare MD5 hashes before downloading full content.
     """
 
-    id: int | None = None
+    id: int | None = field(metadata=field_options(serialize=str), default=None)
     """Internal database ID."""
 
     user_id: int | None = field(metadata=field_options(alias="userId"), default=None)
@@ -235,7 +237,7 @@ class AddSummaryTagVO(BaseResponse):
         /api/file/add/summary/tag (POST)
     """
 
-    id: int | None = None
+    id: int | None = field(metadata=field_options(serialize=str), default=None)
     """ID of the newly created tag."""
 
 
@@ -328,7 +330,7 @@ class AddSummaryGroupVO(BaseResponse):
         /api/file/add/summary/group (POST)
     """
 
-    id: int | None = None
+    id: int | None = field(metadata=field_options(serialize=str), default=None)
     """ID of the newly created summary group."""
 
 
@@ -554,7 +556,7 @@ class AddSummaryVO(BaseResponse):
         /api/file/add/summary (POST)
     """
 
-    id: int | None = None
+    id: int | None = field(metadata=field_options(serialize=str), default=None)
     """ID of the newly created summary."""
 
 
@@ -765,6 +767,8 @@ class DownloadSummaryDTO(DataClassJSONMixin):
 
     Used by:
         /api/file/download/summary (POST)
+        /api/extended/file/summary/to/pdf (POST)
+        /api/extended/file/summary/to/png (POST)
     """
 
     id: int

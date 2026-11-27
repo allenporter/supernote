@@ -564,8 +564,9 @@ class PdfDTO(DataClassJSONMixin):
 class PdfVO(BaseResponse):
     """Response model for PDF conversion.
 
-    This is used by the following POST endpoint:
+    This is used by the following POST endpoints:
         /api/file/note/to/pdf
+        /api/extended/file/summary/to/pdf
     """
 
     url: str | None = None
@@ -600,8 +601,9 @@ class PngPageVO(DataClassJSONMixin):
 class PngVO(BaseResponse):
     """Response model for PNG conversion.
 
-    This is used by the following POST endpoint:
+    This is used by the following POST endpoints:
         /api/file/note/to/png
+        /api/extended/file/summary/to/png
     """
 
     png_page_vo_list: list[PngPageVO] = field(

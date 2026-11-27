@@ -34,7 +34,12 @@ from supernote.models.schedule import (
     UpdateScheduleTaskListDTO,
     UpdateScheduleTaskVO,
 )
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import (
+    HttpRegistrar,
+    parse_dict_dto,
+    parse_json_dto,
+    parse_json_object,
+)
 from supernote.server.core import ServerCore
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
@@ -90,8 +95,7 @@ def _extract_task_updates(
 @routes.post("/api/file/schedule/group")
 async def create_group(request: web.Request) -> web.Response:
     try:
-        data = await request.json()
-        dto = AddScheduleTaskGroupDTO.from_dict(data)
+        dto = await parse_json_dto(request, AddScheduleTaskGroupDTO)
         if not dto.title:
             raise SupernoteError("Title required", status_code=400)
 
@@ -122,8 +126,7 @@ async def create_group(request: web.Request) -> web.Response:
 @routes.put("/api/file/schedule/group")
 async def update_group(request: web.Request) -> web.Response:
     try:
-        data = await request.json()
-        dto = UpdateScheduleTaskGroupDTO.from_dict(data)
+        dto = await parse_json_dto(request, UpdateScheduleTaskGroupDTO)
         if not dto.task_list_id or not dto.title:
             raise SupernoteError("Missing required fields", status_code=400)
 
@@ -200,8 +203,7 @@ async def get_group(request: web.Request) -> web.Response:
 @routes.post("/api/file/schedule/group/clear")
 async def clear_group(request: web.Request) -> web.Response:
     try:
-        data = await request.json()
-        dto = ClearScheduleTaskGroupDTO.from_dict(data)
+        dto = await parse_json_dto(request, ClearScheduleTaskGroupDTO)
         if not dto.task_list_id:
             raise SupernoteError("Missing taskListId", status_code=400)
 
@@ -250,8 +252,7 @@ async def list_groups(request: web.Request) -> web.Response:
 @routes.post("/api/file/schedule/task")
 async def create_task(request: web.Request) -> web.Response:
     try:
-        data = await request.json()
-        dto = AddScheduleTaskDTO.from_dict(data)
+        dto = await parse_json_dto(request, AddScheduleTaskDTO)
 
         if not dto.title:
             raise SupernoteError("Title is required", status_code=400)
@@ -299,8 +300,8 @@ async def create_task(request: web.Request) -> web.Response:
 @routes.put("/api/file/schedule/task")
 async def update_task(request: web.Request) -> web.Response:
     try:
-        data = await request.json()
-        dto = UpdateScheduleTaskDTO.from_dict(data)
+        data = await parse_json_object(request)
+        dto = parse_dict_dto(UpdateScheduleTaskDTO, data)
         if not dto.task_id:
             raise SupernoteError("Missing taskId", status_code=400)
 
@@ -308,9 +309,7 @@ async def update_task(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app[SCHEDULE_SERVICE_KEY]
         user_id = await request.app[USER_SERVICE_KEY].get_user_id(user)
 
-        updates = _extract_task_updates(
-            dto, raw_data=data if isinstance(data, dict) else None
-        )
+        updates = _extract_task_updates(dto, raw_data=data)
         if not (
             updated_task := await schedule_service.update_task(
                 user_id, dto.task_id, **updates
@@ -332,16 +331,14 @@ async def update_task(request: web.Request) -> web.Response:
 @routes.put("/api/file/schedule/task/list")
 async def batch_update_task_list(request: web.Request) -> web.Response:
     try:
-        data = await request.json()
-        dto = UpdateScheduleTaskListDTO.from_dict(data)
+        data = await parse_json_object(request)
+        dto = parse_dict_dto(UpdateScheduleTaskListDTO, data)
 
         user = request[REQUEST_USER_KEY]
         schedule_service: ScheduleService = request.app[SCHEDULE_SERVICE_KEY]
         user_id = await request.app[USER_SERVICE_KEY].get_user_id(user)
 
-        raw_items = (
-            data.get("updateScheduleTaskList") if isinstance(data, dict) else None
-        )
+        raw_items = data.get("updateScheduleTaskList")
         updates_list: list[dict[str, Any]] = []
         for idx, item in enumerate(dto.update_schedule_task_list):
             if item.task_id:
@@ -440,11 +437,7 @@ async def get_task(request: web.Request) -> web.Response:
 @routes.post("/api/file/schedule/task/all")
 async def list_tasks(request: web.Request) -> web.Response:
     try:
-        try:
-            data = await request.json()
-        except Exception:
-            data = {}
-        dto = ScheduleTaskDTO.from_dict(data)
+        dto = await parse_json_dto(request, ScheduleTaskDTO, allow_empty=True)
         group_id = dto.task_list_id or None
 
         user = request[REQUEST_USER_KEY]
@@ -551,6 +544,5 @@ async def get_schedule_feed_ics(request: web.Request) -> web.Response:
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
-    """Register schedule task CRUD and `.ics` feed routes on ``core.app``."""
-    _ = registrar
-    core.app.add_routes(routes)
+    """Register schedule task CRUD and `.ics` feed routes on ``registrar.router``."""
+    registrar.router.add_routes(routes)

@@ -205,15 +205,40 @@ export async function login(email, password) {
 }
 
 /**
+ * Resolve the client named in a pending `/login-bridge` request from its Client ID
+ * Metadata Document, including the redirect URI a decision will be sent to.
+ * @param {string} clientId
+ * @param {string} redirectUri The requested redirect URI, or '' when omitted.
+ * @returns {Promise<OAuthBridgeClient>}
+ */
+export async function fetchOAuthBridgeClient(clientId, redirectUri) {
+    const params = new URLSearchParams({ client_id: clientId });
+    if (redirectUri) params.set('redirect_uri', redirectUri);
+    const data = await apiRequest(`/login-bridge/client?${params}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        reloadOnUnauthorized: false,
+        errorPrefix: 'Could not verify the client',
+    });
+    return {
+        clientName: String(data.client_name),
+        clientHost: String(data.client_host),
+        redirectUri: String(data.redirect_uri),
+    };
+}
+
+/**
  * Submit an OAuth 2.1 consent decision (`approve` or `deny`) to `/login-bridge`
- * and return the authorized redirect URL.
+ * and return the authorized redirect URL. The server refuses the decision if the
+ * client's redirect URI no longer matches the one the user was shown.
  * @param {string} bridgePathWithQuery
  * @param {'approve' | 'deny'} decision
+ * @param {string} [redirectUri] Redirect URI shown on the consent card.
  * @returns {Promise<string>}
  */
-export async function submitOAuthBridgeDecision(bridgePathWithQuery, decision) {
+export async function submitOAuthBridgeDecision(bridgePathWithQuery, decision, redirectUri) {
     const data = await apiRequest(bridgePathWithQuery, {
-        body: { decision },
+        body: redirectUri ? { decision, redirect_uri: redirectUri } : { decision },
         headers: { Accept: 'application/json' },
         reloadOnUnauthorized: false,
         errorPrefix: 'Authorization failed',
@@ -419,7 +444,7 @@ export async function searchFiles(keyword) {
 }
 
 /**
- * Perform semantic vector search across notebook embeddings.
+ * Perform hybrid keyword and semantic vector search across notebook pages.
  * @param {string} query
  * @param {number} [topN=5]
  * @returns {Promise<SemanticSearchMatch[]>}
@@ -435,20 +460,22 @@ export async function searchSemantic(query, topN = 5) {
         const fileId = String(r.fileId ?? r.file_id ?? '');
         const fileName = String(r.fileName ?? r.file_name ?? `Notebook ${fileId}`);
         const pageIndex =
-            typeof r.pageIndex === 'number'
+            typeof r.pageIndex === 'number' && Number.isFinite(r.pageIndex)
                 ? r.pageIndex
-                : typeof r.page_index === 'number'
+                : typeof r.page_index === 'number' && Number.isFinite(r.page_index)
                   ? r.page_index
                   : 0;
+        const score = typeof r.score === 'number' && Number.isFinite(r.score) ? r.score : 0;
         const extension = getFileExtension(fileName) || 'note';
         return {
-            key: String(r.pageId ?? r.page_id ?? `${fileId}-${pageIndex}-${idx}`),
+            key: `${fileId}-${pageIndex}-${idx}`,
             fileId,
             fileName,
             extension,
             pageIndex,
             pageNumber: pageIndex + 1,
-            score: typeof r.score === 'number' ? r.score : 0,
+            score,
+            matchPercent: Math.max(0, Math.min(100, Math.round(score * 100))),
             textPreview: String(r.textPreview ?? r.text_preview ?? ''),
             date: r.date || null,
         };
@@ -500,6 +527,39 @@ export async function fetchSystemTasks() {
         errorPrefix: 'Failed to fetch system tasks',
     });
     return Array.isArray(data?.tasks) ? data.tasks : [];
+}
+
+/**
+ * Fetch system tasks alongside live queue state (`paused`, `queueSize`, `processingFileIds`).
+ * @returns {Promise<SystemQueueOverview>}
+ */
+export async function fetchSystemQueueOverview() {
+    const data = await apiRequest('/api/extended/system/tasks', {
+        method: 'GET',
+        errorPrefix: 'Failed to fetch system tasks',
+    });
+    return {
+        tasks: Array.isArray(data?.tasks) ? data.tasks : [],
+        paused: Boolean(data?.paused),
+        queueSize: typeof data?.queueSize === 'number' ? data.queueSize : 0,
+        processingFileIds: Array.isArray(data?.processingFileIds)
+            ? data.processingFileIds.map(String)
+            : [],
+    };
+}
+
+/**
+ * Retry failed processing tasks for a specific notebook (`fileId`) or all failed notebooks (`null`).
+ * @param {string | number | null} [fileId=null]
+ * @returns {Promise<string[]>}
+ */
+export async function retryFailedSystemTasks(fileId = null) {
+    const body = fileId !== null && fileId !== undefined ? { fileId: String(fileId) } : {};
+    const data = await apiRequest('/api/extended/system/tasks/retry', {
+        body,
+        errorPrefix: 'Failed to retry tasks',
+    });
+    return Array.isArray(data?.retriedFileIds) ? data.retriedFileIds.map(String) : [];
 }
 
 /**
@@ -819,4 +879,149 @@ export function fetchNoteMetadata(fileId) {
         body: { fileId: String(fileId) },
         fallbackValue: null,
     });
+}
+
+/**
+ * List MCP OAuth clients the user has authorized.
+ * @returns {Promise<OAuthGrant[]>}
+ */
+export async function fetchOAuthGrants() {
+    const data = await apiRequest('/api/extended/oauth/grants', {
+        method: 'GET',
+        errorPrefix: 'Failed to load connected clients',
+    });
+    return Array.isArray(data?.grants) ? data.grants : [];
+}
+
+/**
+ * Disconnect an MCP OAuth client, ending its access and refresh tokens.
+ * @param {string} grantId
+ * @returns {Promise<void>}
+ */
+export async function revokeOAuthGrant(grantId) {
+    await apiRequest(`/api/extended/oauth/grants/${encodeURIComponent(grantId)}`, {
+        method: 'DELETE',
+        errorPrefix: 'Failed to disconnect client',
+    });
+}
+
+/**
+ * List the user's static Bearer API keys.
+ * @returns {Promise<ApiKeyInfo[]>}
+ */
+export async function fetchApiKeys() {
+    const data = await apiRequest('/api/extended/keys', {
+        method: 'GET',
+        errorPrefix: 'Failed to load API keys',
+    });
+    return Array.isArray(data?.keys) ? data.keys : [];
+}
+
+/**
+ * Create a static Bearer API key. The raw `key` is only ever returned here.
+ * @param {string} name
+ * @param {number | null} [expiresInDays=null]
+ * @returns {Promise<CreatedApiKey>}
+ */
+export async function createApiKey(name, expiresInDays = null) {
+    const data = await apiRequest('/api/extended/keys', {
+        body: { name, expiresInDays },
+        errorPrefix: 'Failed to create API key',
+    });
+    return {
+        id: data.id,
+        name: data.name,
+        key: data.key,
+        createdAt: data.createdAt,
+        expiresAt: data.expiresAt ?? null,
+    };
+}
+
+/**
+ * Revoke a static Bearer API key.
+ * @param {string} keyId
+ * @returns {Promise<void>}
+ */
+export async function revokeApiKey(keyId) {
+    await apiRequest(`/api/extended/keys/${encodeURIComponent(keyId)}`, {
+        method: 'DELETE',
+        errorPrefix: 'Failed to revoke API key',
+    });
+}
+
+/**
+ * @param {Record<string, any>} raw
+ * @returns {SystemComponentStatus}
+ */
+function mapSystemComponentStatus(raw) {
+    return {
+        domain: String(raw?.domain || ''),
+        enabled: Boolean(raw?.enabled),
+        running: Boolean(raw?.running),
+        source: raw?.source || 'default',
+        readOnly: Boolean(raw?.readOnly),
+        runtimeConfigurable: Boolean(raw?.runtimeConfigurable),
+        restartRequired: Boolean(raw?.restartRequired),
+        config: raw?.config && typeof raw.config === 'object' ? raw.config : {},
+        fields: Array.isArray(raw?.fields)
+            ? raw.fields.map((f) => ({
+                  name: String(f?.name || ''),
+                  type: f?.type || 'string',
+                  default: f?.default,
+              }))
+            : [],
+    };
+}
+
+/**
+ * Fetch the domains of built-in server components currently running.
+ * Returns `null` when the server cannot report them (older server, error
+ * response, expired session, or network failure) so callers treat every
+ * feature as available.
+ * @returns {Promise<string[] | null>}
+ */
+export async function fetchServerFeatures() {
+    try {
+        const data = await apiRequest('/api/extended/system/features', {
+            method: 'GET',
+            fallbackValue: null,
+        });
+        return Array.isArray(data?.runningComponents) ? data.runningComponents.map(String) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Fetch built-in component configuration statuses (Admin only; returns `[]` for non-admins on 403).
+ * @returns {Promise<SystemComponentStatus[]>}
+ */
+export async function fetchSystemComponents() {
+    try {
+        const data = await apiRequest('/api/extended/system/components', {
+            method: 'GET',
+            errorPrefix: 'Failed to load server components',
+        });
+        return Array.isArray(data?.components) ? data.components.map(mapSystemComponentStatus) : [];
+    } catch (e) {
+        if (e instanceof ApiError && e.status === 403) {
+            return [];
+        }
+        throw e;
+    }
+}
+
+/**
+ * Update and persist configuration for a built-in server component (Admin only).
+ * @param {string} domain
+ * @param {Record<string, unknown>} config
+ * @returns {Promise<SystemComponentStatus>}
+ */
+export async function updateSystemComponent(domain, config) {
+    const data = await apiRequest(`/api/extended/system/components/${encodeURIComponent(domain)}`, {
+        method: 'PUT',
+        body: { config },
+        errorPrefix: `Failed to update component '${domain}'`,
+    });
+    return mapSystemComponentStatus(data?.component || {});
 }

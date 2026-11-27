@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import logging
 from collections.abc import AsyncGenerator, Callable
 
 import aiohttp
@@ -34,6 +35,7 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.server.app import create_app
+from supernote.server.components.events import EVENT_LOG_SERVICE_KEY
 from supernote.server.components.schedule import (
     SCHEDULE_SERVICE_KEY,
     ScheduleService,
@@ -42,6 +44,7 @@ from supernote.server.components.socketio import (
     SOCKETIO_MANAGER_KEY,
     SocketIOServerManager,
 )
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY, SummaryService
 from supernote.server.config import ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.events import (
@@ -50,16 +53,12 @@ from supernote.server.events import (
 )
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
-    CONFIG_KEY,
     EVENT_BUS_KEY,
-    EVENT_LOG_SERVICE_KEY,
     FILE_SERVICE_KEY,
-    SUMMARY_SERVICE_KEY,
     USER_SERVICE_KEY,
 )
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import JWT_ALGORITHM, UserService
 from supernote.server.socket_auth import compute_handshake_signature
 
@@ -109,7 +108,6 @@ def socket_client(
     return create_socket_client()
 
 
-@pytest.mark.asyncio
 async def test_socketio_ping_pong(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -128,7 +126,6 @@ async def test_socketio_ping_pong(
     assert not socket_client.is_connected
 
 
-@pytest.mark.asyncio
 async def test_socketio_status_heartbeat(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -151,7 +148,6 @@ def additional_users() -> list[str]:
     return ["a@example.com"]
 
 
-@pytest.mark.asyncio
 async def test_socketio_multi_user_message_isolation(
     socketio_server: TestServer,
     create_socket_client: Callable[[], SupernoteSocketClient],
@@ -214,7 +210,6 @@ async def test_socketio_multi_user_message_isolation(
     await client_b.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_connect_unauthorized(
     socket_client: SupernoteSocketClient,
 ) -> None:
@@ -231,7 +226,6 @@ async def test_socketio_connect_unauthorized(
     assert not socket_client.is_connected
 
 
-@pytest.mark.asyncio
 async def test_socketio_connect_invalid_token(
     socket_client: SupernoteSocketClient,
     server_config: ServerConfig,
@@ -257,7 +251,6 @@ async def test_socketio_connect_invalid_token(
     assert not socket_client.is_connected
 
 
-@pytest.mark.asyncio
 async def test_socketio_client_received_ack(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -277,7 +270,6 @@ async def test_socketio_client_received_ack(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_client_messages_async_iterator(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -365,7 +357,6 @@ async def test_socketio_client_messages_async_iterator(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_revoked_session_disconnected_on_heartbeat_and_send(
     socketio_server: TestServer,
     create_socket_client: Callable[[], SupernoteSocketClient],
@@ -418,7 +409,6 @@ async def test_socketio_revoked_session_disconnected_on_heartbeat_and_send(
     await client_send.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_schedule_service_events_publish_task_syn(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -606,15 +596,12 @@ async def test_socketio_schedule_service_events_publish_task_syn(
     )
 
     # Standalone manager without event_bus initializes cleanly
-    standalone_manager = SocketIOServerManager(
-        socketio_server.app[CONFIG_KEY], user_service, event_bus=None
-    )
+    standalone_manager = SocketIOServerManager(user_service, event_bus=None)
     assert standalone_manager.event_bus is None
 
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_summary_service_events_publish_digest_syn(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -929,7 +916,6 @@ async def test_socketio_summary_service_events_publish_digest_syn(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_file_service_events_publish_file_syn(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -1329,7 +1315,6 @@ async def test_socketio_file_service_events_publish_file_syn(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_eio3_device_handshake_and_ping_compat(
     socketio_server: TestServer,
 ) -> None:
@@ -1408,7 +1393,6 @@ async def test_socketio_eio3_device_handshake_and_ping_compat(
             assert "token verification failed" in err_frame2
 
 
-@pytest.mark.asyncio
 async def test_socketio_client_channels_and_error_handling_via_server(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
@@ -1484,7 +1468,6 @@ async def test_socketio_client_channels_and_error_handling_via_server(
     await socket_client.disconnect()
 
 
-@pytest.mark.asyncio
 async def test_socketio_ratta_ping_without_payload(
     socketio_server: TestServer,
 ) -> None:
@@ -1518,7 +1501,6 @@ async def test_socketio_ratta_ping_without_payload(
             assert await ws.receive_str() == '42["ServerMessage","true"]'
 
 
-@pytest.mark.asyncio
 async def test_socketio_domain_event_recorded_emits_cursor_hint(
     socketio_server: TestServer,
 ) -> None:
@@ -1557,3 +1539,37 @@ async def test_socketio_domain_event_recorded_emits_cursor_hint(
             assert frame.startswith('42["event_log_cursor",')
             assert f'"seq":"{recorded.seq}"' in frame
             assert '"relatedFileId":"999"' in frame
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        pytest.param({}, id="no-upgrade-headers"),
+        # This is the exact case that returned 500 with AttributeError on main.
+        pytest.param(
+            {"Upgrade": "websocket", "Connection": "keep-alive"},
+            id="upgrade-without-connection",
+        ),
+    ],
+)
+async def test_socketio_invalid_websocket_upgrade_returns_400(
+    socketio_server: TestServer,
+    caplog: pytest.LogCaptureFixture,
+    headers: dict[str, str],
+) -> None:
+    """An unusable WebSocket upgrade is rejected with 400 and a warning."""
+    caplog.set_level(logging.WARNING)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            socketio_server.make_url("/socket.io/?EIO=4&transport=websocket"),
+            headers=headers,
+        ) as resp:
+            assert resp.status == 400
+            body = await resp.text()
+    assert "Upgrade" in body
+    assert any(
+        "WebSocket upgrade rejected" in record.message for record in caplog.records
+    )
+    # No orphaned session may be left behind.
+    manager = socketio_server.app[SOCKETIO_MANAGER_KEY]
+    assert not manager.sio.eio.sockets

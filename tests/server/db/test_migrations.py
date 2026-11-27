@@ -1,12 +1,14 @@
-import asyncio
 import hashlib
 import shutil
+import sqlite3
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import MetaData, create_engine, text
+from sqlalchemy import MetaData, create_engine, event, text
+from sqlalchemy.engine import Engine
 
 from supernote.server.config import ServerConfig
 from supernote.server.db.base import Base
@@ -20,59 +22,68 @@ from tests.server.db.models.test_init import (
 pytestmark = pytest.mark.filterwarnings("error::sqlalchemy.exc.SAWarning")
 
 
-@pytest.fixture
-def alembic_config() -> Config:
-    """Return the alembic config object."""
-    # Locate alembic.ini in the supernote package
-    # We assume the test is running in a dev environment where files exist on disk
+def _build_alembic_config() -> Config:
+    """Create a fresh Alembic Config pointing at ``supernote/alembic.ini``."""
     base_dir = Path(__file__).parent.parent.parent.parent
     ini_path = base_dir / "supernote" / "alembic.ini"
     if not ini_path.exists():
-        # Fallback if structure is different (e.g. installed package)
-        # But for dev tests, verify path
         pytest.fail(f"Could not find alembic.ini at {ini_path}")
 
-    return Config(str(ini_path))
+    cfg = Config(str(ini_path))
+    # Skip logging.config.fileConfig() in alembic/env.py on every test migration run.
+    cfg.set_main_option("skip_logging_config", "true")
+    return cfg
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _fast_sqlite_pragmas() -> Generator[None]:
+    """Disable fsyncs and keep temp tables in RAM for ephemeral migration test DBs."""
+
+    def _on_connect(dbapi_conn: object, _connection_record: object) -> None:
+        if isinstance(dbapi_conn, sqlite3.Connection):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA synchronous=OFF")
+            cursor.execute("PRAGMA temp_store=MEMORY")
+            cursor.close()
+
+    event.listen(Engine, "connect", _on_connect)
+    try:
+        yield
+    finally:
+        event.remove(Engine, "connect", _on_connect)
 
 
 @pytest.fixture
-async def migrated_db(tmp_path: Path, alembic_config: Config) -> str:
-    """Copy the golden fixture to a temp file, run migrations, and return the DB URL."""
-    # 1. Locate fixture
+def alembic_config() -> Config:
+    """Return the alembic config object."""
+    return _build_alembic_config()
+
+
+@pytest.fixture(scope="module")
+def _migrated_db_template(
+    tmp_path_factory: pytest.TempPathFactory,
+    _fast_sqlite_pragmas: None,
+) -> Path:
+    """Migrate the v1 golden fixture to head once per module for fast per-test copies."""
     fixture_path = Path("tests/fixtures/db_v1.sqlite").absolute()
     if not fixture_path.exists():
         pytest.fail(f"Fixture not found: {fixture_path}")
 
-    # 2. Copy to tmp_path
-    # specific fix for macOS /private/var symlinks
-    tmp_path = tmp_path.resolve()
-    db_path = tmp_path / "supernote.db"
+    db_dir = tmp_path_factory.mktemp("migrated_db_template").resolve()
+    db_path = db_dir / "supernote.db"
     shutil.copy(fixture_path, db_path)
 
-    # 3. Configure Alembic to use this DB
-    # We use a sync driver for the migration step to avoid async complexities in the thread
-    # and to bypass any potential aiosqlite path issues on macOS.
-    migration_db_url = f"sqlite:///{db_path}"
-    print(f"DEBUG: Migration URL: {migration_db_url}")
+    cfg = _build_alembic_config()
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    command.upgrade(cfg, "head")
+    return db_path
 
-    # We need to set the main option in the config object
-    # NOT in the file.
-    alembic_config.set_main_option("sqlalchemy.url", migration_db_url)
 
-    # 4. Run upgrade head
-    # upgrading involves async operations if we were using async engine directly
-    # but alembic commands are synchronous wrappers usually.
-    # However, our env.py uses async_engine_from_config which needs an event loop.
-    # Since we are in an async test, we need to be careful.
-    # The standard Alembic command is blocking.
-    # Let's run it in a thread to be safe and avoid event loop conflicts if any.
-
-    await asyncio.to_thread(command.upgrade, alembic_config, "head")
-
-    if not db_path.exists():
-        pytest.fail("DB file disappeared after migration!")
-
-    # Return the sync URL for the test to use
+@pytest.fixture
+def migrated_db(tmp_path: Path, _migrated_db_template: Path) -> str:
+    """Copy the module-migrated golden DB to ``tmp_path`` and return its sync URL."""
+    db_path = tmp_path.resolve() / "supernote.db"
+    shutil.copy(_migrated_db_template, db_path)
     return f"sqlite:///{db_path}"
 
 
@@ -86,7 +97,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "b5c6d7e8f9a0"
+        assert version == "c9d0e1f2a3b4"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +193,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "b5c6d7e8f9a0"
+        assert version == "c9d0e1f2a3b4"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -860,8 +871,8 @@ def test_add_user_event_log_table_migration(
             text(
                 "INSERT INTO f_user_event "
                 "(user_id, seq, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
-                "VALUES (1, 100, 1000, 'vfs.created', 'user:web', 'file', '10', '{}'), "
-                "       (2, 100, 1000, 'vfs.created', 'user:web', 'file', '20', '{}')"
+                "VALUES (1, 100, 1000, 'file.created', 'user:web', 'file', '10', '{}'), "
+                "       (2, 100, 1000, 'file.created', 'user:web', 'file', '20', '{}')"
             )
         )
         count = conn.execute(text("SELECT count(*) FROM f_user_event")).scalar_one()
@@ -1120,4 +1131,194 @@ def test_add_previous_text_migration_upgrade_and_downgrade(
             ).fetchall()
         }
         assert "previous_text" not in cols_down
+    engine.dispose()
+
+
+def test_oauth_grants_migration_moves_refresh_tokens_out_of_key_values(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify c7d8e9f0a1b2 turns live refresh tokens into grants and drops plaintext tokens."""
+    db_path = tmp_path / "oauth_grants_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "b5c6d7e8f9a0")
+
+    future = 4102444800  # 2100-01-01
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES (202, 'grantowner@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '0', 0)"
+            )
+        )
+        tokens = {
+            "mcp:refresh_token:rt_by_id": '{"user_id": 202, "client_id": "https://a.example.com/", "scopes": ["supernote:all"], "expires_at": %d}'
+            % future,
+            "mcp:refresh_token:rt_by_email": '{"user_id": "grantowner@example.com", "client_id": "https://b.example.com/", "scopes": ["supernote:all"], "expires_at": %d}'
+            % future,
+            "mcp:refresh_token:rt_expired": '{"user_id": 202, "client_id": "https://c.example.com/", "scopes": [], "expires_at": 1}',
+            "mcp:refresh_token:rt_unknown_user": '{"user_id": 999, "client_id": "https://d.example.com/", "scopes": [], "expires_at": %d}'
+            % future,
+            "mcp:refresh_token:rt_bad": "{not-json",
+            "mcp:refresh_token:rt_list": "[]",
+            "mcp:refresh_token:rt_bad_expiry": '{"user_id": 202, "client_id": "https://e.example.com/", "expires_at": "soon"}',
+            "mcp:refresh_token:rt_bad_scopes": '{"user_id": 202, "client_id": "https://f.example.com/", "scopes": "supernote:all", "expires_at": %d}'
+            % future,
+            "mcp:access_token:at_live": '{"user_id": 202, "client_id": "https://a.example.com/"}',
+            "mcp:auth_code:code_kept": "{}",
+        }
+        for key, value in tokens.items():
+            conn.execute(
+                text("INSERT INTO key_values (key, value, expiry) VALUES (:k, :v, :e)"),
+                {"k": key, "v": value, "e": future},
+            )
+
+    command.upgrade(alembic_config, "c7d8e9f0a1b2")
+
+    with engine.connect() as conn:
+        grants = conn.execute(
+            text(
+                "SELECT user_id, client_id, scopes, refresh_token_hash, access_token_hash, expires_at "
+                "FROM oauth_grants ORDER BY client_id"
+            )
+        ).fetchall()
+        keys = [r[0] for r in conn.execute(text("SELECT key FROM key_values"))]
+    assert [tuple(g) for g in grants] == [
+        (
+            202,
+            "https://a.example.com/",
+            "supernote:all",
+            hashlib.sha256(b"rt_by_id").hexdigest(),
+            None,
+            future,
+        ),
+        (
+            202,
+            "https://b.example.com/",
+            "supernote:all",
+            hashlib.sha256(b"rt_by_email").hexdigest(),
+            None,
+            future,
+        ),
+    ]
+    assert keys == ["mcp:auth_code:code_kept"]
+
+    command.downgrade(alembic_config, "b5c6d7e8f9a0")
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "oauth_grants" not in reflected.tables
+    engine.dispose()
+
+
+def test_add_wiki_tables_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
+    """Verify d8e9f0a1b2c3 creates all seven `f_wiki_*` tables and cleanly drops them on downgrade."""
+    db_path = tmp_path / "test_wiki_migration.db"
+    db_url = f"sqlite:///{db_path}"
+
+    alembic_config = Config()
+    alembic_config.set_main_option("script_location", "supernote/alembic")
+    alembic_config.set_main_option("sqlalchemy.url", db_url)
+
+    wiki_tables = {
+        "f_wiki_page",
+        "f_wiki_revision",
+        "f_wiki_alias",
+        "f_wiki_link",
+        "f_wiki_source_ref",
+        "f_wiki_checkpoint",
+        "f_wiki_lint_issue",
+    }
+
+    command.upgrade(alembic_config, "c7d8e9f0a1b2")
+    engine = create_engine(db_url)
+    before = MetaData()
+    before.reflect(bind=engine)
+    assert wiki_tables.isdisjoint(before.tables)
+
+    command.upgrade(alembic_config, "d8e9f0a1b2c3")
+    upgraded = MetaData()
+    upgraded.reflect(bind=engine)
+    assert wiki_tables.issubset(upgraded.tables)
+
+    command.downgrade(alembic_config, "c7d8e9f0a1b2")
+    downgraded = MetaData()
+    downgraded.reflect(bind=engine)
+    assert wiki_tables.isdisjoint(downgraded.tables)
+    engine.dispose()
+
+
+def test_add_user_id_to_system_task_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify e9f0a1b2c3d4 backfills user_id from f_user_file, drops orphans, and downgrades."""
+    db_file = tmp_path / "system_task_user_id.db"
+    db_url = f"sqlite:///{db_file}"
+    alembic_config.set_main_option("sqlalchemy.url", db_url)
+    command.upgrade(alembic_config, "d8e9f0a1b2c3")
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES (10, 'u10@example.com', 'hash', 1, '0', 0), "
+                "(20, 'u20@example.com', 'hash', 1, '0', 0)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_user_file (id, user_id, directory_id, file_name, is_folder, size, is_active, create_time, update_time) "
+                "VALUES (1001, 10, 0, 'a.note', 'N', 10, 'Y', 1000, 1000), "
+                "(2002, 20, 0, 'b.note', 'N', 10, 'Y', 1000, 1000)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_system_task (id, file_id, task_type, key, status, retry_count, create_time, update_time) "
+                "VALUES (1, 1001, 'HASHING', 'global', 'COMPLETED', 0, 1000, 1000), "
+                "(2, 2002, 'OCR', 'page_p1', 'FAILED', 1, 1000, 1000), "
+                "(3, 9999, 'HASHING', 'global', 'PENDING', 0, 1000, 1000)"
+            )
+        )
+
+    command.upgrade(alembic_config, "e9f0a1b2c3d4")
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, user_id, file_id, task_type, key, status "
+                "FROM f_system_task ORDER BY id"
+            )
+        ).fetchall()
+    assert [tuple(r) for r in rows] == [
+        (1, 10, 1001, "HASHING", "global", "COMPLETED"),
+        (2, 20, 2002, "OCR", "page_p1", "FAILED"),
+    ]
+
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    table = reflected.tables["f_system_task"]
+    assert {col.name for col in table.primary_key.columns} == {"user_id", "id"}
+    assert not table.c["user_id"].nullable
+    uq_cols = {
+        tuple(c.name for c in con.columns)
+        for con in table.constraints
+        if con.name == "uq_system_task"
+    }
+    assert uq_cols == {("user_id", "file_id", "task_type", "key")}
+
+    command.downgrade(alembic_config, "d8e9f0a1b2c3")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    table_down = reflected_down.tables["f_system_task"]
+    assert "user_id" not in table_down.c
+    assert {col.name for col in table_down.primary_key.columns} == {"id"}
+    uq_cols_down = {
+        tuple(c.name for c in con.columns)
+        for con in table_down.constraints
+        if con.name == "uq_system_task"
+    }
+    assert uq_cols_down == {("file_id", "task_type", "key")}
     engine.dispose()

@@ -10,6 +10,7 @@ import {
     searchFiles,
 } from '../api/client.js';
 import { useCanvasScrollSync } from '../composables/useCanvasScrollSync.js';
+import { isComponentRunning } from '../composables/useServerFeatures.js';
 import { showToast } from '../composables/useToast.js';
 import { getErrorMessage, getFileExtension } from '../utils/format.js';
 import {
@@ -50,6 +51,9 @@ export default {
         const downloading = ref(false);
 
         const activeRightTab = ref('transcription'); // 'transcription' | 'insights'
+        const transcriptEnabled = computed(() => isComponentRunning('transcript'));
+        const summariesEnabled = computed(() => isComponentRunning('summary'));
+        const previewsEnabled = computed(() => isComponentRunning('conversion'));
         const isMobileSidePanelOpen = ref(false);
         /** @type {import('vue').Ref<TranscriptPage[]>} */
         const transcriptPages = ref([]);
@@ -288,9 +292,11 @@ export default {
             isLoadingTranscript.value = true;
             /** @type {[TranscriptPage[], NoteSummary[], NoteMetadata | null]} */
             const [pagesData, summariesData, metaData] = await Promise.all([
-                fetchTranscript(id).catch(() => []),
-                fetchSummaries(id).catch(() => []),
-                fetchNoteMetadata(id).catch(() => null),
+                transcriptEnabled.value ? fetchTranscript(id).catch(() => []) : [],
+                summariesEnabled.value ? fetchSummaries(id).catch(() => []) : [],
+                isComponentRunning('note_metadata')
+                    ? fetchNoteMetadata(id).catch(() => null)
+                    : null,
             ]);
             if (seq !== activeLoadSeq) return false;
 
@@ -326,14 +332,21 @@ export default {
             const category = fileCategory.value;
 
             try {
-                if (category === 'note') {
+                if (category === 'note' && previewsEnabled.value) {
                     const pngPages = await convertNoteToPng(props.file.id);
                     if (seq !== activeLoadSeq) return;
                     pages.value = pngPages;
                 } else if (category === 'image') {
-                    const signedUrl = await fetchDownloadUrl(props.file.id);
+                    isLoadingTranscript.value = true;
+                    const [signedUrl, pagesData] = await Promise.all([
+                        fetchDownloadUrl(props.file.id),
+                        transcriptEnabled.value
+                            ? fetchTranscript(String(props.file.id)).catch(() => [])
+                            : [],
+                    ]);
                     if (seq !== activeLoadSeq) return;
                     previewUrl.value = signedUrl;
+                    transcriptPages.value = pagesData;
                 } else if (category === 'pdf') {
                     const signedUrl = await fetchDownloadUrl(props.file.id);
                     if (seq !== activeLoadSeq) return;
@@ -372,7 +385,9 @@ export default {
                     const applied = await fetchAndApplyNoteInsights(props.file.id, seq);
                     if (!applied) return;
                     activeRightTab.value =
-                        displayTranscriptPages.value.length === 0 && realSummaries.value.length > 0
+                        summariesEnabled.value &&
+                        displayTranscriptPages.value.length === 0 &&
+                        realSummaries.value.length > 0
                             ? 'insights'
                             : 'transcription';
                 } else {
@@ -408,6 +423,24 @@ export default {
 
         const refreshInsights = async () => {
             if (!props.file) return;
+            if (fileCategory.value === 'image') {
+                if (!transcriptEnabled.value) return;
+                const seq = activeLoadSeq;
+                isLoadingTranscript.value = true;
+                try {
+                    const pagesData = await fetchTranscript(String(props.file.id));
+                    if (seq === activeLoadSeq) {
+                        transcriptPages.value = pagesData;
+                    }
+                } catch {
+                    // Preserve any already-rendered image analysis on transient refresh failure.
+                } finally {
+                    if (seq === activeLoadSeq) {
+                        isLoadingTranscript.value = false;
+                    }
+                }
+                return;
+            }
             if (fileCategory.value !== 'note') {
                 transcriptPages.value = [];
                 realSummaries.value = [];
@@ -452,11 +485,13 @@ export default {
         onMounted(() => {
             window.addEventListener('supernote:digest-sync', handleDigestSync);
             window.addEventListener('supernote:file-sync', handleFileSync);
-            fetchAiStatus()
-                .then((status) => {
-                    aiStatus.value = status;
-                })
-                .catch(() => {});
+            if (isComponentRunning('ai')) {
+                fetchAiStatus()
+                    .then((status) => {
+                        aiStatus.value = status;
+                    })
+                    .catch(() => {});
+            }
             loadFileContent();
         });
 
@@ -516,6 +551,9 @@ export default {
             handleDownload,
             isLoadingTranscript,
             activeRightTab,
+            transcriptEnabled,
+            summariesEnabled,
+            previewsEnabled,
             isMobileSidePanelOpen,
             transcriptPages,
             displayTranscriptPages,
@@ -584,7 +622,8 @@ export default {
                 <template v-else-if="fileCategory === 'note'">
                     <div v-if="pages.length === 0" class="bg-white border border-stone-200/90 rounded-2xl p-8 flex flex-col items-center justify-center text-center max-w-md mx-auto space-y-2 my-auto shadow-sm">
                         <p class="text-sm font-bold text-slate-900">No page previews available</p>
-                        <p class="text-xs text-stone-500 leading-relaxed">Page rendering may still be queued or disabled on this server. Check the panel on the right for transcripts and summaries.</p>
+                        <p v-if="!previewsEnabled" class="text-xs text-stone-500 leading-relaxed">Page rendering is disabled on this server. Download the file to view it on your device.</p>
+                        <p v-else class="text-xs text-stone-500 leading-relaxed">Page rendering may still be queued or disabled on this server. Check the panel on the right for transcripts and summaries.</p>
                     </div>
 
                     <div v-else class="w-full mx-auto space-y-6" :style="{ maxWidth: canvasMaxWidthPx + 'px' }">
@@ -629,6 +668,7 @@ export default {
                 v-if="showSidePanel"
                 ref="sidePanelRef"
                 :file-id="file?.id ?? null"
+                :file-category="fileCategory"
                 :is-open-mobile="isMobileSidePanelOpen"
                 :active-tab="activeRightTab"
                 :active-page-index="activePageIndex"
@@ -640,6 +680,8 @@ export default {
                 :links-by-page-index="linksByPageIndex"
                 :summaries="realSummaries"
                 :ai-status="aiStatus"
+                :transcript-enabled="transcriptEnabled"
+                :summaries-enabled="summariesEnabled"
                 @update:active-tab="activeRightTab = $event"
                 @close-mobile="isMobileSidePanelOpen = false"
                 @select-page="scrollToCanvasPage"

@@ -85,6 +85,16 @@ class SystemTaskVO(DataClassJSONMixin):
     )
     """Error message from the last failure, if any."""
 
+    file_name: str | None = field(
+        metadata=field_options(alias="fileName"), default=None
+    )
+    """Human-readable notebook filename resolved from UserFileDO."""
+
+    page_index: int | None = field(
+        metadata=field_options(alias="pageIndex"), default=None
+    )
+    """0-based page index resolved from NotePageContentDO for page-scoped tasks."""
+
     class Config(BaseConfig):
         serialize_by_alias = True
 
@@ -97,7 +107,58 @@ class SystemTaskListVO(BaseResponse):
     """
 
     tasks: list[SystemTaskVO] = field(default_factory=list)
-    """List of recent system tasks."""
+    """List of recent system tasks (active and failed prioritized first)."""
+
+    paused: bool = False
+    """Whether the background processing queue is currently paused."""
+
+    queue_size: int = field(metadata=field_options(alias="queueSize"), default=0)
+    """Number of active/queued files currently in flight for this user."""
+
+    processing_file_ids: list[int] = field(
+        metadata=field_options(
+            alias="processingFileIds", serialize=_serialize_str_list
+        ),
+        default_factory=list,
+    )
+    """IDs of files belonging to this user that are currently queued or processing."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class RetrySystemTasksDTO(DataClassJSONMixin):
+    """Request DTO for retrying failed processing tasks for a single file or all user files.
+
+    Used by: POST /api/extended/system/tasks/retry
+    """
+
+    file_id: int | None = field(
+        metadata=field_options(
+            alias="fileId",
+            serialize=lambda v: str(v) if v is not None else None,
+        ),
+        default=None,
+    )
+    """Optional notebook file ID to scope the retry to a single file."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class RetrySystemTasksVO(BaseResponse):
+    """Response VO for retrying failed processing tasks.
+
+    Used by: POST /api/extended/system/tasks/retry
+    """
+
+    retried_file_ids: list[int] = field(
+        metadata=field_options(alias="retriedFileIds", serialize=_serialize_str_list),
+        default_factory=list,
+    )
+    """IDs of active notebooks whose failed checkpoints were cleared and re-queued."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -296,6 +357,41 @@ class ApiKeyListResponseVO(BaseResponse):
 
 
 @dataclass
+class OAuthGrantVO(DataClassJSONMixin):
+    """VO representing an OAuth client the user has authorized.
+
+    Used by: GET /api/extended/oauth/grants
+    """
+
+    id: str
+    client_id: str = field(metadata=field_options(alias="clientId"))
+    """Client ID Metadata Document URL of the client that requested access."""
+
+    scopes: list[str]
+    created_at: int = field(metadata=field_options(alias="createdAt"))
+    expires_at: int = field(metadata=field_options(alias="expiresAt"))
+    last_used_at: int | None = field(
+        metadata=field_options(alias="lastUsedAt"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class OAuthGrantListResponseVO(BaseResponse):
+    """Response VO listing authorized OAuth clients.
+
+    Used by: GET /api/extended/oauth/grants
+    """
+
+    grants: list[OAuthGrantVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
 class WebNoteCoverRequestDTO(DataClassJSONMixin):
     """Request DTO for retrieving a single-page cover preview URL for a notebook."""
 
@@ -359,10 +455,24 @@ class WebNoteMetadataRequestDTO(DataClassJSONMixin):
 
 @dataclass
 class NoteTitleVO(DataClassJSONMixin):
-    """Heading/outline entry anchored to a notebook page."""
+    """Heading/outline entry anchored to a notebook page, in reading order."""
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
     level: int = 1
+    text: str | None = None
+    """Transcribed heading text, or `None` until transcription is available."""
+    style: str | None = None
+    """Raw `<TITLESTYLE>` code for the background the user picked on the device."""
+    rect: list[int] | None = None
+    """Title bounding box `[left, top, width, height]` in page pixels."""
+    bitmap_md5: str | None = field(
+        metadata=field_options(alias="bitmapMd5"), default=None
+    )
+    """MD5 of the title's handwriting bitmap; changes only when the title is redrawn."""
+    image_url: str | None = field(
+        metadata=field_options(alias="imageUrl"), default=None
+    )
+    """Signed URL of the title's handwriting crop PNG, or `None` if it has no bitmap."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

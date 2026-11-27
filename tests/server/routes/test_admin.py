@@ -14,8 +14,13 @@ from supernote.client.exceptions import (
     ForbiddenException,
     NotFoundException,
 )
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.processor import (
+    PROCESSOR_SERVICE_KEY,
+    ProcessorModule,
+    TaskScope,
+)
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
@@ -112,21 +117,16 @@ async def test_admin_list_users_permission(
 
 
 async def test_admin_create_user(
-    client: Client,
+    client: TestClient,
+    admin_api_client: AdminClient,
     admin_headers: dict[str, str],
 ) -> None:
     """Test admin creating a user."""
-
-    new_user = {
-        "email": "newbie@example.com",
-        "userName": "Newbie",
-        "password": hashlib.md5(b"password").hexdigest(),
-        "countryCode": "1",
-    }
-
-    # Admin creates user
-    resp = await client.post("/api/admin/users", json=new_user, headers=admin_headers)
-    assert resp.status == 200
+    await admin_api_client.admin_create_user(
+        email="newbie@example.com",
+        password=hashlib.md5(b"password").hexdigest(),
+        username="Newbie",
+    )
 
     # Verify user exists
     resp = await client.get("/api/admin/users", headers=admin_headers)
@@ -145,23 +145,15 @@ async def test_admin_clear_account(admin_client: AdminClient) -> None:
 
 
 async def test_admin_force_password_reset(
-    client: Client,
     session_manager: DatabaseSessionManager,
-    admin_headers: dict[str, str],
+    admin_api_client: AdminClient,
 ) -> None:
     """Test admin force-resetting a user's password."""
-    # 1. Reset user password
     target_email = "user@example.com"
     new_pw = hashlib.md5(b"reset123").hexdigest()
 
-    resp = await client.post(
-        "/api/admin/users/password",
-        json={"email": target_email, "password": new_pw},
-        headers=admin_headers,
-    )
-    assert resp.status == 200
+    await admin_api_client.admin_reset_password(target_email, new_pw)
 
-    # 2. Verify user can login with new password logic (simulated by checking DB)
     async with session_manager.session() as session:
         result = await session.execute(
             select(UserDO).where(UserDO.email == target_email)
@@ -172,66 +164,57 @@ async def test_admin_force_password_reset(
 
 
 async def test_admin_queue_control(
-    client: Client,
-    admin_headers: dict[str, str],
-    user_headers: dict[str, str],
+    admin_api_client: AdminClient,
+    user_api_client: AdminClient,
 ) -> None:
     """Test stopping, starting, and getting queue status."""
-    # 1. Access control tests
-    # Non-admin status get should fail
-    resp = await client.get("/api/admin/queue/status", headers=user_headers)
-    assert resp.status == 403
+    # 1. Access control tests: non-admin calls are forbidden
+    with pytest.raises(ForbiddenException):
+        await user_api_client.get_queue_status()
+    with pytest.raises(ForbiddenException):
+        await user_api_client.stop_queue()
+    with pytest.raises(ForbiddenException):
+        await user_api_client.start_queue()
 
-    # Non-admin stop should fail
-    resp = await client.post("/api/admin/queue/stop", headers=user_headers)
-    assert resp.status == 403
-
-    # Non-admin start should fail
-    resp = await client.post("/api/admin/queue/start", headers=user_headers)
-    assert resp.status == 403
-
-    # 2. Admin functionality tests
-    # Admin status should succeed, default should be running (paused=False)
-    resp = await client.get("/api/admin/queue/status", headers=admin_headers)
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["paused"] is False
-    assert data["queueSize"] == 0
-    assert data["processingFiles"] == []
+    # 2. Admin functionality tests: default should be running (paused=False)
+    status = await admin_api_client.get_queue_status()
+    assert status.paused is False
+    assert status.queue_size == 0
+    assert status.processing_files == []
 
     # Stop queue
-    resp = await client.post("/api/admin/queue/stop", headers=admin_headers)
-    assert resp.status == 200
-
-    # Status should now show paused
-    resp = await client.get("/api/admin/queue/status", headers=admin_headers)
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["paused"] is True
+    await admin_api_client.stop_queue()
+    status = await admin_api_client.get_queue_status()
+    assert status.paused is True
 
     # Start queue
-    resp = await client.post("/api/admin/queue/start", headers=admin_headers)
-    assert resp.status == 200
-
-    # Status should show running again
-    resp = await client.get("/api/admin/queue/status", headers=admin_headers)
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["paused"] is False
+    await admin_api_client.start_queue()
+    status = await admin_api_client.get_queue_status()
+    assert status.paused is False
 
 
 async def test_admin_reprocess(
     client: TestClient,
     session_manager: DatabaseSessionManager,
-    admin_headers: dict[str, str],
-    user_headers: dict[str, str],
+    admin_api_client: AdminClient,
+    user_api_client: AdminClient,
 ) -> None:
     """Test admin reprocess endpoint (permission and functionality)."""
-    # Insert a dummy SystemTaskDO
+    published_ids: list[int] = []
+
+    async def capture_updated(event: Event) -> None:
+        if isinstance(event, NoteUpdatedEvent):
+            published_ids.append(event.file_id)
+
+    assert client.app is not None
+    client.app[EVENT_BUS_KEY].subscribe(NoteUpdatedEvent, capture_updated)
+
+    # Insert an orphaned SystemTaskDO (no matching UserFileDO row)
     async with session_manager.session() as session:
         task = SystemTaskDO(
+            user_id=1,
             file_id=999,
-            task_type="SUMMARY_GENERATION",
+            task_type=TaskType.SUMMARY_GENERATION.value,
             key="global",
             status=ProcessingStatus.COMPLETED,
             update_time=12345,
@@ -240,22 +223,15 @@ async def test_admin_reprocess(
         await session.commit()
 
     # Non-admin should fail (403)
-    resp = await client.post(
-        "/api/admin/reprocess",
-        json={"task_type": "summary", "file_id": 999},
-        headers=user_headers,
-    )
-    assert resp.status == 403
+    with pytest.raises(ForbiddenException):
+        await user_api_client.admin_reprocess("summary", file_id=999)
 
-    # Admin should succeed (200)
-    resp = await client.post(
-        "/api/admin/reprocess",
-        json={"task_type": "summary", "file_id": 999},
-        headers=admin_headers,
-    )
-    assert resp.status == 200
+    # Admin should succeed, delete orphaned task, and NOT publish NoteUpdatedEvent
+    await admin_api_client.admin_reprocess("summary", file_id=999)
+    await asyncio.sleep(0)
+    assert 999 not in published_ids
 
-    # Verify task is deleted in DB
+    # Verify task is deleted in DB and no stray HASHING task was created
     async with session_manager.session() as session:
         result = await session.execute(
             select(SystemTaskDO).where(SystemTaskDO.file_id == 999)
@@ -264,12 +240,11 @@ async def test_admin_reprocess(
         assert len(tasks) == 0
 
     # Admin with invalid task type should fail (400)
-    resp = await client.post(
-        "/api/admin/reprocess",
-        json={"task_type": "invalid_type", "file_id": 999},
-        headers=admin_headers,
-    )
-    assert resp.status == 400
+    with pytest.raises(BadRequestException):
+        await admin_api_client.admin_reprocess("invalid_type", file_id=999)
+
+    # Pause background processing before triggering events for dummy active UserFileDO rows
+    await admin_api_client.stop_queue()
 
     # Global reprocess should only trigger active .note files, skipping soft-deleted notes
     async with session_manager.session() as session:
@@ -295,21 +270,12 @@ async def test_admin_reprocess(
         )
         await session.commit()
 
-    published_ids: list[int] = []
+    # Targeted reprocess on a soft-deleted file should not publish NoteUpdatedEvent
+    await admin_api_client.admin_reprocess("summary", file_id=8002)
+    await asyncio.sleep(0)
+    assert 8002 not in published_ids
 
-    async def capture_updated(event: Event) -> None:
-        if isinstance(event, NoteUpdatedEvent):
-            published_ids.append(event.file_id)
-
-    assert client.app is not None
-    client.app[EVENT_BUS_KEY].subscribe(NoteUpdatedEvent, capture_updated)
-
-    resp = await client.post(
-        "/api/admin/reprocess",
-        json={"task_type": "summary"},
-        headers=admin_headers,
-    )
-    assert resp.status == 200
+    await admin_api_client.admin_reprocess("summary")
     await asyncio.sleep(0)
     assert 8001 in published_ids
     assert 8002 not in published_ids
@@ -390,6 +356,7 @@ async def test_admin_list_tasks(
         session.add_all(
             [
                 SystemTaskDO(
+                    user_id=1,
                     file_id=101,
                     task_type="OCR_EXTRACTION",
                     key="page_1",
@@ -399,6 +366,7 @@ async def test_admin_list_tasks(
                     update_time=2000,
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=102,
                     task_type="SUMMARY_GENERATION",
                     key="global",
@@ -518,3 +486,142 @@ async def test_admin_api_key_denied_on_admin_endpoints(
         headers=headers,
     )
     assert quota_resp.status == 403
+
+
+async def test_admin_reprocess_cascade_and_custom_stage(
+    client: TestClient,
+    session_manager: DatabaseSessionManager,
+    admin_api_client: AdminClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """Reprocess supports TaskGraph cascade invalidation and custom registered stages."""
+
+    class _CustomStage(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "CustomTagModule"
+
+        @property
+        def task_type(self) -> str:
+            return "CUSTOM_TAGGING"
+
+        @property
+        def scope(self) -> TaskScope:
+            return TaskScope.PAGE
+
+        @property
+        def depends_on(self) -> tuple[str, ...]:
+            return (TaskType.OCR_EXTRACTION.value,)
+
+        async def run_if_needed(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            *,
+            user_id: int,
+        ) -> bool:
+            return False
+
+        async def process(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            **kwargs: object,
+        ) -> None:
+            return None
+
+    assert client.app is not None
+    processor_service = client.app[PROCESSOR_SERVICE_KEY]
+    processor_service.set_modules(
+        [*processor_service.task_graph.modules, _CustomStage()]
+    )
+
+    # Seed tasks across the full DAG including the custom stage
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                SystemTaskDO(
+                    user_id=1,
+                    file_id=7771,
+                    task_type=t,
+                    key="global",
+                    status=ProcessingStatus.COMPLETED,
+                    update_time=100,
+                )
+                for t in (
+                    TaskType.PAGE_HASHING.value,
+                    TaskType.PNG_CONVERSION.value,
+                    TaskType.OCR_EXTRACTION.value,
+                    TaskType.EMBEDDING_GENERATION.value,
+                    TaskType.SUMMARY_GENERATION.value,
+                    "CUSTOM_TAGGING",
+                )
+            ]
+        )
+        await session.commit()
+
+    # GET /api/admin/tasks resolves custom stage by task_type and module name
+    tasks_by_type = await admin_api_client.list_tasks(task_type="custom_tagging")
+    assert len(tasks_by_type.tasks) == 1
+    assert tasks_by_type.tasks[0].task_type == "CUSTOM_TAGGING"
+
+    tasks_by_name = await admin_api_client.list_tasks(task_type="CustomTagModule")
+    assert len(tasks_by_name.tasks) == 1
+
+    # Invalid cascade type returns 400 (raw JSON required to send non-bool cascade)
+    bad_cascade = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "ocr", "file_id": 7771, "cascade": "yes"},
+        headers=admin_headers,
+    )
+    assert bad_cascade.status == 400
+
+    # Cascade from OCR clears OCR + downstream (embedding, summary, custom) but keeps hashing & png
+    await admin_api_client.admin_reprocess("ocr", file_id=7771, cascade=True)
+
+    async with session_manager.session() as session:
+        remaining = {
+            row.task_type
+            for row in (
+                await session.execute(
+                    select(SystemTaskDO).where(SystemTaskDO.file_id == 7771)
+                )
+            )
+            .scalars()
+            .all()
+        }
+    assert remaining == {TaskType.PAGE_HASHING.value, TaskType.PNG_CONVERSION.value}
+
+    # Reprocessing a custom stage directly succeeds
+    async with session_manager.session() as session:
+        session.add(
+            SystemTaskDO(
+                user_id=1,
+                file_id=7771,
+                task_type="CUSTOM_TAGGING",
+                key="global",
+                status=ProcessingStatus.COMPLETED,
+                update_time=200,
+            )
+        )
+        await session.commit()
+
+    await admin_api_client.admin_reprocess("custom_tagging", file_id=7771)
+    async with session_manager.session() as session:
+        custom_rows = (
+            (
+                await session.execute(
+                    select(SystemTaskDO).where(
+                        SystemTaskDO.file_id == 7771,
+                        SystemTaskDO.task_type == "CUSTOM_TAGGING",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert custom_rows == []

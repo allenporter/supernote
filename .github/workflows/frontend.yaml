@@ -9,6 +9,7 @@ on:
     paths:
       - "supernote/server/static/**"
       - "supernote/server/routes/**"
+      - "supernote/server/components/**"
       - "supernote/server/app.py"
       - "tests/frontend/**"
       - "tests/integration/test_web_ui.py"
@@ -19,6 +20,7 @@ on:
     paths:
       - "supernote/server/static/**"
       - "supernote/server/routes/**"
+      - "supernote/server/components/**"
       - "supernote/server/app.py"
       - "tests/frontend/**"
       - "tests/integration/test_web_ui.py"

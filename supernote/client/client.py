@@ -26,7 +26,9 @@ from .auth import AbstractAuth
 from .exceptions import (
     ApiException,
     BadRequestException,
+    ConflictException,
     ForbiddenException,
+    GoneException,
     NotFoundException,
     UnauthorizedException,
 )
@@ -379,6 +381,14 @@ class Client:
             if err.status == 404:
                 raise NotFoundException(
                     f"Not found response from API ({err.status}): {error_detail}"
+                ) from err
+            if err.status == 409:
+                raise ConflictException(
+                    f"Conflict response from API ({err.status}): {error_detail}"
+                ) from err
+            if err.status == 410:
+                raise GoneException(
+                    f"Gone response from API ({err.status}): {error_detail}"
                 ) from err
             if err.status == 400:
                 raise BadRequestException(

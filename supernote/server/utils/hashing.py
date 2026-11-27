@@ -1,7 +1,7 @@
 """Cryptographic hashing helpers (MD5 and salted SHA-256).
 
 Used by `supernote.server.services.user.UserService` for challenge-response login
-verification (`hash_with_salt`) and by `supernote.server.services.processor_modules.page_hashing.PageHashingModule`
+verification (`hash_with_salt`) and by `supernote.server.components.processor.page_hashing.PageHashingModule`
 for per-page change detection (`get_md5_hash`).
 """
 

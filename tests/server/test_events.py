@@ -11,7 +11,6 @@ from supernote.server.events import (
     DomainEventRecorded,
     Event,
     LocalEventBus,
-    NoteDeletedEvent,
     NotePagesDeltaEvent,
     NotePageTranscribedEvent,
     NoteProcessingCompletedEvent,
@@ -19,15 +18,16 @@ from supernote.server.events import (
     ScheduleTaskCreatedEvent,
     ScheduleTaskUpdatedEvent,
     ScheduleUpdatedEvent,
+    SummaryCreatedEvent,
     SummaryDeletedEvent,
     SummaryTagDeletedEvent,
     SummaryTagUpsertedEvent,
-    SummaryUpsertedEvent,
     SyncCompletedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
+    VfsItemPurgedEvent,
     bind_event_actor,
 )
 
@@ -35,13 +35,13 @@ from supernote.server.events import (
 async def test_local_event_bus_publish_and_subscribe() -> None:
     bus = LocalEventBus()
     received_updated: list[NoteUpdatedEvent] = []
-    received_deleted: list[NoteDeletedEvent] = []
+    received_deleted: list[VfsItemPurgedEvent] = []
     received_completed: list[NoteProcessingCompletedEvent] = []
     received_sync: list[SyncCompletedEvent] = []
     received_schedule: list[ScheduleUpdatedEvent] = []
     received_tag_upserted: list[SummaryTagUpsertedEvent] = []
     received_tag_deleted: list[SummaryTagDeletedEvent] = []
-    received_summary_upserted: list[SummaryUpsertedEvent] = []
+    received_summary_upserted: list[SummaryCreatedEvent] = []
     received_summary_deleted: list[SummaryDeletedEvent] = []
     received_vfs_created: list[VfsItemCreatedEvent] = []
     received_vfs_moved: list[VfsItemMovedEvent] = []
@@ -51,7 +51,7 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
     async def on_updated(event: NoteUpdatedEvent) -> None:
         received_updated.append(event)
 
-    async def on_deleted(event: NoteDeletedEvent) -> None:
+    async def on_deleted(event: VfsItemPurgedEvent) -> None:
         received_deleted.append(event)
 
     async def on_processing_completed(event: NoteProcessingCompletedEvent) -> None:
@@ -69,7 +69,7 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
     async def on_tag_deleted(event: SummaryTagDeletedEvent) -> None:
         received_tag_deleted.append(event)
 
-    async def on_summary_upserted(event: SummaryUpsertedEvent) -> None:
+    async def on_summary_upserted(event: SummaryCreatedEvent) -> None:
         received_summary_upserted.append(event)
 
     async def on_summary_deleted(event: SummaryDeletedEvent) -> None:
@@ -88,13 +88,13 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
         received_vfs_deleted.append(event)
 
     bus.subscribe(NoteUpdatedEvent, on_updated)
-    bus.subscribe(NoteDeletedEvent, on_deleted)
+    bus.subscribe(VfsItemPurgedEvent, on_deleted)
     bus.subscribe(NoteProcessingCompletedEvent, on_processing_completed)
     bus.subscribe(SyncCompletedEvent, on_sync_completed)
     bus.subscribe(ScheduleUpdatedEvent, on_schedule_updated)
     bus.subscribe(SummaryTagUpsertedEvent, on_tag_upserted)
     bus.subscribe(SummaryTagDeletedEvent, on_tag_deleted)
-    bus.subscribe(SummaryUpsertedEvent, on_summary_upserted)
+    bus.subscribe(SummaryCreatedEvent, on_summary_upserted)
     bus.subscribe(SummaryDeletedEvent, on_summary_deleted)
     bus.subscribe(VfsItemCreatedEvent, on_vfs_created)
     bus.subscribe(VfsItemMovedEvent, on_vfs_moved)
@@ -104,7 +104,7 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
     ev_updated = NoteUpdatedEvent(
         file_id=10, user_id=1, file_path="/Note/a.note", defer_processing=True
     )
-    ev_deleted = NoteDeletedEvent(file_id=10, user_id=1)
+    ev_deleted = VfsItemPurgedEvent(item_id=10, user_id=1, name="a.note")
     ev_completed = NoteProcessingCompletedEvent(
         file_id=10, user_id=1, file_path="/Note/a.note"
     )
@@ -118,7 +118,7 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
         is_new=True,
     )
     ev_tag_deleted = SummaryTagDeletedEvent(user_id=1, tag_id=5)
-    ev_summary_upserted = SummaryUpsertedEvent(
+    ev_summary_upserted = SummaryCreatedEvent(
         user_id=1,
         summary=SummaryItem(
             id=8,
@@ -126,7 +126,6 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
             unique_identifier="sum-u1",
             is_summary_group=BooleanEnum.NO,
         ),
-        is_new=True,
     )
     ev_summary_deleted = SummaryDeletedEvent(
         user_id=1, summary_id=8, is_summary_group=False
@@ -257,7 +256,7 @@ async def test_local_event_bus_inline_subscribers_execute_in_order() -> None:
         user_id=1,
         seq=7,
         timestamp_ms=1000,
-        event_type="vfs.created",
+        event_type="file.created",
         actor="user:web",
         entity_type="file",
         entity_id="99",
