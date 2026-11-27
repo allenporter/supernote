@@ -10,6 +10,7 @@ import {
     fetchWikiPage,
     fetchWikiPages,
     fetchWikiStatus,
+    formatDryRunDropReason,
     formatLintTypeLabel,
     formatPageKindLabel,
     formatSourceRef,
@@ -380,4 +381,22 @@ test('fetchWikiDiagnostics and runWikiDryRun unwrap payloads and send expected b
         globalThis.fetch = origFetch;
         logout();
     }
+});
+
+test('formatDryRunDropReason maps internal codes to plain-English explanations', () => {
+    assert.equal(formatDryRunDropReason(null), '');
+    assert.equal(
+        formatDryRunDropReason('edit_policy:protected_prose'),
+        'Skipped: human-edited page is protected',
+    );
+    assert.equal(formatDryRunDropReason('edit_policy:locked'), 'Skipped: page is locked');
+    assert.equal(
+        formatDryRunDropReason('index_auto_maintained'),
+        'Skipped: index page is auto-generated',
+    );
+    assert.equal(
+        formatDryRunDropReason('page_cap_exceeded'),
+        'Skipped: per-turn page limit reached',
+    );
+    assert.equal(formatDryRunDropReason('custom_reason'), 'Skipped: custom_reason');
 });

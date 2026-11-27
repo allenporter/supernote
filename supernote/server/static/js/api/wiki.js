@@ -501,12 +501,14 @@ export async function downloadWikiVaultZip() {
 /**
  * @typedef {Object} WikiDryRunPage
  * @property {string} source_id
+ * @property {string} [source_key]
  * @property {string} file_id
  * @property {string} file_path
  * @property {number} page_index
  * @property {string} page_date
  * @property {number} chars
  * @property {string} snippet
+ * @property {string} [text_content]
  */
 
 /**
@@ -516,10 +518,37 @@ export async function downloadWikiVaultZip() {
  * @property {string} page_kind
  * @property {string} summary
  * @property {number} body_chars
+ * @property {string} [body_md]
  * @property {string[]} resolved_source_keys
  * @property {string[]} dropped_source_keys
  * @property {string | null} drop_reason
  */
+
+/**
+ * Translate a machine `drop_reason` code from dry-run compile into plain English.
+ *
+ * @param {string | null | undefined} reason
+ * @returns {string}
+ */
+export function formatDryRunDropReason(reason) {
+    if (!reason) return '';
+    if (reason === 'edit_policy:protected_prose') {
+        return 'Skipped: human-edited page is protected';
+    }
+    if (reason === 'edit_policy:locked') {
+        return 'Skipped: page is locked';
+    }
+    if (reason === 'index_auto_maintained') {
+        return 'Skipped: index page is auto-generated';
+    }
+    if (reason === 'page_cap_exceeded') {
+        return 'Skipped: per-turn page limit reached';
+    }
+    if (reason === 'missing_slug_or_title') {
+        return 'Skipped: AI omitted slug or title';
+    }
+    return `Skipped: ${reason}`;
+}
 
 /**
  * @typedef {Object} WikiDryRunReport
