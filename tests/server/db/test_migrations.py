@@ -1392,7 +1392,6 @@ def test_summary_transcript_migration_upgrade_and_downgrade(
     assert tbl.c["model_id"].nullable
     assert not tbl.c["handwrite_md5"].nullable
     assert not tbl.c["text_content"].nullable
-    assert any(idx.name == "ix_f_summary_transcript_summary_id" for idx in tbl.indexes)
 
     command.downgrade(alembic_config, "d0e1f2a3b4c5")
     reflected_down = MetaData()

@@ -158,7 +158,7 @@ class SummaryTranscriptDO(Base):
     """Owner user ID."""
 
     summary_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, index=True, nullable=False
+        BigInteger, primary_key=True, nullable=False
     )
     """Numeric ID of the `SummaryDO` whose handwriting was transcribed."""
 

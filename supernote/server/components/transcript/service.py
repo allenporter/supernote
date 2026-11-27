@@ -50,11 +50,6 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def _is_missing_table_error(err: OperationalError) -> bool:
-    """Return True when SQLite reports a missing table on an unmigrated legacy DB."""
-    return "no such table" in str(err).lower()
-
-
 def _to_summary_transcript(row: SummaryTranscriptDO) -> SummaryTranscript:
     """Convert a `SummaryTranscriptDO` row into its pure domain dataclass."""
     return SummaryTranscript(
@@ -273,7 +268,7 @@ class TranscriptService:
             except OperationalError as err:
                 # Preserve read compatibility with unmigrated legacy databases
                 # opened before `d0e1f2a3b4c5` (see legacy DB integration tests).
-                if _is_missing_table_error(err):
+                if "no such table" in str(err).lower():
                     return {}
                 raise
         return {md5: text for md5, text in rows if text}
@@ -285,12 +280,7 @@ class TranscriptService:
     ) -> SummaryTranscript | None:
         """Retrieve the stored handwriting OCR transcript for a single Digest summary."""
         async with self.session_manager.session() as session:
-            try:
-                row = await session.get(SummaryTranscriptDO, (user_id, summary_id))
-            except OperationalError as err:
-                if _is_missing_table_error(err):
-                    return None
-                raise
+            row = await session.get(SummaryTranscriptDO, (user_id, summary_id))
         return _to_summary_transcript(row) if row is not None else None
 
     async def get_summary_transcripts(
@@ -302,23 +292,18 @@ class TranscriptService:
         if not summary_ids:
             return {}
         async with self.session_manager.session() as session:
-            try:
-                rows = (
-                    (
-                        await session.execute(
-                            select(SummaryTranscriptDO).where(
-                                SummaryTranscriptDO.user_id == user_id,
-                                SummaryTranscriptDO.summary_id.in_(summary_ids),
-                            )
+            rows = (
+                (
+                    await session.execute(
+                        select(SummaryTranscriptDO).where(
+                            SummaryTranscriptDO.user_id == user_id,
+                            SummaryTranscriptDO.summary_id.in_(summary_ids),
                         )
                     )
-                    .scalars()
-                    .all()
                 )
-            except OperationalError as err:
-                if _is_missing_table_error(err):
-                    return {}
-                raise
+                .scalars()
+                .all()
+            )
         return {int(row.summary_id): _to_summary_transcript(row) for row in rows}
 
     async def is_summary_transcript_stale(
@@ -329,19 +314,14 @@ class TranscriptService:
     ) -> bool:
         """Return True if no transcript exists for `(user_id, summary_id)` or its `handwrite_md5` differs."""
         async with self.session_manager.session() as session:
-            try:
-                stored_md5 = (
-                    await session.execute(
-                        select(SummaryTranscriptDO.handwrite_md5).where(
-                            SummaryTranscriptDO.user_id == user_id,
-                            SummaryTranscriptDO.summary_id == summary_id,
-                        )
+            stored_md5 = (
+                await session.execute(
+                    select(SummaryTranscriptDO.handwrite_md5).where(
+                        SummaryTranscriptDO.user_id == user_id,
+                        SummaryTranscriptDO.summary_id == summary_id,
                     )
-                ).scalar_one_or_none()
-            except OperationalError as err:
-                if _is_missing_table_error(err):
-                    return True
-                raise
+                )
+            ).scalar_one_or_none()
         return stored_md5 != handwrite_md5
 
     async def upsert_summary_transcript(
@@ -354,13 +334,17 @@ class TranscriptService:
     ) -> SummaryTranscript:
         """Insert or update the OCR transcript for a Digest summary's handwritten annotation."""
         now_ms = int(time.time() * 1000)
+
+        def _apply_update(target: SummaryTranscriptDO) -> None:
+            target.handwrite_md5 = handwrite_md5
+            target.text_content = text_content
+            target.model_id = model_id
+            target.update_time = now_ms
+
         async with self.session_manager.session() as session:
             row = await session.get(SummaryTranscriptDO, (user_id, summary_id))
             if row is not None:
-                row.handwrite_md5 = handwrite_md5
-                row.text_content = text_content
-                row.model_id = model_id
-                row.update_time = now_ms
+                _apply_update(row)
                 await session.commit()
                 return _to_summary_transcript(row)
 
@@ -381,10 +365,7 @@ class TranscriptService:
                 row = await session.get(SummaryTranscriptDO, (user_id, summary_id))
                 if row is None:
                     raise
-                row.handwrite_md5 = handwrite_md5
-                row.text_content = text_content
-                row.model_id = model_id
-                row.update_time = now_ms
+                _apply_update(row)
                 await session.commit()
             return _to_summary_transcript(row)
 
@@ -395,18 +376,13 @@ class TranscriptService:
     ) -> bool:
         """Delete the stored transcript for `(user_id, summary_id)` if present."""
         async with self.session_manager.session() as session:
-            try:
-                result = await session.execute(
-                    delete(SummaryTranscriptDO).where(
-                        SummaryTranscriptDO.user_id == user_id,
-                        SummaryTranscriptDO.summary_id == summary_id,
-                    )
+            result = await session.execute(
+                delete(SummaryTranscriptDO).where(
+                    SummaryTranscriptDO.user_id == user_id,
+                    SummaryTranscriptDO.summary_id == summary_id,
                 )
-                await session.commit()
-            except OperationalError as err:
-                if _is_missing_table_error(err):
-                    return False
-                raise
+            )
+            await session.commit()
         return bool(getattr(result, "rowcount", 0))
 
     async def _handle_summary_deleted(self, event: SummaryDeletedEvent) -> None:

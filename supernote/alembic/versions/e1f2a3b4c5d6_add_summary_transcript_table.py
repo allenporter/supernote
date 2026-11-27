@@ -30,17 +30,7 @@ def upgrade() -> None:
         sa.Column("update_time", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("user_id", "summary_id"),
     )
-    op.create_index(
-        op.f("ix_f_summary_transcript_summary_id"),
-        "f_summary_transcript",
-        ["summary_id"],
-        unique=False,
-    )
 
 
 def downgrade() -> None:
-    op.drop_index(
-        op.f("ix_f_summary_transcript_summary_id"),
-        table_name="f_summary_transcript",
-    )
     op.drop_table("f_summary_transcript")

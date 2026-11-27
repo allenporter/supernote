@@ -128,7 +128,7 @@ Owned by `transcript` (`supernote/server/db/models/summary.py`). Stores OCR tran
 | Column | Type | Description |
 | :--- | :--- | :--- |
 | `user_id` | `BigInteger` (PK) | Owner user ID. |
-| `summary_id` | `BigInteger` (PK, indexed) | Numeric ID of the `SummaryDO` whose handwriting was transcribed. |
+| `summary_id` | `BigInteger` (PK) | Numeric ID of the `SummaryDO` whose handwriting was transcribed. |
 | `handwrite_md5` | `String` | MD5 hash of the `.mark` handwriting blob used to detect stale transcripts on re-sync. |
 | `text_content` | `Text` | Extracted OCR transcript text (`""` when blank or illegible). |
 | `model_id` | `String` (nullable) | Identifier of the OCR model that produced `text_content`. |
