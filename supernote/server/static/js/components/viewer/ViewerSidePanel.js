@@ -22,6 +22,7 @@ export default {
         isLoadingTranscript: { type: Boolean, default: false },
         transcriptPages: { type: Array, default: () => [] },
         displayTranscriptPages: { type: Array, default: () => [] },
+        outlineItems: { type: Array, default: () => [] },
         pageMetaByIndex: { type: Map, default: () => new Map() },
         linksByPageIndex: { type: Map, default: () => new Map() },
         summaries: { type: Array, default: () => [] },
@@ -41,6 +42,7 @@ export default {
      *   isLoadingTranscript: boolean,
      *   transcriptPages: TranscriptPage[],
      *   displayTranscriptPages: TranscriptPage[],
+     *   outlineItems: OutlineItem[],
      *   pageMetaByIndex: Map<number, NotePageMeta>,
      *   linksByPageIndex: Map<number, NoteLink[]>,
      *   summaries: NoteSummary[],
@@ -163,6 +165,12 @@ export default {
         }
 
         const isStandaloneImage = computed(() => props.fileCategory === 'image');
+        const hasOutline = computed(
+            () => Array.isArray(props.outlineItems) && props.outlineItems.length > 0,
+        );
+        const visibleTabCount = computed(
+            () => (hasOutline.value ? 1 : 0) + 1 + (props.summariesEnabled ? 1 : 0),
+        );
 
         const primaryImagePage = computed(() => props.transcriptPages[0] || null);
 
@@ -200,6 +208,8 @@ export default {
         return {
             transcriptScrollPane,
             isStandaloneImage,
+            hasOutline,
+            visibleTabCount,
             primaryImagePage,
             primaryImageHtml,
             transcriptEmptyMessage,
@@ -223,9 +233,23 @@ export default {
         <div :class="isOpenMobile ? 'translate-y-0 visible pointer-events-auto' : 'translate-y-full invisible pointer-events-none md:translate-y-0 md:visible md:pointer-events-auto'"
             class="fixed md:static inset-x-0 bottom-0 z-[70] md:z-10 h-[65vh] md:h-full w-full max-w-[100vw] md:max-w-none md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
 
-            <!-- Segmented Tab Selector (hidden for standalone images and when summaries are disabled) -->
-            <div v-if="!isStandaloneImage && summariesEnabled" class="p-2 border-b border-stone-200/80 grid grid-cols-2 gap-1 bg-stone-100/70">
+            <!-- Segmented Tab Selector (hidden for standalone images and when only one tab is available) -->
+            <div v-if="!isStandaloneImage && visibleTabCount > 1"
+                :class="visibleTabCount === 3 ? 'grid-cols-3' : 'grid-cols-2'"
+                class="p-2 border-b border-stone-200/80 grid gap-1 bg-stone-100/70">
+                <button v-if="hasOutline" @click="$emit('update:activeTab', 'outline')" type="button"
+                    data-side-panel-tab="outline"
+                    :class="activeTab === 'outline'
+                        ? 'bg-white text-slate-900 shadow-sm font-semibold'
+                        : 'text-stone-600 hover:text-slate-900 font-medium'"
+                    class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h12M4 18h8"></path>
+                    </svg>
+                    <span class="truncate">Outline</span>
+                </button>
                 <button @click="$emit('update:activeTab', 'transcription')" type="button"
+                    data-side-panel-tab="transcription"
                     :class="activeTab === 'transcription'
                         ? 'bg-white text-slate-900 shadow-sm font-semibold'
                         : 'text-stone-600 hover:text-slate-900 font-medium'"
@@ -233,9 +257,10 @@ export default {
                     <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
-                    <span>OCR Transcript</span>
+                    <span class="truncate">{{ hasOutline ? 'Transcript' : 'OCR Transcript' }}</span>
                 </button>
-                <button @click="$emit('update:activeTab', 'insights')" type="button"
+                <button v-if="summariesEnabled" @click="$emit('update:activeTab', 'insights')" type="button"
+                    data-side-panel-tab="insights"
                     :class="activeTab === 'insights'
                         ? 'bg-white text-slate-900 shadow-sm font-semibold'
                         : 'text-stone-600 hover:text-slate-900 font-medium'"
@@ -243,7 +268,7 @@ export default {
                     <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
                     </svg>
-                    <span>Summaries</span>
+                    <span class="truncate">Summaries</span>
                 </button>
             </div>
 
@@ -295,6 +320,54 @@ export default {
                 </div>
                 <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
                     {{ transcriptEmptyMessage }}
+                </div>
+            </div>
+
+            <!-- Tab 0: Notebook Outline -->
+            <div v-else-if="activeTab === 'outline'" class="p-4 flex-1 overflow-y-auto space-y-3" data-outline-panel>
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider shrink-0">Outline</span>
+                        <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-500 shrink-0 tabular-nums">
+                            {{ outlineItems.length }} {{ outlineItems.length === 1 ? 'heading' : 'headings' }}
+                        </span>
+                    </div>
+                    <button @click="$emit('close-mobile')" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
+                </div>
+
+                <div v-if="outlineItems.length > 0" class="space-y-1.5">
+                    <button v-for="item in outlineItems" :key="item.key" type="button"
+                        data-outline-item
+                        :data-outline-page="item.pageIndex"
+                        @click="$emit('select-page', item.pageIndex)"
+                        :class="activePageIndex === item.pageIndex
+                            ? 'border-slate-900 ring-1 ring-slate-900/15 bg-stone-50/80'
+                            : 'border-stone-200/80 bg-white hover:bg-stone-50/70 hover:border-stone-300'"
+                        class="w-full px-3 py-2 rounded-xl border text-left transition-all flex items-center justify-between gap-2.5 cursor-pointer">
+                        <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                            <span :class="item.styleBadgeClass"
+                                :title="item.styleLabel || undefined"
+                                class="w-2.5 h-2.5 rounded-sm border shrink-0"></span>
+                            <span v-if="item.text" class="text-xs font-medium text-slate-900 leading-snug line-clamp-2 break-words">
+                                {{ item.text }}
+                            </span>
+                            <img v-else-if="item.imageUrl"
+                                :src="item.imageUrl"
+                                :alt="'Heading on page ' + (item.pageIndex + 1)"
+                                loading="lazy"
+                                class="max-h-9 max-w-full object-contain rounded bg-white border border-stone-200/70 px-1 py-0.5" />
+                            <span v-else class="text-xs italic text-stone-500">Heading</span>
+                        </div>
+                        <span :class="activePageIndex === item.pageIndex
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-stone-100 text-stone-600'"
+                            class="px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono tabular-nums shrink-0 transition-colors">
+                            p.{{ item.pageIndex + 1 }}
+                        </span>
+                    </button>
+                </div>
+                <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
+                    No headings found in this notebook.
                 </div>
             </div>
 

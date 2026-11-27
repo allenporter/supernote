@@ -378,16 +378,38 @@ export function normalizeTranscriptPages(rawPages) {
 }
 
 /**
- * Fetch per-page OCR transcripts for a notebook file.
+ * Normalize a `titles` bitmap-MD5 -> text map returned by `/api/extended/transcript`.
+ * @param {unknown} rawTitles
+ * @returns {Record<string, string>}
+ */
+export function normalizeTitleTranscripts(rawTitles) {
+    /** @type {Record<string, string>} */
+    const result = {};
+    if (!rawTitles || typeof rawTitles !== 'object' || Array.isArray(rawTitles)) {
+        return result;
+    }
+    for (const [md5, text] of Object.entries(rawTitles)) {
+        if (typeof text === 'string' && text.trim()) {
+            result[md5] = text.trim();
+        }
+    }
+    return result;
+}
+
+/**
+ * Fetch per-page OCR transcripts and title transcripts for a notebook file.
  * @param {string | number} fileId
- * @returns {Promise<TranscriptPage[]>}
+ * @returns {Promise<TranscriptResult>}
  */
 export async function fetchTranscript(fileId) {
     const data = await apiRequest('/api/extended/transcript', {
         body: { fileId: String(fileId) },
         fallbackValue: null,
     });
-    return normalizeTranscriptPages(data?.pages);
+    return {
+        pages: normalizeTranscriptPages(data?.pages),
+        titles: normalizeTitleTranscripts(data?.titles),
+    };
 }
 
 /**

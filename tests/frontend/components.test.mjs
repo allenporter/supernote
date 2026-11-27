@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { normalizeTitleTranscripts } from '../../supernote/server/static/js/api/client.js';
 import { logout, setToken } from '../../supernote/server/static/js/api/http.js';
 import { compareItems } from '../../supernote/server/static/js/components/FileBrowserPanel.js';
 import SearchModal from '../../supernote/server/static/js/components/SearchModal.js';
@@ -11,6 +12,7 @@ import {
 import { getDueMeta } from '../../supernote/server/static/js/components/tasks/TaskRow.js';
 import {
     buildDisplayTranscriptPages,
+    buildOutlineItems,
     formatContent,
     formatLinkLabel,
     formatPageStyle,
@@ -82,6 +84,43 @@ test('noteMeta.js: parseSafeHttpUrl, categories, page styles, link labels, and m
     assert.equal(hasCopyablePageText({ hasTranscript: true, text: 'OCR text' }), true);
     assert.equal(hasCopyablePageText({ hasTranscript: true, text: '   ' }), false);
     assert.equal(hasCopyablePageText({ hasTranscript: false, text: 'OCR text' }), false);
+
+    assert.deepEqual(normalizeTitleTranscripts({ md5a: '  Intro  ', md5b: '   ', md5c: 123 }), {
+        md5a: 'Intro',
+    });
+    assert.deepEqual(normalizeTitleTranscripts(null), {});
+
+    const outline = buildOutlineItems(
+        {
+            titles: [
+                {
+                    pageIndex: 0,
+                    level: 1,
+                    style: '1000254',
+                    rect: [10, 20, 100, 40],
+                    bitmapMd5: 'md5a',
+                    imageUrl: 'https://host/api/oss/title/1/md5a?sig=1',
+                },
+                {
+                    pageIndex: 2,
+                    level: 4,
+                    style: '1000000',
+                    rect: [10, 80, 100, 40],
+                    bitmapMd5: 'md5b',
+                    imageUrl: 'https://host/api/oss/title/1/md5b?sig=2',
+                },
+            ],
+        },
+        { md5a: 'Architecture Overview' },
+    );
+    assert.equal(outline.length, 2);
+    assert.equal(outline[0].pageIndex, 0);
+    assert.equal(outline[0].text, 'Architecture Overview');
+    assert.equal(outline[0].styleLabel, 'Black');
+    assert.equal(outline[1].pageIndex, 2);
+    assert.equal(outline[1].text, null);
+    assert.equal(outline[1].imageUrl, 'https://host/api/oss/title/1/md5b?sig=2');
+    assert.equal(outline[1].styleLabel, 'Pattern');
 });
 
 test('TaskEditorModal.js & TaskRow.js: local calendar date round-trip and due badge metadata', () => {
@@ -189,6 +228,7 @@ test('ViewerSidePanel.js: hides image HTML on whitespace-only text and keeps not
                 linksByPageIndex: new Map(),
                 summaries: [],
                 aiStatus: null,
+                summariesEnabled: true,
             },
             { expose() {}, emit() {} },
         ),
@@ -216,14 +256,58 @@ test('ViewerSidePanel.js: hides image HTML on whitespace-only text and keeps not
                 linksByPageIndex: new Map(),
                 summaries: [],
                 aiStatus: null,
+                summariesEnabled: true,
             },
             { expose() {}, emit() {} },
         ),
     );
     try {
         assert.equal(notebook.result.isStandaloneImage.value, false);
+        assert.equal(notebook.result.hasOutline.value, false);
+        assert.equal(notebook.result.visibleTabCount.value, 2);
     } finally {
         notebook.unmount();
+    }
+
+    const withOutline = await mountComposable(() =>
+        ViewerSidePanel.setup(
+            {
+                fileId: '44',
+                fileCategory: 'note',
+                isOpenMobile: false,
+                activeTab: 'outline',
+                activePageIndex: 1,
+                hasCanvasPages: true,
+                isLoadingTranscript: false,
+                transcriptPages: [],
+                displayTranscriptPages: [],
+                outlineItems: [
+                    {
+                        key: '1-0-abc',
+                        pageIndex: 1,
+                        level: 1,
+                        style: '1000254',
+                        styleLabel: 'Black',
+                        styleBadgeClass: 'bg-slate-900 border-slate-900',
+                        text: 'Chapter 1',
+                        imageUrl: null,
+                    },
+                ],
+                pageMetaByIndex: new Map(),
+                linksByPageIndex: new Map(),
+                summaries: [],
+                aiStatus: null,
+                transcriptEnabled: true,
+                summariesEnabled: true,
+            },
+            { expose() {}, emit() {} },
+        ),
+    );
+    try {
+        assert.equal(withOutline.result.hasOutline.value, true);
+        assert.equal(withOutline.result.visibleTabCount.value, 3);
+    } finally {
+        withOutline.unmount();
     }
 });
 

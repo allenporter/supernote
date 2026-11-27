@@ -162,3 +162,47 @@ export function buildDisplayTranscriptPages(
     }
     return Array.from(merged.values()).sort((a, b) => a.pageIndex - b.pageIndex);
 }
+
+/**
+ * Visual swatch metadata for Supernote `<TITLESTYLE>` levels.
+ * Firmware uses title style for visual background choice rather than heading depth.
+ * @type {Record<number, { label: string, badgeClass: string }>}
+ */
+const TITLE_STYLE_SWATCHES = {
+    1: { label: 'Black', badgeClass: 'bg-slate-900 border-slate-900' },
+    2: { label: 'Dark grey', badgeClass: 'bg-stone-500 border-stone-500' },
+    3: { label: 'Light grey', badgeClass: 'bg-stone-300 border-stone-400' },
+    4: { label: 'Pattern', badgeClass: 'bg-stone-100 border-stone-500 border-dashed' },
+};
+
+/**
+ * Join device-authored notebook titles (`note_metadata`) with OCR title text (`transcript`)
+ * by `bitmapMd5`, preserving reading order for the Outline tab.
+ * @param {NoteMetadata | null | undefined} noteMetadata
+ * @param {Record<string, string> | null | undefined} titleTranscripts
+ * @returns {OutlineItem[]}
+ */
+export function buildOutlineItems(noteMetadata, titleTranscripts) {
+    const rawTitles = noteMetadata?.titles;
+    if (!Array.isArray(rawTitles) || rawTitles.length === 0) {
+        return [];
+    }
+    return rawTitles
+        .filter((t) => typeof t?.pageIndex === 'number')
+        .map((t, idx) => {
+            const level = typeof t.level === 'number' ? t.level : 1;
+            const swatch = TITLE_STYLE_SWATCHES[level] || TITLE_STYLE_SWATCHES[1];
+            const rawText = t.bitmapMd5 ? titleTranscripts?.[t.bitmapMd5] : null;
+            const text = typeof rawText === 'string' && rawText.trim() ? rawText.trim() : null;
+            return {
+                key: `${t.pageIndex}-${idx}-${t.bitmapMd5 || 'none'}`,
+                pageIndex: t.pageIndex,
+                level,
+                style: t.style ?? null,
+                styleLabel: swatch.label,
+                styleBadgeClass: swatch.badgeClass,
+                text,
+                imageUrl: t.imageUrl || null,
+            };
+        });
+}
