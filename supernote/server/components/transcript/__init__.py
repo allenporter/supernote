@@ -25,12 +25,13 @@ from typing import Any
 
 from supernote.server.core import ServerCore
 
-from .models import PageTranscript
+from .models import PageTranscript, SummaryTranscript
 from .service import TRANSCRIPT_SERVICE_KEY, TranscriptService
 
 __all__ = [
     "TRANSCRIPT_SERVICE_KEY",
     "PageTranscript",
+    "SummaryTranscript",
     "TranscriptComponent",
     "TranscriptService",
 ]
@@ -45,7 +46,10 @@ class TranscriptComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `TranscriptService` and expose it via `TRANSCRIPT_SERVICE_KEY`."""
-        core.app[TRANSCRIPT_SERVICE_KEY] = TranscriptService(core.session_manager)
+        core.app[TRANSCRIPT_SERVICE_KEY] = TranscriptService(
+            core.session_manager,
+            event_bus=core.event_bus,
+        )
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; transcript operations are driven on demand by callers."""

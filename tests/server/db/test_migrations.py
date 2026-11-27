@@ -97,7 +97,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "d0e1f2a3b4c5"
+        assert version == "e1f2a3b4c5d6"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -193,7 +193,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "d0e1f2a3b4c5"
+        assert version == "e1f2a3b4c5d6"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -1357,4 +1357,45 @@ def test_note_title_transcript_migration_upgrade_and_downgrade(
     reflected_down.reflect(bind=engine)
     assert "f_note_title_transcript" not in reflected_down.tables
     assert "text_content" in reflected_down.tables["f_note_title"].c
+    engine.dispose()
+
+
+def test_summary_transcript_migration_upgrade_and_downgrade(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration e1f2a3b4c5d6 creates and drops f_summary_transcript with composite PK."""
+    db_path = tmp_path / "summary_transcript_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "d0e1f2a3b4c5")
+    engine = create_engine(url)
+    reflected_before = MetaData()
+    reflected_before.reflect(bind=engine)
+    assert "f_summary_transcript" not in reflected_before.tables
+
+    command.upgrade(alembic_config, "e1f2a3b4c5d6")
+    reflected_up = MetaData()
+    reflected_up.reflect(bind=engine)
+    tbl = reflected_up.tables["f_summary_transcript"]
+    assert {c.name for c in tbl.primary_key.columns} == {"user_id", "summary_id"}
+    assert {c.name for c in tbl.columns} == {
+        "user_id",
+        "summary_id",
+        "handwrite_md5",
+        "text_content",
+        "model_id",
+        "create_time",
+        "update_time",
+    }
+    assert tbl.c["model_id"].nullable
+    assert not tbl.c["handwrite_md5"].nullable
+    assert not tbl.c["text_content"].nullable
+    assert any(idx.name == "ix_f_summary_transcript_summary_id" for idx in tbl.indexes)
+
+    command.downgrade(alembic_config, "d0e1f2a3b4c5")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_summary_transcript" not in reflected_down.tables
     engine.dispose()

@@ -18,10 +18,12 @@ retrieve the shared service instance via `core.app[TRANSCRIPT_SERVICE_KEY]`.
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Sequence
 
 from aiohttp import web
-from sqlalchemy import select
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
@@ -29,14 +31,16 @@ from supernote.server.db.models.note_processing import (
     NoteTitleDO,
     NoteTitleTranscriptDO,
 )
+from supernote.server.db.models.summary import SummaryTranscriptDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import LocalEventBus, SummaryDeletedEvent
 from supernote.server.utils.note_content import (
     format_page_metadata,
     get_page_keywords_map,
     infer_page_date,
 )
 
-from .models import PageTranscript
+from .models import PageTranscript, SummaryTranscript
 
 __all__ = [
     "TRANSCRIPT_SERVICE_KEY",
@@ -46,21 +50,49 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-class TranscriptService:
-    """Retrieves formatted and structured per-page OCR transcripts for `.note` files.
+def _is_missing_table_error(err: OperationalError) -> bool:
+    """Return True when SQLite reports a missing table on an unmigrated legacy DB."""
+    return "no such table" in str(err).lower()
 
-    All queries are strictly scoped by `user_id` and restricted to active
-    (`UserFileDO.is_active == "Y"`) files.
+
+def _to_summary_transcript(row: SummaryTranscriptDO) -> SummaryTranscript:
+    """Convert a `SummaryTranscriptDO` row into its pure domain dataclass."""
+    return SummaryTranscript(
+        summary_id=int(row.summary_id),
+        handwrite_md5=row.handwrite_md5,
+        text=row.text_content,
+        model_id=row.model_id,
+        create_time=int(row.create_time),
+        update_time=int(row.update_time),
+    )
+
+
+class TranscriptService:
+    """Retrieves and manages OCR transcripts for `.note` pages, title crops, and Digest annotations.
+
+    All queries are strictly scoped by `user_id`. Notebook queries are restricted to
+    active (`UserFileDO.is_active == "Y"`) files.
     """
 
-    def __init__(self, session_manager: DatabaseSessionManager) -> None:
+    def __init__(
+        self,
+        session_manager: DatabaseSessionManager,
+        event_bus: LocalEventBus | None = None,
+    ) -> None:
         """Initialize the transcript service.
 
         Args:
             session_manager: Async SQLAlchemy session manager for querying
-                `UserFileDO`, `NotePageContentDO`, and page keyword metadata.
+                `UserFileDO`, `NotePageContentDO`, `SummaryTranscriptDO`, and page keyword metadata.
+            event_bus: Optional core `LocalEventBus` used to clean up summary
+                transcripts when `SummaryDeletedEvent` is published.
         """
         self.session_manager = session_manager
+        self._event_bus = event_bus
+        if self._event_bus is not None:
+            self._event_bus.subscribe(
+                SummaryDeletedEvent, self._handle_summary_deleted, inline=True
+            )
 
     async def _fetch_notebook_pages(
         self,
@@ -241,10 +273,150 @@ class TranscriptService:
             except OperationalError as err:
                 # Preserve read compatibility with unmigrated legacy databases
                 # opened before `d0e1f2a3b4c5` (see legacy DB integration tests).
-                if "no such table" in str(err).lower():
+                if _is_missing_table_error(err):
                     return {}
                 raise
         return {md5: text for md5, text in rows if text}
+
+    async def get_summary_transcript(
+        self,
+        user_id: int,
+        summary_id: int,
+    ) -> SummaryTranscript | None:
+        """Retrieve the stored handwriting OCR transcript for a single Digest summary."""
+        async with self.session_manager.session() as session:
+            try:
+                row = await session.get(SummaryTranscriptDO, (user_id, summary_id))
+            except OperationalError as err:
+                if _is_missing_table_error(err):
+                    return None
+                raise
+        return _to_summary_transcript(row) if row is not None else None
+
+    async def get_summary_transcripts(
+        self,
+        user_id: int,
+        summary_ids: Sequence[int],
+    ) -> dict[int, SummaryTranscript]:
+        """Batch-retrieve stored handwriting OCR transcripts keyed by `summary_id`."""
+        if not summary_ids:
+            return {}
+        async with self.session_manager.session() as session:
+            try:
+                rows = (
+                    (
+                        await session.execute(
+                            select(SummaryTranscriptDO).where(
+                                SummaryTranscriptDO.user_id == user_id,
+                                SummaryTranscriptDO.summary_id.in_(summary_ids),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            except OperationalError as err:
+                if _is_missing_table_error(err):
+                    return {}
+                raise
+        return {int(row.summary_id): _to_summary_transcript(row) for row in rows}
+
+    async def is_summary_transcript_stale(
+        self,
+        user_id: int,
+        summary_id: int,
+        handwrite_md5: str,
+    ) -> bool:
+        """Return True if no transcript exists for `(user_id, summary_id)` or its `handwrite_md5` differs."""
+        async with self.session_manager.session() as session:
+            try:
+                stored_md5 = (
+                    await session.execute(
+                        select(SummaryTranscriptDO.handwrite_md5).where(
+                            SummaryTranscriptDO.user_id == user_id,
+                            SummaryTranscriptDO.summary_id == summary_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+            except OperationalError as err:
+                if _is_missing_table_error(err):
+                    return True
+                raise
+        return stored_md5 != handwrite_md5
+
+    async def upsert_summary_transcript(
+        self,
+        user_id: int,
+        summary_id: int,
+        handwrite_md5: str,
+        text_content: str,
+        model_id: str | None = None,
+    ) -> SummaryTranscript:
+        """Insert or update the OCR transcript for a Digest summary's handwritten annotation."""
+        now_ms = int(time.time() * 1000)
+        async with self.session_manager.session() as session:
+            row = await session.get(SummaryTranscriptDO, (user_id, summary_id))
+            if row is not None:
+                row.handwrite_md5 = handwrite_md5
+                row.text_content = text_content
+                row.model_id = model_id
+                row.update_time = now_ms
+                await session.commit()
+                return _to_summary_transcript(row)
+
+            row = SummaryTranscriptDO(
+                user_id=user_id,
+                summary_id=summary_id,
+                handwrite_md5=handwrite_md5,
+                text_content=text_content,
+                model_id=model_id,
+                create_time=now_ms,
+                update_time=now_ms,
+            )
+            session.add(row)
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                row = await session.get(SummaryTranscriptDO, (user_id, summary_id))
+                if row is None:
+                    raise
+                row.handwrite_md5 = handwrite_md5
+                row.text_content = text_content
+                row.model_id = model_id
+                row.update_time = now_ms
+                await session.commit()
+            return _to_summary_transcript(row)
+
+    async def delete_summary_transcript(
+        self,
+        user_id: int,
+        summary_id: int,
+    ) -> bool:
+        """Delete the stored transcript for `(user_id, summary_id)` if present."""
+        async with self.session_manager.session() as session:
+            try:
+                result = await session.execute(
+                    delete(SummaryTranscriptDO).where(
+                        SummaryTranscriptDO.user_id == user_id,
+                        SummaryTranscriptDO.summary_id == summary_id,
+                    )
+                )
+                await session.commit()
+            except OperationalError as err:
+                if _is_missing_table_error(err):
+                    return False
+                raise
+        return bool(getattr(result, "rowcount", 0))
+
+    async def _handle_summary_deleted(self, event: SummaryDeletedEvent) -> None:
+        """Remove stored handwriting transcript when a leaf summary is deleted."""
+        if event.is_summary_group:
+            return
+        await self.delete_summary_transcript(
+            user_id=event.user_id,
+            summary_id=event.summary_id,
+        )
 
 
 TRANSCRIPT_SERVICE_KEY: web.AppKey[TranscriptService] = web.AppKey("transcript_service")
