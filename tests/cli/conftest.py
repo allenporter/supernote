@@ -64,7 +64,9 @@ def server_config(
             ocr=ModelConfig(provider="fake_ai", model="fake-ocr-v1"),
             summary=ModelConfig(provider="fake_ai", model="fake-summary-v1"),
             embedding=ModelConfig(provider="fake_ai", model="fake-embedding-v1"),
+            text=ModelConfig(provider="fake_ai", model="fake-text-v1"),
         ),
+        wiki={"enabled": True, "auto_compile": False},
     )
 
 

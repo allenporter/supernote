@@ -1,6 +1,7 @@
 """Tests for supernote.cli.client against a real in-process Supernote server."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -23,6 +24,8 @@ from supernote.cli.client import (
     async_cloud_search,
     async_cloud_socket,
     async_cloud_upload,
+    async_cloud_wiki_diagnostics,
+    async_cloud_wiki_dry_run,
     create_session,
     load_cached_auth,
     server_url_override,
@@ -39,6 +42,8 @@ from supernote.cli.client import (
     subcommand_cloud_search,
     subcommand_cloud_socket,
     subcommand_cloud_upload,
+    subcommand_cloud_wiki_diagnostics,
+    subcommand_cloud_wiki_dry_run,
 )
 from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.models.summary import AddSummaryDTO
@@ -93,6 +98,36 @@ def test_add_parser() -> None:
     assert parsed.query == "meeting notes"
     assert parsed.top_n == 3
     assert parsed.func == subcommand_cloud_search
+
+    parsed = parser.parse_args(["cloud", "wiki", "diagnostics", "--json"])
+    assert parsed.cloud_command == "wiki"
+    assert parsed.wiki_command == "diagnostics"
+    assert parsed.json is True
+    assert parsed.func == subcommand_cloud_wiki_diagnostics
+
+    parsed = parser.parse_args(
+        [
+            "cloud",
+            "wiki",
+            "dry-run",
+            "--file-id",
+            "42",
+            "--start-date",
+            "2026-04-01",
+            "--offset",
+            "8",
+            "--max-pages",
+            "4",
+            "--json",
+        ]
+    )
+    assert parsed.wiki_command == "dry-run"
+    assert parsed.file_id == 42
+    assert parsed.start_date == "2026-04-01"
+    assert parsed.offset == 8
+    assert parsed.max_pages == 4
+    assert parsed.json is True
+    assert parsed.func == subcommand_cloud_wiki_dry_run
 
     for argv in [
         [
@@ -512,3 +547,63 @@ async def test_cloud_keys_cli_and_headless_api_key_execution(
     ):
         await async_cloud_ls("/")
     assert exc_info.value.code == 1
+
+
+async def test_cloud_wiki_diagnostics_and_dry_run_cli(
+    cli_env: CliServerEnv,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify `cloud wiki diagnostics` and `cloud wiki dry-run` end-to-end against server."""
+    await async_cloud_wiki_diagnostics()
+    assert "No transcribed notebooks found." in capsys.readouterr().out
+
+    user_id = await cli_env.user_service.get_user_id(ADMIN_EMAIL)
+    assert user_id is not None
+    async with cli_env.session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=8801,
+                user_id=user_id,
+                directory_id=0,
+                file_name="Daily_Journal.note",
+                is_folder="N",
+                is_active="Y",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=8801,
+                page_index=0,
+                page_id="P20260415080000D01",
+                text_content="04.15 Daily journal entry about home solar inverter.",
+            )
+        )
+        await session.commit()
+
+    await async_cloud_wiki_diagnostics()
+    diag_out = capsys.readouterr().out
+    assert "8801" in diag_out
+    assert "Daily_Journal.note" in diag_out
+    assert "0/1" in diag_out
+
+    await async_cloud_wiki_diagnostics(as_json=True)
+    diag_json = json.loads(capsys.readouterr().out)
+    assert len(diag_json) == 1
+    assert diag_json[0]["file_id"] == "8801"
+    assert diag_json[0]["ocr_pages"] == 1
+    assert diag_json[0]["cited_pages"] == 0
+
+    await async_cloud_wiki_dry_run(file_id=8801, start_date="2026-04-01", max_pages=4)
+    dry_out = capsys.readouterr().out
+    assert "Dry-run compile: 1 page(s) sent" in dry_out
+    assert "[page01] 2026-04-15 Daily_Journal.note p.0" in dry_out
+
+    await async_cloud_wiki_dry_run(file_id=8801, as_json=True)
+    dry_json = json.loads(capsys.readouterr().out)
+    assert len(dry_json["pages_sent"]) == 1
+    assert dry_json["pages_sent"][0]["source_id"] == "page01"
+
+    with pytest.raises(SystemExit) as exc_info:
+        await async_cloud_wiki_dry_run(start_date="not-a-date")
+    assert exc_info.value.code == 1
+    assert "Error:" in capsys.readouterr().out
