@@ -1,8 +1,12 @@
 """Unit tests for ConversionService."""
 
+import base64
+import re
+import zlib
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 from supernote.models.summary import SummaryItem
 from supernote.server.components.conversion import (
@@ -10,9 +14,15 @@ from supernote.server.components.conversion import (
     ConversionService,
     ConvertedBlob,
 )
+from supernote.server.components.conversion.service import _clean_markdown_for_pdf_text
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NoteTitleDO,
+    NoteTitleTranscriptDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
@@ -285,3 +295,322 @@ async def test_convert_summary_validation_errors(
         await conversion_service.get_summary_pdf(user_email, no_md5)
     with pytest.raises(FileError, match="Invalid handwrite_md5"):
         await conversion_service.get_summary_png_page(user_email, unsafe_md5, 0)
+
+
+_PDF_STREAM_RE = re.compile(rb"stream\r?\n(.*?)\r?\n?endstream", re.DOTALL)
+
+
+def _extract_decompressed_pdf_streams(pdf_bytes: bytes) -> bytes:
+    """Return joined decompressed PDF content streams for text assertions."""
+    streams: list[bytes] = []
+    for match in _PDF_STREAM_RE.finditer(pdf_bytes):
+        data = match.group(1).strip()
+        if data.endswith(b"~>"):
+            data = base64.a85decode(data[:-2])
+        try:
+            streams.append(zlib.decompress(data))
+        except zlib.error:
+            streams.append(data)
+    return b"\n".join(streams)
+
+
+def test_clean_markdown_for_pdf_text_strips_markdown_and_mermaid_boilerplate() -> None:
+    raw = """\
+## Sprint Planning
+- [x] Ship **searchable** `PDF` export
+> See [design doc](https://example.com/spec)
+
+| Owner | Status |
+| :--- | :---: |
+| Alice | Done |
+
+---
+
+```mermaid
+flowchart TD
+    subgraph Backend
+        A["Auth Service"] --> B["SQLite Store"]
+    end
+    classDef muted fill:#eee
+```
+"""
+    cleaned = _clean_markdown_for_pdf_text(raw)
+
+    assert cleaned == "\n".join(
+        [
+            "Sprint Planning",
+            "Ship searchable PDF export",
+            "See design doc",
+            "Owner Status",
+            "Alice Done",
+            "Backend",
+            "A Auth Service B SQLite Store",
+        ]
+    )
+
+
+async def test_convert_note_to_pdf_embeds_ocr_text_and_toc_outlines(
+    conversion_service: ConversionService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+    test_data_dir: Path,
+) -> None:
+    user_email = "test@example.com"
+    file_id = 5010
+    storage_key = "note_5010.note"
+    two_page_note = test_data_dir / "philips" / "blank-a6x-3.26.40-two-pages.note"
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, two_page_note.read_bytes())
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Architecture.note",
+                    is_folder="N",
+                    storage_key=storage_key,
+                    md5="md5_5010",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="P0",
+                    text_content=(
+                        "# Overview\n```mermaid\nflowchart TD\n"
+                        'A["Gateway"] --> B["Worker"]\n```\n'
+                    ),
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="P1",
+                    text_content="Follow up action items",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    level=1,
+                    bitmap_md5="md5_title_0",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=1,
+                    page_index=0,
+                    level=2,
+                    bitmap_md5="md5_untranscribed",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=2,
+                    page_index=1,
+                    level=2,
+                    bitmap_md5="md5_title_1",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=3,
+                    page_index=1,
+                    level=2,
+                    bitmap_md5="md5_blank",
+                ),
+                # Another user's title on the same file_id must not leak into this PDF.
+                NoteTitleDO(
+                    user_id=test_user_id + 999,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    level=1,
+                    bitmap_md5="md5_other_user",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    bitmap_md5="md5_title_0",
+                    text_content="System Architecture",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    bitmap_md5="md5_title_1",
+                    text_content="Next Steps",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    bitmap_md5="md5_blank",
+                    text_content="   ",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id + 999,
+                    file_id=file_id,
+                    bitmap_md5="md5_other_user",
+                    text_content="Foreign Tenant Heading",
+                ),
+            ]
+        )
+        await session.commit()
+
+    await conversion_service.convert_note_to_pdf(user_email, file_id, page_no_list=[])
+    full_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5010")
+    pdf_bytes = await _read(blob_storage, full_key)
+
+    streams = _extract_decompressed_pdf_streams(pdf_bytes)
+    assert b"3 Tr" in streams
+    assert b"Overview" in streams
+    assert b"Gateway" in streams
+    assert b"Worker" in streams
+    assert b"Follow up action items" in streams
+    assert b"flowchart" not in streams
+    assert b"mermaid" not in streams
+
+    assert b"/Outlines" in pdf_bytes
+    assert b"(System Architecture)" in pdf_bytes
+    assert b"(Next Steps)" in pdf_bytes
+    assert b"(Foreign Tenant Heading)" not in pdf_bytes
+
+
+async def test_convert_note_to_pdf_partial_pages_filters_toc_and_text(
+    conversion_service: ConversionService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+    test_data_dir: Path,
+) -> None:
+    user_email = "test@example.com"
+    file_id = 5011
+    storage_key = "note_5011.note"
+    two_page_note = test_data_dir / "philips" / "blank-a6x-3.26.40-two-pages.note"
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, two_page_note.read_bytes())
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Partial.note",
+                    is_folder="N",
+                    storage_key=storage_key,
+                    md5="md5_5011",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="P0",
+                    text_content="Excluded page zero text",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="P1",
+                    text_content="Included page one text",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    level=1,
+                    bitmap_md5="md5_p0",
+                ),
+                NoteTitleDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    title_index=1,
+                    page_index=1,
+                    level=1,
+                    bitmap_md5="md5_p1",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    bitmap_md5="md5_p0",
+                    text_content="Page Zero Heading",
+                ),
+                NoteTitleTranscriptDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    bitmap_md5="md5_p1",
+                    text_content="Page One Heading",
+                ),
+            ]
+        )
+        await session.commit()
+
+    await conversion_service.convert_note_to_pdf(user_email, file_id, page_no_list=[1])
+    selection_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5011", [1])
+    pdf_bytes = await _read(blob_storage, selection_key)
+
+    streams = _extract_decompressed_pdf_streams(pdf_bytes)
+    assert b"Included page one text" in streams
+    assert b"Excluded page zero text" not in streams
+    assert b"(Page One Heading)" in pdf_bytes
+    assert b"(Page Zero Heading)" not in pdf_bytes
+
+
+async def test_convert_note_to_pdf_handles_missing_title_transcript_table(
+    conversion_service: ConversionService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+    test_note_path: Path,
+) -> None:
+    user_email = "test@example.com"
+    file_id = 5012
+    storage_key = "note_5012.note"
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, test_note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Legacy.note",
+                    is_folder="N",
+                    storage_key=storage_key,
+                    md5="md5_5012",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="P0",
+                    text_content="Legacy OCR transcript",
+                ),
+            ]
+        )
+        await session.execute(
+            text(
+                "ALTER TABLE f_note_title_transcript RENAME TO f_note_title_transcript_bak"
+            )
+        )
+        await session.commit()
+
+    try:
+        await conversion_service.convert_note_to_pdf(
+            user_email, file_id, page_no_list=[]
+        )
+        full_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5012")
+        pdf_bytes = await _read(blob_storage, full_key)
+
+        streams = _extract_decompressed_pdf_streams(pdf_bytes)
+        assert b"Legacy OCR transcript" in streams
+        assert b"/Outlines" not in pdf_bytes
+    finally:
+        async with session_manager.session() as session:
+            await session.execute(
+                text(
+                    "ALTER TABLE f_note_title_transcript_bak RENAME TO f_note_title_transcript"
+                )
+            )
+            await session.commit()

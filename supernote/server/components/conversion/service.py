@@ -11,6 +11,8 @@ or renders PDFs in a worker thread via `supernote.notebook.converter.PdfConverte
 from __future__ import annotations
 
 import asyncio
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -18,14 +20,19 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from supernote.models.base import TaskType
 from supernote.models.summary import SummaryItem
-from supernote.notebook import PdfConverter, PngConverter
+from supernote.notebook import PdfConverter, PdfOutlineEntry, PngConverter
 from supernote.notebook import load as load_notebook
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NoteTitleDO,
+    NoteTitleTranscriptDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
@@ -83,11 +90,75 @@ class PageImage:
     """Normalized image height in pixels."""
 
 
-def _convert_note_to_pdf_sync(blob_content: bytes, page_no_list: list[int]) -> bytes:
+_MERMAID_FENCE_OPEN_RE = re.compile(r"^```mermaid\b", re.IGNORECASE)
+_CODE_FENCE_RE = re.compile(r"^```")
+_MERMAID_DIRECTIVE_RE = re.compile(
+    r"^(?:flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|classDiagram"
+    r"|erDiagram|gantt|pie|mindmap|journey|gitGraph|timeline|xychart-beta"
+    r"|end|classDef|class|style|linkStyle|direction)\b",
+    re.IGNORECASE,
+)
+_MERMAID_SUBGRAPH_RE = re.compile(r"^subgraph\s+", re.IGNORECASE)
+_MERMAID_SYNTAX_RE = re.compile(
+    r"<-->|-\.->|==>|--+>|---|\[\"|\"\]|\(\"|\"\)|\{\"|\"\}|[\[\]|]"
+)
+_MD_TABLE_SEP_RE = re.compile(r"^\|?[\s:-]+(?:\|[\s:-]+)+\|?$")
+_MD_HR_RE = re.compile(r"^[-*_]{3,}$")
+_MD_LINE_PREFIX_RE = re.compile(r"^(?:#{1,6}\s+|>\s*|[-*+]\s+(?:\[[ xX]\]\s+)?)")
+_MD_LINK_RE = re.compile(r"!?\[([^\]]+)\]\([^)]+\)")
+_MD_INLINE_RE = re.compile(r"\*\*|__|~~|`")
+
+
+def _clean_markdown_for_pdf_text(text: str) -> str:
+    """Strip Markdown and Mermaid boilerplate while keeping searchable words and labels."""
+    cleaned_lines: list[str] = []
+    in_mermaid = False
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _MERMAID_FENCE_OPEN_RE.match(line):
+            in_mermaid = True
+            continue
+        if _CODE_FENCE_RE.match(line):
+            in_mermaid = False
+            continue
+        if in_mermaid:
+            if _MERMAID_DIRECTIVE_RE.match(line):
+                continue
+            line = _MERMAID_SUBGRAPH_RE.sub("", line)
+            line = _MERMAID_SYNTAX_RE.sub(" ", line)
+        else:
+            if _MD_TABLE_SEP_RE.match(line) or _MD_HR_RE.match(line):
+                continue
+            line = _MD_LINE_PREFIX_RE.sub("", line)
+            line = _MD_LINK_RE.sub(r"\1", line)
+            line = _MD_INLINE_RE.sub("", line)
+            line = line.replace("|", " ")
+
+        normalized = " ".join(line.split())
+        if normalized:
+            cleaned_lines.append(normalized)
+
+    return "\n".join(cleaned_lines)
+
+
+def _convert_note_to_pdf_sync(
+    blob_content: bytes,
+    page_no_list: list[int],
+    *,
+    page_texts: Mapping[int, str] | None = None,
+    toc_entries: Sequence[PdfOutlineEntry] | None = None,
+) -> bytes:
     """Parse a note file and convert requested pages to PDF in a worker thread."""
     note = load_notebook(BytesIO(blob_content), policy="loose")
     converter = PdfConverter(note)
-    return converter.convert(page_no_list if page_no_list else -1)
+    return converter.convert(
+        page_no_list if page_no_list else -1,
+        page_texts=page_texts,
+        toc_entries=toc_entries,
+    )
 
 
 def _convert_note_to_png_pages_sync(blob_content: bytes) -> list[bytes]:
@@ -208,6 +279,68 @@ class ConversionService:
             file_name=f"{stem}_page_{page_no}.png",
         )
 
+    async def _load_pdf_enrichment(
+        self, user_id: int, file_id: int
+    ) -> tuple[dict[int, str], list[PdfOutlineEntry]]:
+        """Load cleaned per-page OCR text and transcribed TOC headings for PDF export."""
+        async with self.session_manager.session() as session:
+            page_rows = (
+                await session.execute(
+                    select(
+                        NotePageContentDO.page_index, NotePageContentDO.text_content
+                    ).where(
+                        NotePageContentDO.file_id == file_id,
+                        NotePageContentDO.text_content.is_not(None),
+                    )
+                )
+            ).all()
+            try:
+                title_rows = (
+                    await session.execute(
+                        select(
+                            NoteTitleDO.page_index,
+                            NoteTitleDO.level,
+                            NoteTitleTranscriptDO.text_content,
+                        )
+                        .join(
+                            NoteTitleTranscriptDO,
+                            (NoteTitleDO.user_id == NoteTitleTranscriptDO.user_id)
+                            & (NoteTitleDO.file_id == NoteTitleTranscriptDO.file_id)
+                            & (
+                                NoteTitleDO.bitmap_md5
+                                == NoteTitleTranscriptDO.bitmap_md5
+                            ),
+                        )
+                        .where(
+                            NoteTitleDO.user_id == user_id,
+                            NoteTitleDO.file_id == file_id,
+                        )
+                        .order_by(NoteTitleDO.title_index)
+                    )
+                ).all()
+            except OperationalError as err:
+                # Preserve export compatibility with pre-migration SQLite DBs
+                # lacking `f_note_title` or `f_note_title_transcript`.
+                if "no such table" in str(err).lower():
+                    title_rows = []
+                else:
+                    raise
+
+        page_texts: dict[int, str] = {}
+        for page_index, raw_text in page_rows:
+            if not raw_text:
+                continue
+            cleaned = _clean_markdown_for_pdf_text(raw_text)
+            if cleaned:
+                page_texts[page_index] = cleaned
+
+        toc_entries = [
+            PdfOutlineEntry(title=stripped, page_index=page_index, level=level)
+            for page_index, level, text in title_rows
+            if (stripped := text.strip())
+        ]
+        return page_texts, toc_entries
+
     async def convert_note_to_pdf(
         self, user: str, file_id: int, page_no_list: list[int]
     ) -> None:
@@ -218,8 +351,13 @@ class ConversionService:
         blob_content = await self.blob_storage.get_bytes(
             USER_DATA_BUCKET, node.storage_key
         )
+        page_texts, toc_entries = await self._load_pdf_enrichment(user_id, file_id)
         pdf_bytes = await asyncio.to_thread(
-            _convert_note_to_pdf_sync, blob_content, page_no_list
+            _convert_note_to_pdf_sync,
+            blob_content,
+            page_no_list,
+            page_texts=page_texts or None,
+            toc_entries=toc_entries or None,
         )
         pdf_storage_key = get_conversion_pdf_path(
             user_id=user_id,
