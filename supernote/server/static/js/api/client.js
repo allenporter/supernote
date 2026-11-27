@@ -858,6 +858,19 @@ export async function fetchDownloadUrl(fileId) {
 }
 
 /**
+ * Trigger a browser download for a signed OSS URL via a temporary anchor element.
+ * @param {string} url
+ */
+function triggerBrowserDownload(url) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+/**
  * Trigger a browser download of a stored file.
  *
  * Navigates to the signed URL rather than fetching the bytes into a Blob the
@@ -870,12 +883,31 @@ export async function fetchDownloadUrl(fileId) {
  */
 export async function downloadFile(fileId) {
     const url = await fetchDownloadUrl(fileId);
-    const link = document.createElement('a');
-    link.href = url;
-    link.rel = 'noopener';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    triggerBrowserDownload(url);
+}
+
+/**
+ * Convert a `.note` file to PDF on the server and return its signed download URL.
+ * @param {string | number} fileId
+ * @param {number[]} [pageNoList=[]]
+ * @returns {Promise<string>}
+ */
+export async function fetchNotePdfUrl(fileId, pageNoList = []) {
+    const data = await apiRequest('/api/file/note/to/pdf', {
+        body: { id: String(fileId), pageNoList },
+        errorPrefix: 'PDF export failed',
+    });
+    if (!data?.url) throw new Error('No PDF download URL returned');
+    return data.url;
+}
+
+/**
+ * Convert a `.note` file to PDF and trigger a browser download of the signed URL.
+ * @param {string | number} fileId
+ */
+export async function exportNoteToPdf(fileId) {
+    const url = await fetchNotePdfUrl(fileId);
+    triggerBrowserDownload(url);
 }
 
 /**

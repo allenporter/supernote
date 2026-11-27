@@ -2,6 +2,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
     convertNoteToPng,
     downloadFile,
+    exportNoteToPdf,
     fetchAiStatus,
     fetchDownloadUrl,
     fetchNoteMetadata,
@@ -50,6 +51,7 @@ export default {
         /** @type {import('vue').Ref<string | null>} */
         const error = ref(null);
         const downloading = ref(false);
+        const exportingPdf = ref(false);
 
         const activeRightTab = ref('transcription'); // 'outline' | 'transcription' | 'insights'
         const transcriptEnabled = computed(() => isComponentRunning('transcript'));
@@ -290,6 +292,18 @@ export default {
                 showToast(`Failed to download: ${getErrorMessage(e)}`);
             } finally {
                 downloading.value = false;
+            }
+        };
+
+        const handleExportPdf = async () => {
+            if (!props.file || exportingPdf.value) return;
+            exportingPdf.value = true;
+            try {
+                await exportNoteToPdf(props.file.id);
+            } catch (e) {
+                showToast(`Failed to export PDF: ${getErrorMessage(e)}`);
+            } finally {
+                exportingPdf.value = false;
             }
         };
 
@@ -582,6 +596,8 @@ export default {
             error,
             downloading,
             handleDownload,
+            exportingPdf,
+            handleExportPdf,
             isLoadingTranscript,
             activeRightTab,
             transcriptEnabled,
@@ -620,6 +636,8 @@ export default {
             :active-page-index="activePageIndex"
             :zoom-percent="zoomPercent"
             :downloading="downloading"
+            :can-export-pdf="previewsEnabled"
+            :exporting-pdf="exportingPdf"
             :show-side-panel="showSidePanel"
             :is-mobile-side-panel-open="isMobileSidePanelOpen"
             @close="$emit('close')"
@@ -629,6 +647,7 @@ export default {
             @zoom-out="zoomOut"
             @reset-zoom="resetZoom"
             @download="handleDownload"
+            @export-pdf="handleExportPdf"
             @toggle-side-panel="isMobileSidePanelOpen = !isMobileSidePanelOpen"
         />
 

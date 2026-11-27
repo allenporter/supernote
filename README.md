@@ -21,8 +21,8 @@ Unlike the official multi-container Java, MariaDB, and Redis Private Cloud stack
 | Tier | Memory Footprint | What's Included | AI Required? |
 | :--- | :--- | :--- | :---: |
 | **1. Bare Sync Server** | ~135 MB RAM | Drop-in Private Cloud sync for Raspberry Pi / NAS, storage quotas (disables Web UI and MCP) | No |
-| **2. Web Workspace & Integrations** | ~160 MB idle (~310 MB peak) | 4-tab Web UI (Files, Digests, Tasks, Wiki), `.ics` calendar feeds, webhooks, built-in Supernote keyword search | No |
-| **3. Optional AI & Knowledge Hub** | ~160 MB idle + chosen model | Handwriting & diagram OCR, standalone image OCR, hybrid semantic search, opt-in LLM Wiki + Obsidian export, MCP server for Claude/Cursor | Optional (Gemini or local Ollama/vLLM) |
+| **2. Web Workspace & Integrations** | ~160 MB idle (~310 MB peak) | 4-tab Web UI (Files, Digests, Tasks, Wiki), one-click `.note` PDF export, `.ics` calendar feeds, webhooks, built-in Supernote keyword search | No |
+| **3. Optional AI & Knowledge Hub** | ~160 MB idle + chosen model | Handwriting & diagram OCR, searchable PDF export with TOC bookmarks, standalone image OCR, hybrid semantic search, opt-in LLM Wiki + Obsidian export, MCP server for Claude/Cursor | Optional (Gemini or local Ollama/vLLM) |
 | **4. Offline `.note` Toolkit** | CLI / library only | Parse `.note` files, convert to PDF/PNG/SVG, or author Bullet Journal `.note` files from Markdown—no server needed | No |
 
 ---
