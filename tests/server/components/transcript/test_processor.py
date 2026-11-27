@@ -395,13 +395,21 @@ async def test_ocr_passes_verified_keywords_and_page_style_prompt(
     assert "Daily Log" in prompt
 
 
+@pytest.mark.parametrize(
+    ("file_name", "offered"), [("Plan.note", True), ("Whiteboard.jpg", False)]
+)
 async def test_ocr_prompt_gets_keywords_from_the_notebooks_folder(
     file_service: FileService,
     fake_ocr_model: FakeOcrModel,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
+    file_name: str,
+    offered: bool,
 ) -> None:
-    """A keyword marked in another notebook nearby is offered as a spelling."""
+    """A keyword marked in another notebook nearby is offered as a spelling.
+
+    A standalone image gets the image prompt, which takes no vocabulary.
+    """
     ocr_module = OcrModule(file_service=file_service, ocr_model=fake_ocr_model)
     user_id = 100
     file_id = 1001
@@ -418,7 +426,7 @@ async def test_ocr_prompt_gets_keywords_from_the_notebooks_folder(
                 directory_id=0,
             )
         )
-        for note_id, name in ((file_id, "Plan.note"), (sibling_id, "Notes.note")):
+        for note_id, name in ((file_id, file_name), (sibling_id, "Notes.note")):
             session.add(
                 UserFileDO(
                     id=note_id,
@@ -444,10 +452,12 @@ async def test_ocr_prompt_gets_keywords_from_the_notebooks_folder(
         )
         await session.commit()
 
-    assert await ocr_module.run(file_id, session_manager, page_index=0, page_id="p0")
+    assert await ocr_module.run(
+        file_id, session_manager, page_index=0, page_id="p0", user_id=user_id
+    )
 
     [(_, prompt)] = fake_ocr_model.calls
-    assert "These names and terms may appear in the text: Lovelace." in prompt
+    assert ("may appear in the text: Lovelace." in prompt) is offered
 
 
 async def test_ocr_emits_previous_text_diff_on_retranscription(

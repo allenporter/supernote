@@ -159,6 +159,8 @@ def test_format_ocr_prompt_vocabulary_skips_the_pages_own_keywords(
         page_metadata, vocabulary=["Lovelace"], prompt_loader=loader
     )
     assert "may appear in the text" not in only_own
+
+
 def test_format_image_ocr_prompt_excludes_rapid_logging_legend() -> None:
     page_metadata = PageMetadata(
         file_name="whiteboard.jpg",
