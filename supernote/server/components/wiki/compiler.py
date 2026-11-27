@@ -74,13 +74,13 @@ from .prompts import (
     WikiCompilePlan,
     WikiLintIssueOp,
     WikiLintProposalOp,
+    WikiSourceRefOp,
     build_compile_prompt,
     build_lint_prompt,
     get_compile_json_schema,
     get_lint_json_schema,
     parse_compile_plan,
     parse_lint_report,
-    select_candidate_pages,
 )
 from .service import WikiService, _make_dedup_key
 from .source_service import WikiSourceService
@@ -443,23 +443,7 @@ class WikiCompilerWorker:
                 if next_cursor is None:
                     break
                 if linked_context is None:
-                    task_rows = await self._source_service.list_task_snapshots(
-                        user_id, limit=50
-                    )
-                    linked_context = {}
-                    if task_rows:
-                        linked_context["tasks"] = [
-                            {
-                                "task_id": t.task_id,
-                                "title": t.title,
-                                "detail": t.detail,
-                                "status": t.status,
-                                "importance": t.importance,
-                                "due_time": t.due_time,
-                                "completed_time": t.completed_time,
-                            }
-                            for t in task_rows
-                        ]
+                    linked_context = await self._load_task_linked_context(user_id)
                 files_processed.extend(
                     str(diff["payload"]["file_path"])
                     for diff in window_diffs
@@ -577,26 +561,9 @@ class WikiCompilerWorker:
             return WikiDryRunResponseVO(elapsed_ms=int((time.monotonic() - t0) * 1000))
 
         all_pages = await self._wiki_service.list_pages(user_id, limit=500)
-        task_rows = await self._source_service.list_task_snapshots(user_id, limit=50)
-        linked_context: dict[str, object] = {}
-        if task_rows:
-            linked_context["tasks"] = [
-                {
-                    "task_id": t.task_id,
-                    "title": t.title,
-                    "detail": t.detail,
-                    "status": t.status,
-                    "importance": t.importance,
-                    "due_time": t.due_time,
-                    "completed_time": t.completed_time,
-                }
-                for t in task_rows
-            ]
+        linked_context = await self._load_task_linked_context(user_id)
 
         page_budget = max(self._config.max_pages_per_batch, 10)
-        candidates = select_candidate_pages(
-            all_pages, window_diffs, linked_context, limit=20
-        )
         built = build_compile_prompt(
             all_pages,
             window_diffs,
@@ -629,10 +596,7 @@ class WikiCompilerWorker:
         ]
 
         existing_policy = {p.slug: p.edit_policy for p in all_pages}
-        normalized_handles = {k.lower(): v for k, v in built.source_handles.items()}
-        known_raw = {
-            (str(v.source_type), v.source_key): v for v in built.source_handles.values()
-        }
+        normalized_handles, known_raw = self._index_source_handles(built.source_handles)
         ops_report: list[WikiDryRunOpDTO] = []
         applied_non_index = 0
         for op in plan.page_ops:
@@ -650,21 +614,14 @@ class WikiCompilerWorker:
             else:
                 applied_non_index += 1
 
-            resolved_keys: list[str] = []
-            dropped_keys: list[str] = []
-            for ref in op.source_refs:
-                clean_key = (ref.source_key or "").strip()
-                prefix = f"{ref.source_type}:"
-                if clean_key.startswith(prefix):
-                    clean_key = clean_key[len(prefix) :]
-                target = normalized_handles.get(clean_key.lower()) or known_raw.get(
-                    (str(ref.source_type), clean_key)
-                )
-                if target is None:
-                    dropped_keys.append(ref.source_key)
-                elif target.source_key not in resolved_keys:
-                    resolved_keys.append(target.source_key)
-
+            resolved_refs, dropped_keys = self._resolve_op_source_refs(
+                op.source_refs,
+                slug=slug,
+                normalized_handles=normalized_handles,
+                known_raw_targets=known_raw,
+                validate_handles=True,
+                source_event_seq=None,
+            )
             ops_report.append(
                 WikiDryRunOpDTO(
                     slug=slug,
@@ -674,7 +631,7 @@ class WikiCompilerWorker:
                     else "topic",
                     summary=op.summary,
                     body_chars=len(op.body_md),
-                    resolved_source_keys=resolved_keys,
+                    resolved_source_keys=[r.source_key for r in resolved_refs],
                     dropped_source_keys=dropped_keys,
                     drop_reason=drop_reason,
                 )
@@ -682,11 +639,98 @@ class WikiCompilerWorker:
 
         return WikiDryRunResponseVO(
             pages_sent=pages_sent,
-            candidate_slugs=[p.slug for p in candidates],
+            candidate_slugs=list(built.candidate_slugs),
             ops=ops_report,
             lint_proposals_count=len(plan.lint_proposals),
             elapsed_ms=int((time.monotonic() - t0) * 1000),
         )
+
+    async def _load_task_linked_context(self, user_id: int) -> dict[str, object]:
+        """Load recent schedule tasks formatted for `<linked_context>`."""
+        task_rows = await self._source_service.list_task_snapshots(user_id, limit=50)
+        if not task_rows:
+            return {}
+        return {
+            "tasks": [
+                {
+                    "task_id": t.task_id,
+                    "title": t.title,
+                    "detail": t.detail,
+                    "status": t.status,
+                    "importance": t.importance,
+                    "due_time": t.due_time,
+                    "completed_time": t.completed_time,
+                }
+                for t in task_rows
+            ]
+        }
+
+    @staticmethod
+    def _index_source_handles(
+        source_handles: Mapping[str, SourceRefTarget] | None,
+    ) -> tuple[dict[str, SourceRefTarget], dict[tuple[str, str], SourceRefTarget]]:
+        normalized: dict[str, SourceRefTarget] = {}
+        known_raw: dict[tuple[str, str], SourceRefTarget] = {}
+        if source_handles:
+            for handle, target in source_handles.items():
+                normalized[handle.lower()] = target
+                known_raw[(str(target.source_type), target.source_key)] = target
+        return normalized, known_raw
+
+    @staticmethod
+    def _resolve_op_source_refs(
+        op_refs: Sequence[WikiSourceRefOp],
+        *,
+        slug: str,
+        normalized_handles: Mapping[str, SourceRefTarget],
+        known_raw_targets: Mapping[tuple[str, str], SourceRefTarget],
+        validate_handles: bool,
+        source_event_seq: int | None,
+    ) -> tuple[list[WikiSourceRefDTO], list[str]]:
+        """Resolve short prompt handles to authoritative source refs and report dropped keys."""
+        resolved: list[WikiSourceRefDTO] = []
+        dropped: list[str] = []
+        seen: set[tuple[str, str]] = set()
+        for ref in op_refs:
+            if not ref.source_type or not ref.source_key:
+                continue
+            clean_key = ref.source_key.strip()
+            redundant_prefix = f"{ref.source_type}:"
+            if clean_key.startswith(redundant_prefix):
+                clean_key = clean_key[len(redundant_prefix) :]
+            if not clean_key:
+                continue
+            resolved_type = ref.source_type
+            resolved_key = clean_key
+            resolved_file_id = ref.file_id
+            if validate_handles:
+                target = normalized_handles.get(
+                    clean_key.lower()
+                ) or known_raw_targets.get((str(ref.source_type), clean_key))
+                if target is None:
+                    logger.debug(
+                        "Dropping unrecognized source_ref %r on %r",
+                        ref.source_key,
+                        slug,
+                    )
+                    dropped.append(ref.source_key)
+                    continue
+                resolved_type = target.source_type
+                resolved_key = target.source_key
+                resolved_file_id = target.file_id
+            dedup_key = (str(resolved_type), resolved_key)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            resolved.append(
+                WikiSourceRefDTO(
+                    source_type=resolved_type,
+                    source_key=resolved_key,
+                    file_id=resolved_file_id,
+                    last_event_seq=source_event_seq,
+                )
+            )
+        return resolved, dropped
 
     async def start_backfill_job(
         self, user_id: int, *, max_files_per_turn: int = 1
@@ -901,12 +945,9 @@ class WikiCompilerWorker:
         page_cap = (
             max_pages if max_pages is not None else self._config.max_pages_per_batch
         )
-        normalized_handles: dict[str, SourceRefTarget] = {}
-        known_raw_targets: dict[tuple[str, str], SourceRefTarget] = {}
-        if source_handles:
-            for handle, target in source_handles.items():
-                normalized_handles[handle.lower()] = target
-                known_raw_targets[(str(target.source_type), target.source_key)] = target
+        normalized_handles, known_raw_targets = self._index_source_handles(
+            source_handles
+        )
 
         non_index_ops = [
             op
@@ -919,46 +960,14 @@ class WikiCompilerWorker:
             if not slug or not title:
                 continue
             page_kind = op.page_kind if op.page_kind in VALID_PAGE_KINDS else "topic"
-            source_refs: list[WikiSourceRefDTO] = []
-            seen_refs: set[tuple[str, str]] = set()
-            for ref in op.source_refs:
-                if not ref.source_type or not ref.source_key:
-                    continue
-                clean_key = ref.source_key.strip()
-                redundant_prefix = f"{ref.source_type}:"
-                if clean_key.startswith(redundant_prefix):
-                    clean_key = clean_key[len(redundant_prefix) :]
-                if not clean_key:
-                    continue
-                resolved_type = ref.source_type
-                resolved_key = clean_key
-                resolved_file_id = ref.file_id
-                if source_handles is not None:
-                    target = normalized_handles.get(
-                        clean_key.lower()
-                    ) or known_raw_targets.get((str(ref.source_type), clean_key))
-                    if target is None:
-                        logger.debug(
-                            "Dropping unrecognized source_ref %r on %r",
-                            ref.source_key,
-                            slug,
-                        )
-                        continue
-                    resolved_type = target.source_type
-                    resolved_key = target.source_key
-                    resolved_file_id = target.file_id
-                dedup_key = (str(resolved_type), resolved_key)
-                if dedup_key in seen_refs:
-                    continue
-                seen_refs.add(dedup_key)
-                source_refs.append(
-                    WikiSourceRefDTO(
-                        source_type=resolved_type,
-                        source_key=resolved_key,
-                        file_id=resolved_file_id,
-                        last_event_seq=source_event_seq,
-                    )
-                )
+            source_refs, _ = self._resolve_op_source_refs(
+                op.source_refs,
+                slug=slug,
+                normalized_handles=normalized_handles,
+                known_raw_targets=known_raw_targets,
+                validate_handles=source_handles is not None,
+                source_event_seq=source_event_seq,
+            )
             resolved_claims: list[dict[str, object]] = []
             for claim in op.claims:
                 claim_dict = claim.to_dict()

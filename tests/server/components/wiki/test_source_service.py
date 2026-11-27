@@ -494,6 +494,10 @@ async def test_get_notebook_coverage_and_list_dry_run_pages_enforce_tenant_scope
         "Project.note",
         "Daily.note",
     ]
+    by_file_and_date = await svc.list_dry_run_pages(
+        1, file_id=701, start_date="2026-02-01", max_pages=5
+    )
+    assert [d["payload"]["page_id"] for d in by_file_and_date] == ["P20260210080000D2"]
     other_file = await svc.list_dry_run_pages(1, file_id=703, max_pages=5)
     assert other_file == []
 

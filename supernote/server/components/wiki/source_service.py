@@ -537,7 +537,7 @@ class WikiSourceService:
         for fid, fname, ocr_count, avg_len in page_stats:
             int_fid = int(fid)
             ocr_pages = int(ocr_count)
-            cited_pages = len(cited_keys_by_file.get(int_fid, ()))
+            cited_pages = min(ocr_pages, len(cited_keys_by_file.get(int_fid, ())))
             cited_slugs = sorted(cited_slugs_by_file.get(int_fid, ()))
             coverage.append(
                 WikiNotebookCoverageDTO(
@@ -575,7 +575,7 @@ class WikiSourceService:
             if file_id is not None:
                 entries = [e for e in entries if e.file_id == file_id]
                 entries.sort(key=lambda e: (e.page_index, e.row_id))
-            elif start_date is not None:
+            if start_date is not None:
                 entries = [
                     e for e in entries if format_page_date(e.page_ts_ms) >= start_date
                 ]

@@ -353,9 +353,16 @@ async def test_wiki_http_diagnostics_and_dry_run_validation(
     bad_date = await client.post(
         "/api/extended/wiki/diagnostics/dry-run",
         headers=auth_headers,
-        json={"start_date": "2026"},
+        json={"start_date": "not-a-date"},
     )
     assert bad_date.status == 400
+
+    bad_json = await client.post(
+        "/api/extended/wiki/diagnostics/dry-run",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        data="{invalid",
+    )
+    assert bad_json.status == 400
 
     bad_max = await client.post(
         "/api/extended/wiki/diagnostics/dry-run",

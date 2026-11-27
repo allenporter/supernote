@@ -82,6 +82,7 @@ class BuiltCompilePrompt:
 
     prompt: str
     source_handles: dict[str, SourceRefTarget]
+    candidate_slugs: tuple[str, ...] = ()
 
 
 @dataclass
@@ -745,7 +746,11 @@ def build_compile_prompt(
             ),
         },
     )
-    return BuiltCompilePrompt(prompt=prompt, source_handles=source_handles)
+    return BuiltCompilePrompt(
+        prompt=prompt,
+        source_handles=source_handles,
+        candidate_slugs=tuple(p.slug for p in selected_candidates),
+    )
 
 
 def build_lint_prompt(

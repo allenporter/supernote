@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from aiohttp import web
@@ -48,6 +49,7 @@ from .service import WIKI_SERVICE_KEY, WikiService
 
 __all__ = [
     "WikiCompileRequestDTO",
+    "WikiDryRunRequestDTO",
     "WikiResolveLintRequestDTO",
     "WikiUpsertRequestDTO",
     "async_setup_http",
@@ -102,6 +104,26 @@ class WikiResolveLintRequestDTO(DataClassJSONMixin):
     """Optional request body for `POST /api/extended/wiki/lint/{issue_id}/resolve`."""
 
     status: str = "resolved"
+
+
+@dataclass
+class WikiDryRunRequestDTO(DataClassJSONMixin):
+    """Optional request body for `POST /api/extended/wiki/diagnostics/dry-run`."""
+
+    file_id: int | None = None
+    start_date: str | None = None
+    offset_pages: int = 0
+    max_pages: int = 8
+
+    def __post_init__(self) -> None:
+        if self.start_date is not None:
+            self.start_date = self.start_date.strip() or None
+            if self.start_date is not None:
+                self.start_date = date.fromisoformat(self.start_date).isoformat()
+        if self.offset_pages < 0:
+            raise ValueError("offset_pages must be >= 0")
+        if self.max_pages < 1 or self.max_pages > 20:
+            raise ValueError("max_pages must be between 1 and 20")
 
 
 async def _resolve_user_id(request: web.Request) -> int | None:
@@ -448,57 +470,19 @@ async def handle_wiki_dry_run(request: web.Request) -> web.Response:
     if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
-    body = await request.json() if request.can_read_body else {}
-    if not isinstance(body, dict):
-        return web.json_response({"error": "Expected JSON object"}, status=400)
-
-    raw_file_id = body.get("file_id")
-    file_id: int | None = None
-    if raw_file_id is not None and raw_file_id != "":
-        if isinstance(raw_file_id, bool):
-            return web.json_response({"error": "Invalid file_id"}, status=400)
-        try:
-            file_id = int(raw_file_id)
-        except (TypeError, ValueError):
-            return web.json_response({"error": "Invalid file_id"}, status=400)
-
-    raw_start_date = body.get("start_date")
-    start_date: str | None = None
-    if raw_start_date is not None and raw_start_date != "":
-        if not isinstance(raw_start_date, str) or len(raw_start_date.strip()) != 10:
-            return web.json_response(
-                {"error": "start_date must be YYYY-MM-DD"}, status=400
-            )
-        start_date = raw_start_date.strip()
-
-    raw_offset = body.get("offset_pages", 0)
-    raw_max_pages = body.get("max_pages", 8)
-    if (
-        isinstance(raw_offset, bool)
-        or not isinstance(raw_offset, int)
-        or raw_offset < 0
-    ):
-        return web.json_response(
-            {"error": "offset_pages must be a non-negative integer"}, status=400
-        )
-    if (
-        isinstance(raw_max_pages, bool)
-        or not isinstance(raw_max_pages, int)
-        or raw_max_pages < 1
-        or raw_max_pages > 20
-    ):
-        return web.json_response(
-            {"error": "max_pages must be an integer between 1 and 20"}, status=400
-        )
+    try:
+        dto = await parse_json_dto(request, WikiDryRunRequestDTO, allow_empty=True)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     compiler: WikiCompilerWorker = request.app[WIKI_COMPILER_KEY]
     try:
         vo = await compiler.dry_run_compile(
             user_id,
-            file_id=file_id,
-            start_date=start_date,
-            offset_pages=raw_offset,
-            max_pages=raw_max_pages,
+            file_id=dto.file_id,
+            start_date=dto.start_date,
+            offset_pages=dto.offset_pages,
+            max_pages=dto.max_pages,
         )
     except (AIError, ValueError, TypeError, LookupError) as err:
         return web.json_response({"error": str(err)}, status=502)
