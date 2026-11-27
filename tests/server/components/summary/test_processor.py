@@ -129,7 +129,7 @@ async def test_summary_success(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "SUMMARY_GENERATION")
                     .where(SystemTaskDO.key == "global")
                 )
@@ -430,7 +430,7 @@ async def test_summary_failure_marks_task_failed(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "SUMMARY_GENERATION")
                     .where(SystemTaskDO.key == "global")
                 )

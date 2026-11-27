@@ -92,7 +92,7 @@ async def test_system_task_crud(db_session: AsyncSession) -> None:
     """Test Basic CRUD for SystemTaskDO."""
     task = SystemTaskDO(
         user_id=10,
-        file_id=1,
+        entity_id=1,
         task_type="OCR",
         key="page_0",
         status=ProcessingStatus.PENDING,
@@ -107,6 +107,6 @@ async def test_system_task_crud(db_session: AsyncSession) -> None:
     fetched = result.scalar_one()
 
     assert fetched.user_id == 10
-    assert fetched.file_id == 1
+    assert fetched.entity_id == 1
     assert fetched.task_type == "OCR"
     assert fetched.status == ProcessingStatus.PENDING

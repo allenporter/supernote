@@ -112,7 +112,7 @@ async def test_process_ocr_success(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
                     .where(SystemTaskDO.key == "page_p0")
                 )
@@ -203,7 +203,7 @@ async def test_ocr_skips_llm_call_for_blank_page(
         task = (
             await session.execute(
                 select(SystemTaskDO)
-                .where(SystemTaskDO.file_id == file_id)
+                .where(SystemTaskDO.entity_id == file_id)
                 .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
                 .where(SystemTaskDO.key == "page_p_blank")
             )
@@ -903,14 +903,14 @@ async def test_ocr_module_concurrent_duplicate_title_md5_and_unrenderable_crop(
                 ),
                 SystemTaskDO(
                     user_id=user_id,
-                    file_id=file_id,
+                    entity_id=file_id,
                     task_type=TaskType.OCR_EXTRACTION,
                     key="page_p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=user_id,
-                    file_id=file_id,
+                    entity_id=file_id,
                     task_type=TaskType.OCR_EXTRACTION,
                     key="page_p1",
                     status="COMPLETED",

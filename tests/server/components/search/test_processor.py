@@ -91,7 +91,7 @@ async def test_process_embedding_success(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "EMBEDDING_GENERATION")
                     .where(SystemTaskDO.key == "page_p0")
                 )

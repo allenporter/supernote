@@ -11,7 +11,7 @@ import time
 
 from sqlalchemy import select, text
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.server.constants import (
     DB_WRITE_MAX_RETRIES,
     DB_WRITE_RETRY_BACKOFF_SECONDS,
@@ -24,21 +24,38 @@ from supernote.server.utils.unique_id import next_id
 logger = logging.getLogger(__name__)
 
 
+def _resolve_entity_type(
+    task_type: str, entity_type: TaskEntityType | str | None
+) -> str:
+    """Resolve explicit `entity_type` or derive it from `task_type`."""
+    if entity_type is not None:
+        return (
+            entity_type.value
+            if isinstance(entity_type, TaskEntityType)
+            else entity_type
+        )
+    return TaskType.entity_type_for(task_type).value
+
+
 async def get_task(
     session_manager: DatabaseSessionManager,
     user_id: int,
-    file_id: int,
+    entity_id: int,
     task_type: str,
     key: str,
+    *,
+    entity_type: TaskEntityType | str | None = None,
 ) -> SystemTaskDO | None:
-    """Retrieve a SystemTaskDO by user_id, file_id, task_type, and key."""
+    """Retrieve a SystemTaskDO by user_id, entity_type, entity_id, task_type, and key."""
+    resolved_entity_type = _resolve_entity_type(task_type, entity_type)
     async with session_manager.session() as session:
         return (
             (
                 await session.execute(
                     select(SystemTaskDO)
                     .where(SystemTaskDO.user_id == user_id)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_type == resolved_entity_type)
+                    .where(SystemTaskDO.entity_id == entity_id)
                     .where(SystemTaskDO.task_type == task_type)
                     .where(SystemTaskDO.key == key)
                 )
@@ -51,14 +68,17 @@ async def get_task(
 async def update_task_status(
     session_manager: DatabaseSessionManager,
     user_id: int,
-    file_id: int,
+    entity_id: int,
     task_type: str,
     key: str,
     status: ProcessingStatus,
     error: str | None = None,
     data: str | None = None,
+    *,
+    entity_type: TaskEntityType | str | None = None,
 ) -> None:
     """Create or update a SystemTaskDO status atomically with retries for lock conflicts."""
+    resolved_entity_type = _resolve_entity_type(task_type, entity_type)
     max_retries = DB_WRITE_MAX_RETRIES
     backoff = DB_WRITE_RETRY_BACKOFF_SECONDS
 
@@ -71,9 +91,9 @@ async def update_task_status(
                 # We must provide 'id' and 'retry_count' manually for the INSERT part.
                 sql = text(
                     """
-                    INSERT INTO f_system_task (id, user_id, file_id, task_type, key, status, data, last_error, retry_count, create_time, update_time)
-                    VALUES (:id, :user_id, :file_id, :task_type, :key, :status, :data, :error, 0, :now, :now)
-                    ON CONFLICT(user_id, file_id, task_type, key) DO UPDATE SET
+                    INSERT INTO f_system_task (id, user_id, entity_type, entity_id, task_type, key, status, data, last_error, retry_count, create_time, update_time)
+                    VALUES (:id, :user_id, :entity_type, :entity_id, :task_type, :key, :status, :data, :error, 0, :now, :now)
+                    ON CONFLICT(user_id, entity_type, entity_id, task_type, key) DO UPDATE SET
                         status = excluded.status,
                         data = excluded.data,
                         last_error = excluded.last_error,
@@ -91,7 +111,8 @@ async def update_task_status(
                     {
                         "id": next_id(),
                         "user_id": user_id,
-                        "file_id": file_id,
+                        "entity_type": resolved_entity_type,
+                        "entity_id": entity_id,
                         "task_type": task_type,
                         "key": key,
                         "status": status,
@@ -105,7 +126,7 @@ async def update_task_status(
         except DatabaseError as e:
             if "locked" in str(e).lower() and attempt < max_retries - 1:
                 logger.warning(
-                    f"Database locked during task status update for file {file_id} (attempt {attempt + 1}/{max_retries}). Retrying in {backoff}s..."
+                    f"Database locked during task status update for {resolved_entity_type} {entity_id} (attempt {attempt + 1}/{max_retries}). Retrying in {backoff}s..."
                 )
                 await asyncio.sleep(backoff)
                 backoff *= 2

@@ -34,7 +34,7 @@ async def test_processor_http_routes_tasks_and_status(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=file_id,
+                entity_id=file_id,
                 task_type="HASHING",
                 key="global",
                 status=ProcessingStatus.COMPLETED.value,

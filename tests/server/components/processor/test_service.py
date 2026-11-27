@@ -252,7 +252,7 @@ async def test_handle_note_deleted_cleanup(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=file_id,
+                entity_id=file_id,
                 task_type="PNG",
                 key="page_0",
                 status="COMPLETED",
@@ -261,7 +261,7 @@ async def test_handle_note_deleted_cleanup(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=file_id,
+                entity_id=file_id,
                 task_type="OCR",
                 key="page_0",
                 status="COMPLETED",
@@ -354,7 +354,7 @@ async def test_handle_note_deleted_cleanup(
         tasks = (
             (
                 await session.execute(
-                    select(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
+                    select(SystemTaskDO).where(SystemTaskDO.entity_id == file_id)
                 )
             )
             .scalars()
@@ -449,7 +449,7 @@ async def test_page_hashing_orphan_cleanup(
             session.add(
                 SystemTaskDO(
                     user_id=1,
-                    file_id=file_id,
+                    entity_id=file_id,
                     task_type="PNG_CONVERSION",
                     key=f"page_{pid}",
                     status="COMPLETED",
@@ -475,7 +475,7 @@ async def test_page_hashing_orphan_cleanup(
         assert [c.page_id for c in contents] == real_page_ids
 
         stmt = select(SystemTaskDO).where(
-            SystemTaskDO.file_id == file_id,
+            SystemTaskDO.entity_id == file_id,
             SystemTaskDO.task_type == "PNG_CONVERSION",
         )
         tasks = (await session.execute(stmt)).scalars().all()
@@ -495,18 +495,18 @@ async def test_recover_tasks_enqueues_incomplete(
     async with session_manager.session() as session:
         session.add(
             SystemTaskDO(
-                user_id=1, file_id=1, task_type="PNG", key="page_0", status="FAILED"
+                user_id=1, entity_id=1, task_type="PNG", key="page_0", status="FAILED"
             )
         )
         session.add(
             SystemTaskDO(
-                user_id=2, file_id=2, task_type="OCR", key="page_1", status="PENDING"
+                user_id=2, entity_id=2, task_type="OCR", key="page_1", status="PENDING"
             )
         )
         session.add(
             SystemTaskDO(
                 user_id=3,
-                file_id=3,
+                entity_id=3,
                 task_type="EMBEDDING",
                 key="page_0",
                 status="COMPLETED",
@@ -537,7 +537,7 @@ async def test_start_calls_poll_loop(
     async with session_manager.session() as session:
         session.add(
             SystemTaskDO(
-                user_id=1, file_id=1, task_type="PNG", key="page_0", status="FAILED"
+                user_id=1, entity_id=1, task_type="PNG", key="page_0", status="FAILED"
             )
         )
         await session.commit()
@@ -570,7 +570,7 @@ async def test_recover_stalled_tasks_time_threshold(
         session.add(
             SystemTaskDO(
                 user_id=1,
-                file_id=10,
+                entity_id=10,
                 task_type="PNG",
                 key="p0",
                 status="PROCESSING",
@@ -581,7 +581,7 @@ async def test_recover_stalled_tasks_time_threshold(
         session.add(
             SystemTaskDO(
                 user_id=1,
-                file_id=11,
+                entity_id=11,
                 task_type="OCR",
                 key="p0",
                 status="PROCESSING",
@@ -870,7 +870,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
             session.add(
                 SystemTaskDO(
                     user_id=1,
-                    file_id=fid,
+                    entity_id=fid,
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
@@ -880,7 +880,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
             session.add(
                 SystemTaskDO(
                     user_id=1,
-                    file_id=fid,
+                    entity_id=fid,
                     task_type="NOTE_METADATA",
                     key="global",
                     status="COMPLETED",
@@ -890,7 +890,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
             session.add(
                 SystemTaskDO(
                     user_id=1,
-                    file_id=fid,
+                    entity_id=fid,
                     task_type="PNG_CONVERSION",
                     key="page_p0",
                     status="COMPLETED",
@@ -903,14 +903,14 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 # 9101: Complete for OCR, EMBEDDING ("new-model"), and SUMMARY
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9101,
+                    entity_id=9101,
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9101,
+                    entity_id=9101,
                     task_type="EMBEDDING_GENERATION",
                     key="page_p0",
                     status="COMPLETED",
@@ -918,7 +918,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 ),
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9101,
+                    entity_id=9101,
                     task_type="SUMMARY_GENERATION",
                     key="global",
                     status="COMPLETED",
@@ -926,7 +926,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 # 9102: Missing OCR_EXTRACTION (and EMBEDDING_GENERATION)
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9102,
+                    entity_id=9102,
                     task_type="SUMMARY_GENERATION",
                     key="global",
                     status="COMPLETED",
@@ -934,14 +934,14 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 # 9103: EMBEDDING_GENERATION completed with old-model
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9103,
+                    entity_id=9103,
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9103,
+                    entity_id=9103,
                     task_type="EMBEDDING_GENERATION",
                     key="page_p0",
                     status="COMPLETED",
@@ -949,7 +949,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 ),
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9103,
+                    entity_id=9103,
                     task_type="SUMMARY_GENERATION",
                     key="global",
                     status="COMPLETED",
@@ -957,14 +957,14 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 # 9104: Missing SUMMARY_GENERATION
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9104,
+                    entity_id=9104,
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=1,
-                    file_id=9104,
+                    entity_id=9104,
                     task_type="EMBEDDING_GENERATION",
                     key="page_p0",
                     status="COMPLETED",
@@ -1006,7 +1006,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
             [
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=entity.id,
+                    entity_id=entity.id,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
@@ -1023,7 +1023,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                 ),
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=9201,
+                    entity_id=9201,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
@@ -1106,42 +1106,42 @@ async def test_get_file_processing_statuses(
             [
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=10,
+                    entity_id=10,
                     task_type="PNG",
                     key="p0",
                     status="FAILED",
                 ),
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=10,
+                    entity_id=10,
                     task_type="OCR",
                     key="p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=20,
+                    entity_id=20,
                     task_type="PNG",
                     key="p0",
                     status="PROCESSING",
                 ),
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=30,
+                    entity_id=30,
                     task_type="PNG",
                     key="p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=40,
+                    entity_id=40,
                     task_type="PNG",
                     key="p0",
                     status="PENDING",
                 ),
                 SystemTaskDO(
                     user_id=other_user_id,
-                    file_id=77,
+                    entity_id=77,
                     task_type="PNG",
                     key="p0",
                     status="FAILED",
@@ -1513,7 +1513,7 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
                 ),
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=9301,
+                    entity_id=9301,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
@@ -1528,7 +1528,7 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
                 ),
                 SystemTaskDO(
                     user_id=test_user_id,
-                    file_id=9302,
+                    entity_id=9302,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
@@ -1982,14 +1982,14 @@ async def test_recover_missing_tasks_skips_tasks_with_disabled_upstream(
             [
                 SystemTaskDO(
                     user_id=1,
-                    file_id=file_id,
+                    entity_id=file_id,
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=1,
-                    file_id=file_id,
+                    entity_id=file_id,
                     task_type="PNG_CONVERSION",
                     key="page_p0",
                     status="COMPLETED",
@@ -2172,21 +2172,21 @@ async def test_multi_user_queue_and_system_task_isolation(
                 # User A has completed HASHING and OCR; User B is missing page-scoped OCR.
                 SystemTaskDO(
                     user_id=user_a,
-                    file_id=file_a,
+                    entity_id=file_a,
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=user_a,
-                    file_id=file_a,
+                    entity_id=file_a,
                     task_type="OCR",
                     key="page_pa",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
                     user_id=user_b,
-                    file_id=file_b,
+                    entity_id=file_b,
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
@@ -2201,8 +2201,8 @@ async def test_multi_user_queue_and_system_task_isolation(
 
     tasks_a = await processor_service.list_system_tasks(user_id=user_a)
     tasks_b = await processor_service.list_system_tasks(user_id=user_b)
-    assert {t.file_id for t in tasks_a} == {file_a}
-    assert {t.file_id for t in tasks_b} == {file_b}
+    assert {t.entity_id for t in tasks_a} == {file_a}
+    assert {t.entity_id for t in tasks_b} == {file_b}
 
     # Purging user_b's file deletes only user_b's SystemTaskDO rows.
     await processor_service.handle_vfs_item_purged(
@@ -2448,7 +2448,7 @@ async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
                 [
                     SystemTaskDO(
                         user_id=1,
-                        file_id=fid,
+                        entity_id=fid,
                         task_type="HASHING",
                         key="global",
                         status="COMPLETED",
@@ -2456,7 +2456,7 @@ async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
                     ),
                     SystemTaskDO(
                         user_id=1,
-                        file_id=fid,
+                        entity_id=fid,
                         task_type="PNG_CONVERSION",
                         key=f"page_{pid}",
                         status="COMPLETED",
@@ -2464,7 +2464,7 @@ async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
                     ),
                     SystemTaskDO(
                         user_id=1,
-                        file_id=fid,
+                        entity_id=fid,
                         task_type="OCR_EXTRACTION",
                         key=f"page_{pid}",
                         status="COMPLETED",

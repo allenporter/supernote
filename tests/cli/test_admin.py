@@ -341,7 +341,7 @@ async def test_reprocess_success(
         session.add(
             SystemTaskDO(
                 user_id=1,
-                file_id=42,
+                entity_id=42,
                 task_type="SUMMARY_GENERATION",
                 key="global",
                 status=ProcessingStatus.COMPLETED,
@@ -362,7 +362,7 @@ async def test_reprocess_success(
             (
                 await session.execute(
                     select(SystemTaskDO).where(
-                        SystemTaskDO.file_id == 42,
+                        SystemTaskDO.entity_id == 42,
                         SystemTaskDO.task_type == "SUMMARY_GENERATION",
                     )
                 )
@@ -466,7 +466,7 @@ async def test_list_tasks_cli(
         session.add(
             SystemTaskDO(
                 user_id=1,
-                file_id=42,
+                entity_id=42,
                 task_type="OCR_EXTRACTION",
                 key="page_1",
                 status=ProcessingStatus.FAILED,

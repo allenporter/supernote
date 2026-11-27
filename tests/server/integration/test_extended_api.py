@@ -263,7 +263,7 @@ async def test_handle_list_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=1,
+                entity_id=1,
                 task_type="OCR_EXTRACTION",
                 key="page_P202611240001",
                 status="COMPLETED",
@@ -273,7 +273,7 @@ async def test_handle_list_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=1,
+                entity_id=1,
                 task_type="SUMMARY_GENERATION",
                 key="global",
                 status="FAILED",
@@ -284,7 +284,7 @@ async def test_handle_list_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=2,
+                entity_id=2,
                 task_type="OCR_EXTRACTION",
                 key="page_0",
                 status="FAILED",
@@ -343,7 +343,7 @@ async def test_handle_retry_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=101,
+                entity_id=101,
                 task_type="OCR_EXTRACTION",
                 key="page_0",
                 status="FAILED",
@@ -353,7 +353,7 @@ async def test_handle_retry_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=101,
+                entity_id=101,
                 task_type="PNG_CONVERSION",
                 key="page_0",
                 status="COMPLETED",
@@ -362,7 +362,7 @@ async def test_handle_retry_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=101,
+                entity_id=101,
                 task_type="HASHING",
                 key="global",
                 status="COMPLETED",
@@ -371,7 +371,7 @@ async def test_handle_retry_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=101,
+                entity_id=101,
                 task_type="SUMMARY_GENERATION",
                 key="global",
                 status="COMPLETED",
@@ -380,7 +380,7 @@ async def test_handle_retry_system_tasks(
         session.add(
             SystemTaskDO(
                 user_id=other_user_id,
-                file_id=102,
+                entity_id=102,
                 task_type="OCR_EXTRACTION",
                 key="page_0",
                 status="FAILED",
@@ -448,7 +448,7 @@ async def test_handle_list_system_tasks_excludes_other_users_tasks(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=1,
+                entity_id=1,
                 task_type="PNG",
                 key="page_0",
                 status="COMPLETED",
@@ -457,7 +457,7 @@ async def test_handle_list_system_tasks_excludes_other_users_tasks(
         session.add(
             SystemTaskDO(
                 user_id=other_user_id,
-                file_id=2,
+                entity_id=2,
                 task_type="OCR",
                 key="page_0",
                 status="FAILED",
@@ -502,7 +502,7 @@ async def test_file_processing_status(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=10,
+                entity_id=10,
                 task_type="PNG",
                 key="p0",
                 status="FAILED",
@@ -511,7 +511,7 @@ async def test_file_processing_status(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=10,
+                entity_id=10,
                 task_type="OCR",
                 key="p0",
                 status="COMPLETED",
@@ -521,7 +521,7 @@ async def test_file_processing_status(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=20,
+                entity_id=20,
                 task_type="PNG",
                 key="p0",
                 status="PROCESSING",
@@ -531,7 +531,7 @@ async def test_file_processing_status(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=30,
+                entity_id=30,
                 task_type="PNG",
                 key="p0",
                 status="COMPLETED",
@@ -541,7 +541,7 @@ async def test_file_processing_status(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=40,
+                entity_id=40,
                 task_type="PNG",
                 key="p0",
                 status="PENDING",
@@ -551,7 +551,7 @@ async def test_file_processing_status(
         session.add(
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=snowflake_id,
+                entity_id=snowflake_id,
                 task_type="OCR",
                 key="p0",
                 status="PROCESSING",
@@ -616,7 +616,7 @@ async def test_file_processing_status_excludes_other_users_files(
         session.add(
             SystemTaskDO(
                 user_id=other_user_id,
-                file_id=77,
+                entity_id=77,
                 task_type="PNG",
                 key="p0",
                 status="FAILED",
@@ -720,7 +720,7 @@ async def test_extended_routes_64bit_string_ids(
             SystemTaskDO(
                 user_id=test_user_id,
                 id=snowflake_task_id,
-                file_id=snowflake_file_id,
+                entity_id=snowflake_file_id,
                 task_type="OCR_EXTRACTION",
                 key="P20261109010101abc",
                 status=ProcessingStatus.COMPLETED.value,

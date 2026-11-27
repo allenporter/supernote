@@ -80,7 +80,7 @@ async def test_process_png_conversion_success(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "PNG_CONVERSION")
                     .where(SystemTaskDO.key == "page_p0")
                 )

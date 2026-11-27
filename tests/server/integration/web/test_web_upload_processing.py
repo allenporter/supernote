@@ -33,7 +33,7 @@ async def test_web_upload_triggers_processing(
         file_id = res.scalar()
 
         if file_id:
-            stmt_tasks = select(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
+            stmt_tasks = select(SystemTaskDO).where(SystemTaskDO.entity_id == file_id)
             res_tasks = await db_session.execute(stmt_tasks)
             tasks = res_tasks.scalars().all()
             if tasks:

@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.client.device import DeviceClient
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.models.system import IntegrityIssueType
 from supernote.server.components.integrity.service import (
     _REMEDIATION_HINTS,
@@ -229,7 +229,7 @@ async def test_integrity_pipeline_issues(
         [
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=note_do.id,
+                entity_id=note_do.id,
                 task_type=TaskType.SUMMARY_GENERATION.value,
                 key="global",
                 status=ProcessingStatus.FAILED,
@@ -237,21 +237,21 @@ async def test_integrity_pipeline_issues(
             ),
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=note_do.id,
+                entity_id=note_do.id,
                 task_type=TaskType.PNG_CONVERSION.value,
                 key="page_P1",
                 status=ProcessingStatus.COMPLETED,
             ),
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=note_do.id,
+                entity_id=note_do.id,
                 task_type=TaskType.OCR_EXTRACTION.value,
                 key="page_P1",
                 status=ProcessingStatus.COMPLETED,
             ),
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=note_do.id,
+                entity_id=note_do.id,
                 task_type=TaskType.EMBEDDING_GENERATION.value,
                 key="page_P1",
                 status=ProcessingStatus.COMPLETED,
@@ -291,7 +291,7 @@ async def test_integrity_pipeline_issues(
     await db_session.execute(
         update(SystemTaskDO)
         .where(
-            SystemTaskDO.file_id == note_do.id,
+            SystemTaskDO.entity_id == note_do.id,
             SystemTaskDO.task_type == TaskType.SUMMARY_GENERATION.value,
         )
         .values(status=ProcessingStatus.COMPLETED, last_error=None)
@@ -581,7 +581,7 @@ async def test_verify_full_disk_two_way_checks(
     )
     valid_png_task = SystemTaskDO(
         user_id=test_user_id,
-        file_id=active_note.id,
+        entity_id=active_note.id,
         task_type=TaskType.PNG_CONVERSION.value,
         key="page_P2",
         status=ProcessingStatus.COMPLETED,
@@ -661,7 +661,7 @@ async def test_verify_full_disk_two_way_checks(
             ),
             SystemTaskDO(
                 user_id=test_user_id,
-                file_id=888888,
+                entity_id=888888,
                 task_type=TaskType.OCR_EXTRACTION.value,
                 key="page_P_ORPHAN",
                 status=ProcessingStatus.COMPLETED,
@@ -784,3 +784,25 @@ async def test_verify_full_disk_title_crops(
         for i in report.issues
         if i.issue_type == IntegrityIssueType.UNREFERENCED_BLOB
     } == {stale_key}
+
+
+async def test_verify_full_disk_ignores_non_file_system_tasks(
+    integrity_service: IntegrityService,
+    test_user_id: int,
+    db_session: AsyncSession,
+) -> None:
+    """Verify non-file SystemTaskDO rows (e.g. summary tasks) are not flagged as orphan file tasks."""
+    db_session.add(
+        SystemTaskDO(
+            user_id=test_user_id,
+            entity_type=TaskEntityType.SUMMARY.value,
+            entity_id=777777,
+            task_type="SUMMARY_OCR",
+            key="global",
+            status=ProcessingStatus.COMPLETED,
+        )
+    )
+    await db_session.commit()
+
+    report = await integrity_service.verify_full_disk()
+    assert report.issues == []

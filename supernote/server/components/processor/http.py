@@ -265,7 +265,7 @@ async def handle_admin_list_tasks(request: web.Request) -> web.Response:
     task_vos = [
         SystemTaskVO(
             id=t.id,
-            file_id=t.file_id,
+            file_id=t.entity_id,
             task_type=t.task_type,
             key=t.key,
             status=ProcessingStatus(t.status),

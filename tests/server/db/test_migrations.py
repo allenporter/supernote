@@ -97,7 +97,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "e1f2a3b4c5d6"
+        assert version == "f3c4d5e6f7a8"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -193,7 +193,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "e1f2a3b4c5d6"
+        assert version == "f3c4d5e6f7a8"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -1397,4 +1397,63 @@ def test_summary_transcript_migration_upgrade_and_downgrade(
     reflected_down = MetaData()
     reflected_down.reflect(bind=engine)
     assert "f_summary_transcript" not in reflected_down.tables
+    engine.dispose()
+
+
+def test_system_task_entity_type_migration_upgrade_and_downgrade(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration f3c4d5e6f7a8 adds entity_type, renames file_id to entity_id, and downgrades."""
+    db_path = tmp_path / "system_task_entity_type.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "e1f2a3b4c5d6")
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO f_system_task "
+                "(user_id, id, file_id, task_type, key, status, retry_count, create_time, update_time) "
+                "VALUES (1, 1001, 55, 'OCR_EXTRACTION', 'page_p1', 'COMPLETED', 0, 100, 100)"
+            )
+        )
+
+    command.upgrade(alembic_config, "f3c4d5e6f7a8")
+    reflected_up = MetaData()
+    reflected_up.reflect(bind=engine)
+    tbl = reflected_up.tables["f_system_task"]
+    assert "file_id" not in tbl.c
+    assert "entity_id" in tbl.c
+    assert "entity_type" in tbl.c
+    assert not tbl.c["entity_type"].nullable
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT entity_type, entity_id FROM f_system_task WHERE id = 1001")
+        ).one()
+        assert row == ("file", 55)
+
+        conn.execute(
+            text(
+                "INSERT INTO f_system_task "
+                "(user_id, id, entity_type, entity_id, task_type, key, status, retry_count, create_time, update_time) "
+                "VALUES (1, 1002, 'summary', 55, 'OCR_EXTRACTION', 'page_p1', 'PENDING', 0, 200, 200)"
+            )
+        )
+
+    command.downgrade(alembic_config, "e1f2a3b4c5d6")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    tbl_down = reflected_down.tables["f_system_task"]
+    assert "file_id" in tbl_down.c
+    assert "entity_type" not in tbl_down.c
+    assert "entity_id" not in tbl_down.c
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, file_id FROM f_system_task ORDER BY id")
+        ).all()
+        assert rows == [(1001, 55)]
     engine.dispose()
