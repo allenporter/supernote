@@ -306,6 +306,46 @@ class WikiSourceService:
         )
         return overview.remaining_files, overview.total_files
 
+    async def _build_page_window_diffs(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        window: Sequence[_OrderedPageEntry],
+    ) -> list[dict[str, Any]]:
+        """Hydrate OCR text and build canonical compile diff dicts for `window`."""
+        if not window:
+            return []
+        row_ids = [e.row_id for e in window]
+        # Strict tenant join: NotePageContentDO has no user_id column.
+        text_rows = (
+            await session.execute(
+                select(NotePageContentDO.id, NotePageContentDO.text_content)
+                .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
+                .where(
+                    UserFileDO.user_id == user_id,
+                    UserFileDO.is_active == "Y",
+                    NotePageContentDO.id.in_(row_ids),
+                )
+            )
+        ).all()
+        text_by_id = {int(rid): str(txt or "") for rid, txt in text_rows}
+        return [
+            {
+                "event_type": "backfill.note_page",
+                "entity_id": f"{e.file_id}:{e.page_id}",
+                "related_file_id": e.file_id,
+                "payload": {
+                    "file_id": str(e.file_id),
+                    "file_path": e.file_name,
+                    "page_id": e.page_id,
+                    "page_index": e.page_index,
+                    "page_date": format_page_date(e.page_ts_ms),
+                    "text_content": text_by_id.get(e.row_id, ""),
+                },
+            }
+            for e in window
+        ]
+
     async def list_backfill_page_window(
         self,
         user_id: int,
@@ -329,36 +369,9 @@ class WikiSourceService:
             window = remaining[:capped_pages]
             if not window:
                 return [], None
-            row_ids = [e.row_id for e in window]
-            # Strict tenant join: NotePageContentDO has no user_id column.
-            text_rows = (
-                await session.execute(
-                    select(NotePageContentDO.id, NotePageContentDO.text_content)
-                    .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
-                    .where(
-                        UserFileDO.user_id == user_id,
-                        UserFileDO.is_active == "Y",
-                        NotePageContentDO.id.in_(row_ids),
-                    )
-                )
-            ).all()
-        text_by_id = {int(rid): str(txt or "") for rid, txt in text_rows}
-        synthetic_diffs = [
-            {
-                "event_type": "backfill.note_page",
-                "entity_id": f"{e.file_id}:{e.page_id}",
-                "related_file_id": e.file_id,
-                "payload": {
-                    "file_id": str(e.file_id),
-                    "file_path": e.file_name,
-                    "page_id": e.page_id,
-                    "page_index": e.page_index,
-                    "page_date": format_page_date(e.page_ts_ms),
-                    "text_content": text_by_id.get(e.row_id, ""),
-                },
-            }
-            for e in window
-        ]
+            synthetic_diffs = await self._build_page_window_diffs(
+                session, user_id, window
+            )
         return synthetic_diffs, window[-1].cursor
 
     async def resolve_source_metadata(
@@ -582,33 +595,4 @@ class WikiSourceService:
             window = entries[safe_offset : safe_offset + capped_pages]
             if not window:
                 return []
-            row_ids = [e.row_id for e in window]
-            # Strict tenant join: NotePageContentDO has no user_id column.
-            text_rows = (
-                await session.execute(
-                    select(NotePageContentDO.id, NotePageContentDO.text_content)
-                    .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
-                    .where(
-                        UserFileDO.user_id == user_id,
-                        UserFileDO.is_active == "Y",
-                        NotePageContentDO.id.in_(row_ids),
-                    )
-                )
-            ).all()
-        text_by_id = {int(rid): str(txt or "") for rid, txt in text_rows}
-        return [
-            {
-                "event_type": "backfill.note_page",
-                "entity_id": f"{e.file_id}:{e.page_id}",
-                "related_file_id": e.file_id,
-                "payload": {
-                    "file_id": str(e.file_id),
-                    "file_path": e.file_name,
-                    "page_id": e.page_id,
-                    "page_index": e.page_index,
-                    "page_date": format_page_date(e.page_ts_ms),
-                    "text_content": text_by_id.get(e.row_id, ""),
-                },
-            }
-            for e in window
-        ]
+            return await self._build_page_window_diffs(session, user_id, window)
