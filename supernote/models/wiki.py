@@ -158,6 +158,7 @@ class WikiStatusDTO(DataClassJSONMixin):
     backfill_total_files: int = 0
     backfill_remaining_pages: int = 0
     backfill_total_pages: int = 0
+    backfill_current_date: str | None = None
     backfill_untranscribed_files: int = 0
     backfill_next_files: list[str] = field(default_factory=list)
 

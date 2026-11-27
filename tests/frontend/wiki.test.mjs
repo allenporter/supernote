@@ -193,7 +193,7 @@ for (const { name, mode, result, expected } of [
         result: { mode: 'backfill_start', status: 'backfilling', remaining_files: 7 },
         expected: {
             message:
-                'Started background backfill (7 notebooks queued, 1 per turn). You can safely leave this tab.',
+                'Started background backfill (7 notebooks queued, chronological page windows). You can safely leave this tab.',
             type: 'success',
         },
     },
@@ -202,7 +202,7 @@ for (const { name, mode, result, expected } of [
         mode: 'backfill_stop',
         result: { mode: 'backfill_stop', status: 'stopping', remaining_files: 5 },
         expected: {
-            message: 'Stopping backfill after the current notebook finishes.',
+            message: 'Stopping backfill after the current page window finishes.',
             type: 'info',
         },
     },

@@ -65,6 +65,7 @@ import { ApiError, apiRequest, getToken } from './http.js';
  * @property {number} [backfill_total_files]
  * @property {number} [backfill_remaining_pages]
  * @property {number} [backfill_total_pages]
+ * @property {string | null} [backfill_current_date]
  * @property {number} [backfill_untranscribed_files]
  * @property {string[]} [backfill_next_files]
  */
@@ -359,7 +360,7 @@ export function formatWikiActionResult(mode, result) {
         const remaining = result?.remaining_files ?? 0;
         if (result?.status === 'backfilling') {
             return {
-                message: `Started background backfill (${remaining} ${remaining === 1 ? 'notebook' : 'notebooks'} queued, 1 per turn). You can safely leave this tab.`,
+                message: `Started background backfill (${remaining} ${remaining === 1 ? 'notebook' : 'notebooks'} queued, chronological page windows). You can safely leave this tab.`,
                 type: 'success',
             };
         }
@@ -372,7 +373,7 @@ export function formatWikiActionResult(mode, result) {
         return {
             message:
                 result?.status === 'stopping'
-                    ? 'Stopping backfill after the current notebook finishes.'
+                    ? 'Stopping backfill after the current page window finishes.'
                     : 'Background backfill is not running.',
             type: 'info',
         };
