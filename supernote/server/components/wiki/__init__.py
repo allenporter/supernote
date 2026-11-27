@@ -62,7 +62,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from supernote.server.components.ai import TEXT_MODEL_KEY
+from supernote.server.components.ai import TEXT_MODEL_KEY, AiModelsUpdatedEvent
 from supernote.server.components.events.service import EVENT_LOG_SERVICE_KEY
 from supernote.server.core import ServerCore
 
@@ -115,6 +115,13 @@ class WikiComponent:
         core.app[WIKI_SERVICE_KEY] = service
         core.app[WIKI_EXPORT_SERVICE_KEY] = WikiExportService(service)
         core.app[WIKI_COMPILER_KEY] = compiler
+
+        async def _on_ai_models_updated(event: AiModelsUpdatedEvent) -> None:
+            compiler.set_text_model(event.text_model)
+
+        core.event_bus.subscribe(
+            AiModelsUpdatedEvent, _on_ai_models_updated, inline=True
+        )
 
     async def async_start(self, core: ServerCore) -> None:
         """Bind finalized `TEXT_MODEL_KEY` and start event subscriptions."""

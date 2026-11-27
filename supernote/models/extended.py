@@ -436,6 +436,12 @@ class WebAiStatusVO(BaseResponse):
     embedding_model: str | None = field(
         metadata=field_options(alias="embeddingModel"), default=None
     )
+    text_enabled: bool = field(
+        metadata=field_options(alias="textEnabled"), default=False
+    )
+    text_model: str | None = field(
+        metadata=field_options(alias="textModel"), default=None
+    )
     model: str | None = None
 
     class Config(BaseConfig):

@@ -12,7 +12,7 @@ import logging
 
 from supernote.models.base import TaskType
 from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
-from supernote.server.components.ai import EMBEDDING_MODEL_KEY
+from supernote.server.components.ai import EMBEDDING_MODEL_KEY, AiModelsUpdatedEvent
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorRegistrar,
@@ -97,7 +97,8 @@ class EmbeddingModule(ProcessorModule):
         if not page_id:
             return
 
-        if self.embedding_model is None:
+        embedding_model = self.embedding_model
+        if embedding_model is None:
             raise ValueError("Embedding model not configured")
 
         # Get Text Content
@@ -119,7 +120,7 @@ class EmbeddingModule(ProcessorModule):
             assert content.text_content is not None
             text_content = content.text_content
 
-        embedding_values = await self.embedding_model.embed(
+        embedding_values = await embedding_model.embed(
             text_content, task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT
         )
         embedding_json = json.dumps(embedding_values)
@@ -130,7 +131,7 @@ class EmbeddingModule(ProcessorModule):
 
             if content:
                 content.embedding = embedding_json
-                content.embedding_model = self.embedding_model.model_id
+                content.embedding_model = embedding_model.model_id
             await session.commit()
 
         logger.info(f"Completed Embedding for file {file_id} page {page_index}")
@@ -141,9 +142,13 @@ async def async_setup_processor(
     registrar: ProcessorRegistrar,
 ) -> None:
     """Register `EmbeddingModule` with the `"processor"` platform."""
-    registrar.register_module(
-        EmbeddingModule(
-            file_service=core.file_service,
-            embedding_model=core.app.get(EMBEDDING_MODEL_KEY),
-        )
+    module = EmbeddingModule(
+        file_service=core.file_service,
+        embedding_model=core.app.get(EMBEDDING_MODEL_KEY),
     )
+
+    async def _on_ai_models_updated(event: AiModelsUpdatedEvent) -> None:
+        module.embedding_model = event.embedding_model
+
+    core.event_bus.subscribe(AiModelsUpdatedEvent, _on_ai_models_updated, inline=True)
+    registrar.register_module(module)

@@ -13,7 +13,7 @@ import importlib
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import MISSING, dataclass, fields, is_dataclass
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
@@ -66,6 +66,66 @@ _AI_PROVIDER_DOMAINS: frozenset[str] = frozenset(
 _PROTECTED_DYNAMIC_DOMAINS: frozenset[str] = frozenset(
     {"config", "fake_ai", "http", "web_ui"}
 )
+# Components that track per-field static provenance (`env`/`yaml`) so unpinned fields
+# remain dynamically editable in the database even when other fields are static.
+_GRANULAR_CONFIG_DOMAINS: frozenset[str] = frozenset({"ai"})
+_SECRET_FIELD_NAMES: frozenset[str] = frozenset({"api_key", "secret"})
+_REDACTED_SECRET = "***"
+_SOURCE_PRIORITY: dict[ComponentConfigSource, int] = {
+    ComponentConfigSource.DEFAULT: 0,
+    ComponentConfigSource.DATABASE: 1,
+    ComponentConfigSource.YAML: 2,
+    ComponentConfigSource.ENV: 3,
+}
+
+
+def _highest_source(
+    *sources: ComponentConfigSource | None,
+) -> ComponentConfigSource:
+    """Return the highest-priority `ComponentConfigSource` among ``sources``."""
+    best = ComponentConfigSource.DEFAULT
+    for src in sources:
+        if src is not None and _SOURCE_PRIORITY[src] > _SOURCE_PRIORITY[best]:
+            best = src
+    return best
+
+
+def _redact_secrets(value: Any) -> Any:
+    """Return a deep copy of ``value`` with secret string fields replaced by ``'***'``."""
+    if isinstance(value, Mapping):
+        return {
+            k: (
+                _REDACTED_SECRET
+                if k in _SECRET_FIELD_NAMES and isinstance(v, str) and v
+                else _redact_secrets(v)
+            )
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _restore_redacted_secrets(incoming: Any, existing: Any) -> Any:
+    """Replace ``'***'`` secret placeholders in ``incoming`` with the current values from ``existing``."""
+    if isinstance(incoming, Mapping):
+        existing_map = existing if isinstance(existing, Mapping) else {}
+        result: dict[str, Any] = {}
+        for k, v in incoming.items():
+            if k in _SECRET_FIELD_NAMES and v == _REDACTED_SECRET and k in existing_map:
+                result[k] = copy.deepcopy(existing_map[k])
+            else:
+                result[k] = _restore_redacted_secrets(v, existing_map.get(k))
+        return result
+    if isinstance(incoming, list):
+        existing_list = existing if isinstance(existing, list) else []
+        return [
+            _restore_redacted_secrets(
+                item, existing_list[idx] if idx < len(existing_list) else None
+            )
+            for idx, item in enumerate(incoming)
+        ]
+    return copy.deepcopy(incoming)
 
 
 class ConfigurationConflictError(SupernoteError):
@@ -216,9 +276,11 @@ class ResolvedComponentConfig:
     config: dict[str, Any]
     """Effective configuration dictionary passed to `Component.async_setup`."""
     enabled: bool
-    """Whether the component is enabled after resolving all priority tiers."""
+    """Whether the component is configured as enabled after resolving all priority tiers."""
     source: ComponentConfigSource
     """Winning configuration tier (`ENV`, `YAML`, `DATABASE`, or `DEFAULT`)."""
+    field_sources: dict[str, ComponentConfigSource] = field(default_factory=dict)
+    """Per-field provenance for components supporting granular runtime edits."""
 
 
 def load_component_config_schema(
@@ -304,22 +366,18 @@ async def async_resolve_component_configs(
     """
     static_configs = build_static_component_configs(server_config)
     static_sources = _resolve_static_component_sources(server_config)
+    static_field_sources_by_domain = server_config.component_field_sources
     resolved: dict[str, ResolvedComponentConfig] = {}
 
     for spec in specs:
         domain = spec.domain
         static_cfg = copy.deepcopy(static_configs.get(domain, {}))
         static_source = static_sources.get(domain)
+        is_granular = domain in _GRANULAR_CONFIG_DOMAINS
 
-        if static_source is not None and static_source.is_static:
+        if not is_granular and static_source is not None and static_source.is_static:
             enabled = is_component_enabled(spec, static_cfg)
             static_cfg["enabled"] = enabled
-            logger.debug(
-                "Resolved component %r from %s (enabled=%s)",
-                domain,
-                static_source,
-                enabled,
-            )
             resolved[domain] = ResolvedComponentConfig(
                 domain=domain,
                 config=static_cfg,
@@ -328,6 +386,19 @@ async def async_resolve_component_configs(
             )
             continue
 
+        static_field_sources: dict[str, ComponentConfigSource] = (
+            dict(static_field_sources_by_domain.get(domain, {})) if is_granular else {}
+        )
+        if domain == "ai" and static_cfg.get("providers"):
+            provider_static = _highest_source(
+                *(static_sources.get(d) for d in _AI_PROVIDER_DOMAINS)
+            )
+            if provider_static.is_static:
+                static_field_sources.setdefault("providers", provider_static)
+
+        effective_cfg = copy.deepcopy(static_cfg)
+        effective_field_sources = dict(static_field_sources)
+        used_db = False
         raw_db_json = await coordination.get_value(
             f"{_COMPONENT_CONFIG_KEY_PREFIX}{domain}"
         )
@@ -339,22 +410,22 @@ async def async_resolve_component_configs(
                     raise ValueError("Persisted component config must be a JSON object")
                 if "enabled" in parsed and not isinstance(parsed["enabled"], bool):
                     raise ValueError("Component 'enabled' field must be a boolean")
+                candidate_cfg = copy.deepcopy(static_cfg)
+                candidate_field_sources = dict(static_field_sources)
+                for key, val in parsed.items():
+                    if key in static_field_sources:
+                        continue
+                    if val is None and is_granular:
+                        candidate_cfg.pop(key, None)
+                    else:
+                        candidate_cfg[key] = val
+                    if is_granular:
+                        candidate_field_sources[key] = ComponentConfigSource.DATABASE
                 if schema_cls is not None:
-                    schema_cls.from_dict(parsed)
-                enabled = is_component_enabled(spec, parsed)
-                db_cfg = {**static_cfg, **parsed, "enabled": enabled}
-                logger.debug(
-                    "Resolved component %r from database (enabled=%s)",
-                    domain,
-                    enabled,
-                )
-                resolved[domain] = ResolvedComponentConfig(
-                    domain=domain,
-                    config=db_cfg,
-                    enabled=enabled,
-                    source=ComponentConfigSource.DATABASE,
-                )
-                continue
+                    schema_cls.from_dict(candidate_cfg if is_granular else parsed)
+                effective_cfg = candidate_cfg
+                effective_field_sources = candidate_field_sources
+                used_db = True
             except (
                 json.JSONDecodeError,
                 InvalidFieldValue,
@@ -369,18 +440,23 @@ async def async_resolve_component_configs(
                     err,
                 )
 
-        enabled = is_component_enabled(spec, static_cfg)
-        default_cfg = {**static_cfg, "enabled": enabled}
-        logger.debug(
-            "Resolved component %r from default (enabled=%s)",
-            domain,
-            enabled,
+        enabled = is_component_enabled(spec, effective_cfg)
+        effective_cfg["enabled"] = enabled
+        overall_source = (
+            _highest_source(static_source, *effective_field_sources.values())
+            if is_granular
+            else (
+                ComponentConfigSource.DATABASE
+                if used_db
+                else ComponentConfigSource.DEFAULT
+            )
         )
         resolved[domain] = ResolvedComponentConfig(
             domain=domain,
-            config=default_cfg,
+            config=effective_cfg,
             enabled=enabled,
-            source=ComponentConfigSource.DEFAULT,
+            source=overall_source,
+            field_sources=effective_field_sources,
         )
 
         # Legacy one-off: `oauth` inherits `mcp`'s resolved enabled state when not configured directly.
@@ -446,7 +522,17 @@ class ConfigService:
         entry: ResolvedComponentConfig,
     ) -> ComponentStatusVO:
         running = self._loader.is_running(spec.domain)
-        read_only = entry.source.is_static or spec.domain in _PROTECTED_DYNAMIC_DOMAINS
+        if spec.domain in _GRANULAR_CONFIG_DOMAINS:
+            enabled_src = entry.field_sources.get(
+                "enabled", ComponentConfigSource.DEFAULT
+            )
+            read_only = (
+                enabled_src.is_static or spec.domain in _PROTECTED_DYNAMIC_DOMAINS
+            )
+        else:
+            read_only = (
+                entry.source.is_static or spec.domain in _PROTECTED_DYNAMIC_DOMAINS
+            )
         return ComponentStatusVO(
             domain=spec.domain,
             enabled=entry.enabled,
@@ -455,8 +541,9 @@ class ConfigService:
             read_only=read_only,
             runtime_configurable=spec.runtime_configurable,
             restart_required=(entry.enabled != running),
-            config=dict(entry.config),
+            config=_redact_secrets(dict(entry.config)),
             fields=extract_component_field_specs(spec),
+            field_sources=dict(entry.field_sources),
         )
 
     def list_running_domains(self) -> list[str]:
@@ -518,19 +605,33 @@ class ConfigService:
         async with self._update_lock:
             resolved = await self.resolve_all()
             current_entry = resolved[domain]
-            if current_entry.source.is_static:
+            restored_updates: dict[str, Any] = _restore_redacted_secrets(
+                dict(updates), current_entry.config
+            )
+            if domain in _GRANULAR_CONFIG_DOMAINS:
+                for key, new_val in restored_updates.items():
+                    field_src = current_entry.field_sources.get(key)
+                    if (
+                        field_src is not None
+                        and field_src.is_static
+                        and new_val != current_entry.config.get(key)
+                    ):
+                        raise ConfigurationConflictError(
+                            f"Field '{key}' of component '{domain}' is managed by {field_src} configuration and is read-only."
+                        )
+            elif current_entry.source.is_static:
                 raise ConfigurationConflictError(
                     f"Component '{domain}' is managed by {current_entry.source} configuration and is read-only."
                 )
 
             merged_config: dict[str, Any] = {
                 **current_entry.config,
-                **dict(updates),
+                **restored_updates,
             }
 
             field_specs = extract_component_field_specs(spec)
             allowed_keys = {f.name for f in field_specs}
-            extra_keys = set(updates.keys()) - allowed_keys
+            extra_keys = set(restored_updates.keys()) - allowed_keys
             if extra_keys:
                 raise InvalidInputError(
                     f"Unexpected configuration field(s) for component '{domain}': "
@@ -590,13 +691,45 @@ class ConfigService:
                     raise InvalidInputError(
                         f"Failed to reconfigure component '{domain}': {err}"
                     ) from err
+            elif merged_config["enabled"] and self._loader.is_running(domain):
+                existing_comp = self._loader.get(domain)
+                update_fn = getattr(existing_comp, "async_update_config", None)
+                if callable(update_fn):
+                    try:
+                        await update_fn(self._core, merged_config)
+                    except (ValueError, TypeError) as err:
+                        raise InvalidInputError(
+                            f"Failed to reconfigure component '{domain}': {err}"
+                        ) from err
 
-            await async_save_component_config(self._coordination, domain, merged_config)
+            if domain in _GRANULAR_CONFIG_DOMAINS:
+                updated_field_sources = dict(current_entry.field_sources)
+                for key in restored_updates:
+                    field_src = current_entry.field_sources.get(key)
+                    if field_src is None or not field_src.is_static:
+                        updated_field_sources[key] = ComponentConfigSource.DATABASE
+                db_payload = {
+                    key: merged_config.get(key)
+                    for key, src in updated_field_sources.items()
+                    if src is ComponentConfigSource.DATABASE
+                }
+                overall_source = _highest_source(
+                    current_entry.source,
+                    *updated_field_sources.values(),
+                    ComponentConfigSource.DATABASE,
+                )
+            else:
+                updated_field_sources = {}
+                db_payload = merged_config
+                overall_source = ComponentConfigSource.DATABASE
+
+            await async_save_component_config(self._coordination, domain, db_payload)
             updated_entry = ResolvedComponentConfig(
                 domain=domain,
                 config=merged_config,
                 enabled=bool(merged_config["enabled"]),
-                source=ComponentConfigSource.DATABASE,
+                source=overall_source,
+                field_sources=updated_field_sources,
             )
             status_vo = self._build_status_vo(spec, updated_entry)
             logger.info(

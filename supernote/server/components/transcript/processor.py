@@ -19,7 +19,7 @@ from supernote.server.ai.prompts import (
     format_image_ocr_prompt,
     format_ocr_prompt,
 )
-from supernote.server.components.ai import OCR_MODEL_KEY
+from supernote.server.components.ai import OCR_MODEL_KEY, AiModelsUpdatedEvent
 from supernote.server.components.processor import (
     ProcessorModule,
     ProcessorRegistrar,
@@ -152,7 +152,8 @@ class OcrModule(ProcessorModule):
             logger.error(f"Page ID required for OCR processing of file {file_id}")
             return
 
-        if self.ocr_model is None:
+        ocr_model = self.ocr_model
+        if ocr_model is None:
             raise ValueError("OCR model not configured")
 
         async with session_manager.session() as session:
@@ -210,7 +211,7 @@ class OcrModule(ProcessorModule):
         png_data = await self.file_service.blob_storage.get_bytes(
             CACHE_BUCKET, png_path
         )
-        text_content = await self.ocr_model.extract_text(png_data, prompt)
+        text_content = await ocr_model.extract_text(png_data, prompt)
 
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
@@ -271,9 +272,13 @@ async def async_setup_processor(
     registrar: ProcessorRegistrar,
 ) -> None:
     """Register `OcrModule` with the `"processor"` platform."""
-    registrar.register_module(
-        OcrModule(
-            file_service=core.file_service,
-            ocr_model=core.app.get(OCR_MODEL_KEY),
-        )
+    module = OcrModule(
+        file_service=core.file_service,
+        ocr_model=core.app.get(OCR_MODEL_KEY),
     )
+
+    async def _on_ai_models_updated(event: AiModelsUpdatedEvent) -> None:
+        module.ocr_model = event.ocr_model
+
+    core.event_bus.subscribe(AiModelsUpdatedEvent, _on_ai_models_updated, inline=True)
+    registrar.register_module(module)

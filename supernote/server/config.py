@@ -461,6 +461,7 @@ class ServerConfig(DataClassYAMLMixin):
             raise ValueError("event_log_retention_days must be >= 0")
         self._root_component_configs: dict[str, dict[str, Any]] = {}
         self._component_sources: dict[str, ComponentConfigSource] = {}
+        self._component_field_sources: dict[str, dict[str, ComponentConfigSource]] = {}
         self._sync_legacy_gemini_config()
         self._seed_programmatic_component_sources()
 
@@ -474,11 +475,24 @@ class ServerConfig(DataClassYAMLMixin):
                         comp_meta, ComponentConfigSource.YAML
                     )
             elif isinstance(comp_meta, tuple):
-                domain, _ = comp_meta
+                domain, target_key = comp_meta
                 if getattr(self, f.name) != f.default:
                     self._component_sources.setdefault(
                         domain, ComponentConfigSource.YAML
                     )
+                    if domain == "ai":
+                        self._component_field_sources.setdefault("ai", {}).setdefault(
+                            target_key, ComponentConfigSource.YAML
+                        )
+        if self.ai.providers:
+            self._component_field_sources.setdefault("ai", {}).setdefault(
+                "providers", ComponentConfigSource.YAML
+            )
+        for role_key in ("ocr", "summary", "embedding", "text"):
+            if getattr(self.ai, role_key) is not None:
+                self._component_field_sources.setdefault("ai", {}).setdefault(
+                    role_key, ComponentConfigSource.YAML
+                )
         if self.ai.active_provider_types:
             self._component_sources.setdefault("ai", ComponentConfigSource.YAML)
 
@@ -494,6 +508,16 @@ class ServerConfig(DataClassYAMLMixin):
     def component_sources(self) -> Mapping[str, ComponentConfigSource]:
         """Static configuration source (`ENV` or `YAML`) recorded per component domain."""
         return dict(self._component_sources)
+
+    @property
+    def component_field_sources(
+        self,
+    ) -> Mapping[str, Mapping[str, ComponentConfigSource]]:
+        """Static configuration source (`ENV` or `YAML`) recorded per component field."""
+        return {
+            domain: dict(field_map)
+            for domain, field_map in self._component_field_sources.items()
+        }
 
     def _sync_legacy_gemini_config(self) -> None:
         """Synchronize legacy top-level `gemini_*` fields with `self.ai`."""
@@ -601,6 +625,7 @@ class ServerConfig(DataClassYAMLMixin):
                 logger.warning(f"Failed to load config file {config_file}: {e}")
 
         config._component_sources.clear()
+        config._component_field_sources.clear()
         alias_by_target: dict[tuple[str, str], str] = {
             comp_meta: f.name
             for f in fields(cls)
@@ -617,6 +642,10 @@ class ServerConfig(DataClassYAMLMixin):
                     value = {**value, "enabled": _parse_bool(value["enabled"])}
                 config._root_component_configs[key] = copy.deepcopy(value)
                 config._component_sources[key] = ComponentConfigSource.YAML
+                if key == "ai":
+                    ai_fields = config._component_field_sources.setdefault("ai", {})
+                    for sub_key in value:
+                        ai_fields[sub_key] = ComponentConfigSource.YAML
                 logger.debug(
                     "Loaded root YAML component section for %r (keys=%s)",
                     key,
@@ -632,8 +661,15 @@ class ServerConfig(DataClassYAMLMixin):
                 comp_meta = f.metadata.get("component")
                 if isinstance(comp_meta, tuple):
                     config._component_sources[comp_meta[0]] = ComponentConfigSource.YAML
-        if "ai" in raw_yaml_data or "gemini_api_key" in raw_yaml_data:
-            config._component_sources["ai"] = ComponentConfigSource.YAML
+                    if comp_meta[0] == "ai":
+                        config._component_field_sources.setdefault("ai", {})[
+                            comp_meta[1]
+                        ] = ComponentConfigSource.YAML
+        if "gemini_api_key" in raw_yaml_data:
+            config._component_sources.setdefault("gemini", ComponentConfigSource.YAML)
+            config._component_field_sources.setdefault("ai", {})["providers"] = (
+                ComponentConfigSource.YAML
+            )
 
         # 4. JWT Secret priority: Env > Config > Database (CoordinationService)
         env_secret = os.getenv("SUPERNOTE_JWT_SECRET")
@@ -784,7 +820,9 @@ class ServerConfig(DataClassYAMLMixin):
                 gemini_api_key
             )
             config._component_sources["gemini"] = ComponentConfigSource.ENV
-            config._component_sources.setdefault("ai", ComponentConfigSource.ENV)
+            config._component_field_sources.setdefault("ai", {})["providers"] = (
+                ComponentConfigSource.ENV
+            )
             logger.info(
                 f"Using SUPERNOTE_GEMINI_API_KEY: xxx...{config.gemini_api_key[-3:]}"
             )
@@ -796,6 +834,9 @@ class ServerConfig(DataClassYAMLMixin):
             if config.ai.summary and config.ai.summary.provider == "gemini":
                 config.ai.summary.model = gemini_ocr_model
             config._component_sources["ai"] = ComponentConfigSource.ENV
+            ai_fields = config._component_field_sources.setdefault("ai", {})
+            ai_fields["ocr"] = ComponentConfigSource.ENV
+            ai_fields["summary"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_GEMINI_OCR_MODEL: {config.gemini_ocr_model}")
 
         if gemini_embedding_model := os.getenv("SUPERNOTE_GEMINI_EMBEDDING_MODEL"):
@@ -803,6 +844,9 @@ class ServerConfig(DataClassYAMLMixin):
             if config.ai.embedding and config.ai.embedding.provider == "gemini":
                 config.ai.embedding.model = gemini_embedding_model
             config._component_sources["ai"] = ComponentConfigSource.ENV
+            config._component_field_sources.setdefault("ai", {})["embedding"] = (
+                ComponentConfigSource.ENV
+            )
             logger.info(
                 f"Using SUPERNOTE_GEMINI_EMBEDDING_MODEL: {config.gemini_embedding_model}"
             )
@@ -810,13 +854,17 @@ class ServerConfig(DataClassYAMLMixin):
         if gemini_max_concurrency := os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY"):
             try:
                 config.gemini_max_concurrency = int(gemini_max_concurrency)
-                for model_cfg in (
-                    config.ai.ocr,
-                    config.ai.summary,
-                    config.ai.embedding,
+                ai_fields = config._component_field_sources.setdefault("ai", {})
+                for role_name, model_cfg in (
+                    ("ocr", config.ai.ocr),
+                    ("summary", config.ai.summary),
+                    ("embedding", config.ai.embedding),
                 ):
                     if model_cfg and model_cfg.provider == "gemini":
                         model_cfg.max_concurrency = config.gemini_max_concurrency
+                        ai_fields[role_name] = ComponentConfigSource.ENV
+                    elif model_cfg is None and config.gemini_api_key:
+                        ai_fields[role_name] = ComponentConfigSource.ENV
                 config._component_sources["ai"] = ComponentConfigSource.ENV
                 logger.info(
                     f"Using SUPERNOTE_GEMINI_MAX_CONCURRENCY: {config.gemini_max_concurrency}"
@@ -829,6 +877,9 @@ class ServerConfig(DataClassYAMLMixin):
         if prompts_dir := os.getenv("SUPERNOTE_PROMPTS_DIR"):
             config.prompts_dir = prompts_dir
             config._component_sources["ai"] = ComponentConfigSource.ENV
+            config._component_field_sources.setdefault("ai", {})["prompts_dir"] = (
+                ComponentConfigSource.ENV
+            )
             logger.info(f"Using SUPERNOTE_PROMPTS_DIR: {config.prompts_dir}")
 
         if os.getenv("SUPERNOTE_METRICS_ENABLED"):

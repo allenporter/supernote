@@ -64,6 +64,7 @@ def test_component_status_vo_camel_case_serialization() -> None:
         "restartRequired": False,
         "config": {"enabled": True},
         "fields": [{"name": "enabled", "type": "boolean", "default": False}],
+        "fieldSources": {},
     }
     assert vo.to_dict() == expected_vo_dict
     assert ComponentListResponseVO(components=[vo]).to_dict() == {
