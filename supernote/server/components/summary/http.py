@@ -61,7 +61,11 @@ from supernote.server.components.conversion import (
 from supernote.server.components.http import HttpRegistrar, parse_json_dto
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import InvalidInputError, SupernoteError
+from supernote.server.exceptions import (
+    InvalidInputError,
+    SummaryNotFound,
+    SupernoteError,
+)
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     REQUEST_USER_KEY,
@@ -456,12 +460,7 @@ async def handle_download_summary(request: web.Request) -> web.Response:
         req_data = await parse_json_dto(request, DownloadSummaryDTO)
         summary = await summary_service.get_summary(user_email, req_data.id)
         if not summary.handwrite_inner_name:
-            return web.json_response(
-                BaseResponse(
-                    success=False, error_msg="Handwriting data not found"
-                ).to_dict(),
-                status=404,
-            )
+            raise SummaryNotFound("Handwriting data not found")
 
         url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
         encoded_name = urllib.parse.quote(summary.handwrite_inner_name)
@@ -543,7 +542,7 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
     try:
         req_dto = await parse_json_dto(request, WebSummaryListRequestDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
 
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
@@ -571,7 +570,7 @@ async def handle_summary_to_pdf(request: web.Request) -> web.Response:
     try:
         req_data = await parse_json_dto(request, DownloadSummaryDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
@@ -599,7 +598,7 @@ async def handle_summary_to_png(request: web.Request) -> web.Response:
     try:
         req_data = await parse_json_dto(request, DownloadSummaryDTO)
     except InvalidInputError as err:
-        return web.json_response({"error": err.message}, status=err.status_code)
+        return err.to_response()
     user_email = request[REQUEST_USER_KEY]
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]

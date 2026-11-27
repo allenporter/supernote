@@ -13,7 +13,7 @@ import urllib.parse
 
 from aiohttp import web
 
-from supernote.models.base import BaseResponse, create_error_response
+from supernote.models.base import create_error_response
 from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.file_device import (
     AllocationVO,
@@ -46,7 +46,7 @@ from supernote.models.file_device import (
     SynchronousStartLocalVO,
 )
 from supernote.server.events import LocalEventBus, SyncCompletedEvent
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import FileNotFound, SupernoteError
 from supernote.server.keys import (
     COORDINATION_SERVICE_KEY,
     EVENT_BUS_KEY,
@@ -471,10 +471,7 @@ async def handle_download_apply(request: web.Request) -> web.Response:
         # Verify file exists using VFS
         info = await file_service.get_file_info_by_id(user_email, file_id)
         if not info:
-            return web.json_response(
-                BaseResponse(success=False, error_msg="File not found").to_dict(),
-                status=404,
-            )
+            raise FileNotFound("File not found")
 
         # Generate signed download URL
         url_signer: UrlSigner = request.app[URL_SIGNER_KEY]

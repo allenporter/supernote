@@ -53,7 +53,11 @@ from supernote.server.constants import (
     ORDERED_WEB_ROOT,
     SYSTEM_ROOT_DIRECTORIES,
 )
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import (
+    FileNotFound,
+    InvalidInputError,
+    SupernoteError,
+)
 from supernote.server.keys import (
     FILE_SERVICE_KEY,
     REQUEST_USER_KEY,
@@ -279,15 +283,9 @@ async def handle_download_url(request: web.Request) -> web.Response:
         req_data = await parse_json_dto(request, FileDownloadDTO)
         info = await file_service.get_file_info_by_id(user_email, req_data.id)
         if not info:
-            return web.json_response(
-                BaseResponse(success=False, error_msg="File not found").to_dict(),
-                status=404,
-            )
+            raise FileNotFound("File not found")
         if info.is_folder:
-            return web.json_response(
-                BaseResponse(success=False, error_msg="Not a file").to_dict(),
-                status=400,
-            )
+            raise InvalidInputError("Not a file")
 
         # The same signed handle the device is given. The bytes are served by
         # /api/oss/download, which streams and honours Range, so the browser
