@@ -1,15 +1,19 @@
-"""ORM models for the `.note` processing pipeline (`f_note_*` and `f_system_task`).
+"""ORM models (`NoteMetadataDO`, `NotePageMetadataDO`, `NoteTitleDO`, `NoteTitleTranscriptDO`, `NotePageContentDO`, and `SystemTaskDO`) for the `.note` processing pipeline.
 
-Table granularity, ownership, and relationships:
-
-| Model / Table | Granularity & PK | Owner | Role |
-| :--- | :--- | :--- | :--- |
-| `NoteMetadataDO` (`f_note_metadata`) | 1 row / notebook `(user_id, file_id)` | `note_metadata` | Raw `.note` header/footer JSON, `native_file_id`, `total_pages`. |
-| `NotePageMetadataDO` (`f_note_page_metadata`) | 1 row / page `(user_id, file_id, page_index)` | `note_metadata` | Per-page template style, ink/drawable flags, and raw page/keyword/title/link wire JSON. |
-| `NoteTitleDO` (`f_note_title`) | 1 row / title `(user_id, file_id, title_index)` | `note_metadata` | Relational projection of notebook titles in reading order `(page_index, rect_top, rect_left)` with `rect_*`, `style`, and computed `bitmap_md5` (used for SQL joins, title crop auth, and integrity checks). |
-| `NoteTitleTranscriptDO` (`f_note_title_transcript`) | 1 row / unique title bitmap `(user_id, file_id, bitmap_md5)` | `transcript` | Single-line OCR text for a `<TITLEBITMAP>`. Content-addressed by `bitmap_md5` so transcripts follow identical handwriting across page reorders without coupling `note_metadata` to AI. |
-| `NotePageContentDO` (`f_note_page_content`) | 1 row / stable page `(id)`, unique `(file_id, page_id)` | `processor` / `transcript` / `search` | Page identity & `content_hash`, OCR `text_content`, and vector `embedding`. |
-| `SystemTaskDO` (`f_system_task`) | 1 row / stage checkpoint `(user_id, id)`, unique `(user_id, file_id, task_type, key)` | `processor` | Per-file and per-page execution state machine (`ProcessingStatus`), retries, and task versions. |
+- `NoteMetadataDO` (`f_note_metadata`, 1 row/notebook, owned by `note_metadata`):
+  Raw `.note` header/footer JSON, `native_file_id`, and `total_pages` parsed by `NoteMetadataModule`.
+- `NotePageMetadataDO` (`f_note_page_metadata`, 1 row/page, owned by `note_metadata`):
+  Per-page template style, ink/drawable flags, and raw page/keyword/title/link wire JSON.
+- `NoteTitleDO` (`f_note_title`, 1 row/title, owned by `note_metadata`):
+  Relational projection of notebook titles in reading order `(page_index, rect_top, rect_left)`
+  with `rect_*`, `style`, and computed `bitmap_md5` (used for SQL joins, title crop auth, and integrity checks).
+- `NoteTitleTranscriptDO` (`f_note_title_transcript`, 1 row/unique title bitmap, owned by `transcript`):
+  Single-line OCR text for a `<TITLEBITMAP>`, keyed by `(user_id, file_id, bitmap_md5)` so
+  transcriptions follow identical handwriting across page reorders without coupling `note_metadata` to AI.
+- `NotePageContentDO` (`f_note_page_content`, 1 row/stable page, shared by `processor`, `transcript`, `search`):
+  Per-page layer MD5 hashes (`content_hash`), OCR transcripts (`text_content`), and vector embeddings.
+- `SystemTaskDO` (`f_system_task`, 1 row/stage checkpoint, owned by `processor`):
+  Per-file and per-page execution checkpoints (`ProcessingStatus`), retries, and task versions.
 
 See `docs/architecture/note_processing_design.md` and `docs/architecture/adr/0004-note-processing-component-ownership.md`.
 """
