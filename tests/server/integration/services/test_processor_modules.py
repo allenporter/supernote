@@ -102,13 +102,7 @@ async def test_explicit_orchestration_flow(
     embedding = FakeModule("embedding")
     summary = FakeModule("summary")
 
-    processor_service.register_modules(
-        hashing=hashing,
-        png=png,
-        ocr=ocr,
-        embedding=embedding,
-        summary=summary,
-    )
+    processor_service.set_modules([hashing, png, ocr, embedding, summary])
 
     file_id = 123
     async with session_manager.session() as session:
@@ -144,13 +138,7 @@ async def test_dependant_skipping(
     embedding = FakeModule("embedding")
     summary = FakeModule("summary")
 
-    processor_service.register_modules(
-        hashing=hashing,
-        png=png,
-        ocr=ocr,
-        embedding=embedding,
-        summary=summary,
-    )
+    processor_service.set_modules([hashing, png, ocr, embedding, summary])
 
     file_id = 123
     async with session_manager.session() as session:

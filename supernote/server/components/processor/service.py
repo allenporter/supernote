@@ -180,24 +180,6 @@ class ProcessorService:
         )
         logger.info("Registered %d processor modules.", len(self.task_graph))
 
-    def register_modules(
-        self,
-        hashing: ProcessorModule,
-        png: ProcessorModule | None = None,
-        ocr: ProcessorModule | None = None,
-        embedding: ProcessorModule | None = None,
-        summary: ProcessorModule | None = None,
-        metadata: ProcessorModule | None = None,
-    ) -> None:
-        """Register the built-in processing modules into the task dependency graph."""
-        self.set_modules(
-            [
-                m
-                for m in (hashing, metadata, png, ocr, embedding, summary)
-                if m is not None
-            ]
-        )
-
     async def start(self) -> None:
         """Start the processor service workers and subscriptions."""
         logger.info("Starting ProcessorService...")

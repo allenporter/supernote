@@ -146,14 +146,16 @@ async def test_migrated_legacy_generated_summaries_api_query(tmp_path: Path) -> 
             session_manager=app[SESSION_MANAGER_KEY],
             file_service=app[FILE_SERVICE_KEY],
         )
-        processor.register_modules(
-            hashing=PageHashingModule(app[FILE_SERVICE_KEY]),
-            metadata=NoteMetadataModule(app[FILE_SERVICE_KEY]),
-            png=PngConversionModule(app[FILE_SERVICE_KEY]),
-            ocr=OcrModule(app[FILE_SERVICE_KEY], ocr_model=None),
-            summary=SummaryModule(
-                app[FILE_SERVICE_KEY], app[SUMMARY_SERVICE_KEY], fake_summary_model
-            ),
+        processor.set_modules(
+            [
+                PageHashingModule(app[FILE_SERVICE_KEY]),
+                NoteMetadataModule(app[FILE_SERVICE_KEY]),
+                PngConversionModule(app[FILE_SERVICE_KEY]),
+                OcrModule(app[FILE_SERVICE_KEY], ocr_model=None),
+                SummaryModule(
+                    app[FILE_SERVICE_KEY], app[SUMMARY_SERVICE_KEY], fake_summary_model
+                ),
+            ]
         )
         await processor.recover_missing_tasks(user_id=user_id)
         assert fake_summary_model.calls == []

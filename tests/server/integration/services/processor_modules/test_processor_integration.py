@@ -105,14 +105,7 @@ async def test_full_processing_pipeline_with_real_file(
         summary_model=fake_summary_model,
     )
 
-    processor_service.register_modules(
-        hashing=hashing,
-        metadata=metadata,
-        png=png,
-        ocr=ocr,
-        embedding=embedding,
-        summary=summary,
-    )
+    processor_service.set_modules([hashing, metadata, png, ocr, embedding, summary])
 
     completed_events: list[NoteProcessingCompletedEvent] = []
 
@@ -248,17 +241,19 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
         )
         await session.commit()
 
-    processor_service.register_modules(
-        hashing=PageHashingModule(processor_service.file_service),
-        metadata=NoteMetadataModule(processor_service.file_service),
-        png=PngConversionModule(processor_service.file_service),
-        ocr=OcrModule(processor_service.file_service, fake_ocr_model),
-        embedding=EmbeddingModule(processor_service.file_service, fake_embedding_model),
-        summary=SummaryModule(
-            file_service=processor_service.file_service,
-            summary_service=summary_service,
-            summary_model=fake_summary_model,
-        ),
+    processor_service.set_modules(
+        [
+            PageHashingModule(processor_service.file_service),
+            NoteMetadataModule(processor_service.file_service),
+            PngConversionModule(processor_service.file_service),
+            OcrModule(processor_service.file_service, fake_ocr_model),
+            EmbeddingModule(processor_service.file_service, fake_embedding_model),
+            SummaryModule(
+                file_service=processor_service.file_service,
+                summary_service=summary_service,
+                summary_model=fake_summary_model,
+            ),
+        ]
     )
 
     await processor_service.process_file(file_id, user_id=user_id)

@@ -178,7 +178,7 @@ async def test_processor_lifecycle(processor_service: ProcessorService) -> None:
 
 async def test_processor_handles_event(processor_service: ProcessorService) -> None:
     hashing = SlowModule("Hashing", 0.0)
-    processor_service.register_modules(hashing=hashing, png=None)
+    processor_service.set_modules([hashing])
     await processor_service.start()
 
     event = NoteUpdatedEvent(file_id=123, user_id=1, file_path="test.note")
@@ -327,16 +327,18 @@ async def test_handle_note_deleted_cleanup(
         await session.commit()
 
     # Trigger deletion event across registered modules
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        metadata=NoteMetadataModule(file_service=file_service),
-        png=PngConversionModule(file_service=file_service),
-        ocr=OcrModule(file_service=file_service, ocr_model=None),
-        summary=SummaryModule(
-            file_service=file_service,
-            summary_service=summary_service,
-            summary_model=None,
-        ),
+    processor_service.set_modules(
+        [
+            PageHashingModule(file_service=file_service),
+            NoteMetadataModule(file_service=file_service),
+            PngConversionModule(file_service=file_service),
+            OcrModule(file_service=file_service, ocr_model=None),
+            SummaryModule(
+                file_service=file_service,
+                summary_service=summary_service,
+                summary_model=None,
+            ),
+        ]
     )
     event = VfsItemPurgedEvent(item_id=file_id, user_id=test_user_id, name="test.note")
     await processor_service.handle_vfs_item_purged(event)
@@ -461,7 +463,7 @@ async def test_page_hashing_orphan_cleanup(
             )
         await session.commit()
 
-    processor_service.register_modules(hashing=hashing_module)
+    processor_service.set_modules([hashing_module])
     await processor_service.process_file(file_id, user_id=1)
 
     async with session_manager.session() as session:
@@ -536,7 +538,7 @@ async def test_start_calls_poll_loop(
     session_manager: DatabaseSessionManager,
 ) -> None:
     hashing = SlowModule("Hashing", 0.0)
-    processor_service.register_modules(hashing=hashing, png=None)
+    processor_service.set_modules([hashing])
 
     async with session_manager.session() as session:
         session.add(
@@ -623,13 +625,7 @@ async def test_page_parallelism(
         depends_on=(TaskType.PNG_CONVERSION,),
     )
 
-    processor_service.register_modules(
-        hashing=hashing,
-        png=png,
-        ocr=None,
-        embedding=None,
-        summary=summary,
-    )
+    processor_service.set_modules([hashing, png, summary])
 
     file_id = 123
     async with session_manager.session() as session:
@@ -703,7 +699,7 @@ async def test_processor_pause_resume(
 
     # Start service in paused state
     hashing = SlowModule("Hashing", 0.0)
-    processor_service.register_modules(hashing=hashing, png=None)
+    processor_service.set_modules([hashing])
 
     # Start the workers (they will be blocked since it's paused)
     for i in range(processor_service.concurrency):
@@ -738,7 +734,7 @@ async def test_process_file_without_page_modules(
     """Verify process_file runs global pre-modules and skips page queries when no page_modules are registered."""
     hashing = SlowModule("Hashing", 0.0)
 
-    processor_service.register_modules(hashing=hashing, png=None)
+    processor_service.set_modules([hashing])
     assert processor_service.page_modules == []
     assert processor_service.global_post_modules == []
 
@@ -775,7 +771,7 @@ async def test_process_file_publishes_processing_completed_event(
         await session.commit()
 
     hashing = SlowModule("Hashing", 0.0)
-    processor_service.register_modules(hashing=hashing, png=None)
+    processor_service.set_modules([hashing])
 
     received_events: list[Event] = []
 
@@ -843,20 +839,22 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
     summary_service: SummaryService,
 ) -> None:
     """Verify recover_missing_tasks enqueues files needing OCR, embedding, or summary backfill."""
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        metadata=NoteMetadataModule(file_service=file_service),
-        png=PngConversionModule(file_service=file_service),
-        ocr=OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
-        embedding=EmbeddingModule(
-            file_service=file_service,
-            embedding_model=FakeEmbeddingModel(model_id="new-model"),
-        ),
-        summary=SummaryModule(
-            file_service=file_service,
-            summary_service=summary_service,
-            summary_model=FakeSummaryModel(),
-        ),
+    processor_service.set_modules(
+        [
+            PageHashingModule(file_service=file_service),
+            NoteMetadataModule(file_service=file_service),
+            PngConversionModule(file_service=file_service),
+            OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
+            EmbeddingModule(
+                file_service=file_service,
+                embedding_model=FakeEmbeddingModel(model_id="new-model"),
+            ),
+            SummaryModule(
+                file_service=file_service,
+                summary_service=summary_service,
+                summary_model=FakeSummaryModel(),
+            ),
+        ]
     )
 
     async with session_manager.session() as session:
@@ -1006,10 +1004,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
     test_user_id: int,
 ) -> None:
     """Verify SyncCompletedEvent enqueues new notes and notes whose HASHING checkpoint was invalidated on overwrite."""
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        png=None,
-    )
+    processor_service.set_modules([PageHashingModule(file_service=file_service)])
 
     await blob_storage.put(USER_DATA_BUCKET, "k_old", b"old-content")
     await blob_storage.put(USER_DATA_BUCKET, "k_new", b"new-content")
@@ -1270,13 +1265,15 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
         session_manager=session_manager,
         file_service=file_service,
     )
-    processor.register_modules(
-        hashing=PageHashingModule(file_service),
-        metadata=NoteMetadataModule(file_service),
-        png=PngConversionModule(file_service),
-        ocr=OcrModule(file_service, ocr_model),
-        embedding=EmbeddingModule(file_service, embedding_model),
-        summary=SummaryModule(file_service, summary_service, summary_model),
+    processor.set_modules(
+        [
+            PageHashingModule(file_service),
+            NoteMetadataModule(file_service),
+            PngConversionModule(file_service),
+            OcrModule(file_service, ocr_model),
+            EmbeddingModule(file_service, embedding_model),
+            SummaryModule(file_service, summary_service, summary_model),
+        ]
     )
     search_service = SearchService(
         session_manager=session_manager,
@@ -1424,7 +1421,7 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
         ) -> None:
             events_log.append(f"cleanup:{file_id}:{user_id}")
 
-    processor_service.register_modules(hashing=LockingTestModule())
+    processor_service.set_modules([LockingTestModule()])
 
     proc_task = asyncio.create_task(processor_service.process_file(777, user_id=42))
     await in_process.wait()
@@ -1458,9 +1455,11 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
     test_user_id: int,
 ) -> None:
     """Verify VfsItemPurgedEvent purges note, page, and title metadata via NoteMetadataModule.cleanup_file."""
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service),
-        metadata=NoteMetadataModule(file_service),
+    processor_service.set_modules(
+        [
+            PageHashingModule(file_service),
+            NoteMetadataModule(file_service),
+        ]
     )
 
     async with session_manager.session() as session:
@@ -1518,7 +1517,7 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
     test_user_id: int,
 ) -> None:
     """Verify recover_missing_tasks re-enqueues files hashed by an older PageHashingModule version."""
-    processor_service.register_modules(hashing=PageHashingModule(file_service))
+    processor_service.set_modules([PageHashingModule(file_service)])
 
     async with session_manager.session() as session:
         session.add_all(
@@ -1650,7 +1649,7 @@ async def test_process_file_and_queue_pause_metrics(
             if should_fail:
                 raise RuntimeError("hashing boom")
 
-    processor.register_modules(hashing=ControllableHashing())
+    processor.set_modules([ControllableHashing()])
 
     # Hold `_file_lock(1, 9402)` via a full run for ~120ms while an on-demand run waits on the lock;
     # the on-demand run's observed duration must exclude that lock contention wait!
@@ -1718,7 +1717,7 @@ async def test_processor_queue_size_and_module_metric_seeding(
     file_service: FileService,
     summary_service: SummaryService,
 ) -> None:
-    """Verify `queue_size` tracks queued backlog and `register_modules` seeds per-module metrics."""
+    """Verify `queue_size` tracks queued backlog and `set_modules` seeds per-module metrics."""
     processor = ProcessorService(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
@@ -1746,7 +1745,7 @@ async def test_processor_queue_size_and_module_metric_seeding(
         async def process(self, *args: object, **kwargs: object) -> None:
             return None
 
-    processor.register_modules(hashing=_NoopHashing())
+    processor.set_modules([_NoopHashing()])
     for status in ("success", "failure", "skipped", "cancelled"):
         assert (
             REGISTRY.get_sample_value(
@@ -2431,11 +2430,13 @@ async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
     file_service: FileService,
 ) -> None:
     """Verify recover_missing_tasks backfills missing NOTE_METADATA for .note files but skips images."""
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        metadata=NoteMetadataModule(file_service=file_service),
-        png=PngConversionModule(file_service=file_service),
-        ocr=OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
+    processor_service.set_modules(
+        [
+            PageHashingModule(file_service=file_service),
+            NoteMetadataModule(file_service=file_service),
+            PngConversionModule(file_service=file_service),
+            OcrModule(file_service=file_service, ocr_model=FakeOcrModel()),
+        ]
     )
 
     async with session_manager.session() as session:
@@ -2535,11 +2536,13 @@ async def test_note_metadata_failure_isolates_ocr_while_allowing_png(
             raise RuntimeError("simulated metadata failure")
 
     fake_ocr = FakeOcrModel()
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        metadata=_FailingMetadataModule(file_service=file_service),
-        png=PngConversionModule(file_service=file_service),
-        ocr=OcrModule(file_service=file_service, ocr_model=fake_ocr),
+    processor_service.set_modules(
+        [
+            PageHashingModule(file_service=file_service),
+            _FailingMetadataModule(file_service=file_service),
+            PngConversionModule(file_service=file_service),
+            OcrModule(file_service=file_service, ocr_model=fake_ocr),
+        ]
     )
 
     ok = await processor_service.process_file(9210, user_id=1)
