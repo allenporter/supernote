@@ -79,6 +79,29 @@ The fields `handwriteInnerName` and `handwriteMD5` refer to binary stroke data s
 *   `handwriteInnerName`: The unique key in OSS where the handwriting file is located.
 *   `handwriteMD5`: Used to verify the integrity of the downloaded stroke data.
 
+### Text vs. Handwritten Digests & Source References
+A Digest card can contain plain text, handwritten ink, or both:
+*   **Text Digests** store their excerpt or synthesis in `content` (and an optional typed note in `commentStr`), with no binary attachment.
+*   **Handwritten Digests** attach a standalone `.mark` stroke file (`handwriteInnerName` + `handwriteMD5`) holding the stylus comment written inside the Digest app. Although it uses the same binary stroke format as Supernote notebooks, it is a self-contained annotation canvas for that Digest card—not a document-level `.pdf.mark` margin-annotation sidecar overlaid on top of a PDF.
+*   **Optional source links**: `fileId` and `sourcePath` are nullable, loose references with no foreign-key cascade. Highlights taken from a PDF/EPUB or server-generated AI notebook summaries populate them so clients can group cards under **Sources**, while standalone Digests created directly in the Digest app (and Category groups) leave them unset. Moving or deleting a source PDF or notebook does not delete its Digests or their `.mark` blobs.
+
+### Handwriting Blob & Render Cache Lifecycle
+Handwritten Digests store two separate artifacts with different durability rules:
+1.  **Upload (`USER_DATA_BUCKET`)**: The client requests a signed upload URL via `POST /api/file/upload/apply/summary`, uploads the raw `.mark` file to `USER_DATA_BUCKET`, and records `handwriteInnerName` and `handwriteMD5` on `SummaryDO` via `add/summary` or `update/summary`.
+2.  **On-demand rendering (`CACHE_BUCKET`)**: Calling `POST /api/extended/file/summary/to/pdf` or `/to/png` renders the `.mark` file into `CACHE_BUCKET` under `conversions/{user_id}/summary_{summary_id}/handwrite_{handwrite_md5}.pdf` (or `_page_{n}.png`) and returns signed `/api/oss/summary/*` download URLs.
+3.  **Update**: Editing only text fields keeps the cached renders intact. Replacing `handwriteInnerName` publishes `BlobCleanupEvent` so `FileService` deletes the superseded `.mark` blob once no `SummaryDO` or `UserFileDO` references it. Updating `handwriteMD5` (or clearing handwriting) emits `SummaryUpdatedEvent`, and `ConversionService` removes stale renders for that summary from `CACHE_BUCKET`.
+4.  **Soft delete**: Deleting a summary (or deleting its parent Category, which cascades to all active children) marks `SummaryDO.is_deleted = True` and emits `SummaryDeletedEvent`.
+    *   `CACHE_BUCKET` renders for `conversions/{user_id}/summary_{summary_id}/` are deleted immediately, because soft-deleted summaries are unreachable and re-adding the same `uniqueIdentifier` creates a new row with a new `summary_id`.
+    *   The raw `.mark` blob in `USER_DATA_BUCKET` is retained for the 30-day recycle retention window (`RECYCLE_RETENTION_MS`) in case a device re-adds the same `uniqueIdentifier` referencing that blob.
+5.  **Hard purge & integrity backstop**: Every 5 minutes, `SummaryService.purge_expired_summaries` hard-deletes soft-deleted rows past `RECYCLE_RETENTION_MS` and emits `BlobCleanupEvent` to reclaim their `.mark` blobs from `USER_DATA_BUCKET`. `IntegrityService` also flags any unreferenced blobs in either bucket during periodic integrity checks.
+
+### Optional Fields & Caveats
+*   **All links and annotations are optional**: A Digest card does not need a source file (`fileId`/`sourcePath`), a Category (`parentUniqueIdentifier`), a typed comment (`commentStr`), or a handwriting attachment (`handwriteInnerName`/`handwriteMD5`).
+*   **No restore-in-place**: Soft-deleted summaries cannot be un-deleted under the same `id`. Calling `add/summary` with the same `uniqueIdentifier` removes the prior row and inserts a new row with a new `summary_id`.
+*   **No source-file cascade**: `fileId` and `sourcePath` are informational links; renaming, moving, or deleting the referenced PDF/notebook does not update or delete the Digest or its `.mark` blob.
+*   **On-demand rendering only**: Uploading a `.mark` blob does not trigger background rendering. `/api/extended/file/summary/to/pdf` and `/to/png` render lazily on first request and require both `handwriteInnerName` (present in `USER_DATA_BUCKET`) and a valid `handwriteMD5`.
+*   **Asynchronous cache cleanup**: Stale `CACHE_BUCKET` renders are removed asynchronously via `LocalEventBus` subscribers. If a server restart drops an in-flight cleanup task or an active row is replaced in place via `add/summary` with a duplicate `uniqueIdentifier`, `IntegrityService` catches and repairs any remaining orphaned cache blobs.
+
 ### Rendering Handwriting (Extended)
 `POST /api/file/download/summary` returns the raw `.mark` stroke file. To get the ink rendered instead, call one of the server's extended endpoints with the same `{"id": <summaryId>}` body:
 *   `POST /api/extended/file/summary/to/pdf` -> `{"url": "<signed /api/oss/summary/pdf/{id} URL>"}`
