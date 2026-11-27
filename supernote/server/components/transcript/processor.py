@@ -235,16 +235,16 @@ class OcrModule(ProcessorModule):
             user_id = file_do.user_id
             file_name = file_do.file_name
             saved_page_index = int(content.page_index)
-            if (
+            # Fast path when a page is already transcribed (e.g. footer-only title edit
+            # or title backfill on an existing note): skip fetching the cached page PNG
+            # and avoid a redundant full-page LLM call; only OCR the missing title crops.
+            title_only = (
                 content.text_content is not None
                 and self.note_metadata_service is not None
                 and await _has_untranscribed_titles(
                     session, user_id, file_id, saved_page_index
                 )
-            ):
-                title_only = True
-            else:
-                title_only = False
+            )
             page_meta = (
                 None
                 if title_only
