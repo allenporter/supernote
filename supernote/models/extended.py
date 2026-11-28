@@ -62,8 +62,8 @@ class SystemTaskVO(DataClassJSONMixin):
     id: int = field(metadata=field_options(serialize=str))
     """The unique ID of the system task."""
 
-    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
-    """The ID of the file associated with this task."""
+    file_id: int | None = field(metadata=field_options(alias="fileId", serialize=str))
+    """The ID of the file associated with this task (populated for file-scoped tasks)."""
 
     task_type: str = field(metadata=field_options(alias="taskType"))
     """The type of task (e.g. 'OCR', 'SUMMARY')."""
@@ -94,6 +94,16 @@ class SystemTaskVO(DataClassJSONMixin):
         metadata=field_options(alias="pageIndex"), default=None
     )
     """0-based page index resolved from NotePageContentDO for page-scoped tasks."""
+
+    entity_type: str | None = field(
+        metadata=field_options(alias="entityType"), default=None
+    )
+    """Entity kind targeted by this task (e.g. 'file', 'summary')."""
+
+    entity_id: int | None = field(
+        metadata=field_options(alias="entityId", serialize=str), default=None
+    )
+    """Numeric ID of the target entity."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

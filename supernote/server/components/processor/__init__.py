@@ -34,16 +34,18 @@ from .base import (
     TaskScope,
 )
 from .config import ProcessorConfig
-from .service import ProcessorService
+from .service import ProcessingFile, ProcessorService, ProcessorWorkItem
 
 __all__ = [
     "PROCESSOR_SERVICE_KEY",
     "DuplicateTaskError",
     "MissingTaskDependencyError",
+    "ProcessingFile",
     "ProcessorComponent",
     "ProcessorModule",
     "ProcessorRegistrar",
     "ProcessorService",
+    "ProcessorWorkItem",
     "TaskDependencyCycleError",
     "TaskGraph",
     "TaskGraphError",
