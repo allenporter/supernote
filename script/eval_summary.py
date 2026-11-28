@@ -39,7 +39,7 @@ from supernote.server.config import (  # noqa: E402
 )
 
 DEFAULT_DATASET = REPO_ROOT / "evals/summary/dataset.yaml"
-DEFAULT_TARGET = "gemini:gemini-2.5-flash"
+DEFAULT_TARGET = "gemini:gemini-3.5-flash-lite"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

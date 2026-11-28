@@ -45,7 +45,7 @@ uv run --no-sync python script/eval_wiki.py --target fake:deterministic --export
 
 # Real Gemini run (requires GEMINI_API_KEY or SUPERNOTE_GEMINI_API_KEY):
 uv run --no-sync python script/eval_wiki.py \
-  --target gemini:gemini-2.5-flash \
+  --target gemini:gemini-3.5-flash-lite \
   --export-dir /tmp/wiki_eval_gemini
 
 # Real OpenAI or local Ollama run:
