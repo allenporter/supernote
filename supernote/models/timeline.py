@@ -85,13 +85,15 @@ class TimelinePageVO(DataClassJSONMixin):
     """Stable device `<PAGEID>` (empty string on legacy firmware)."""
 
     sources: list[str] = field(default_factory=list)
-    """Activity provenance labels for this page on `date` (`created`, `edited`)."""
+    """Activity provenance labels for this page on `date` (`created`, `edited`, `dated`)."""
 
     is_blank: bool = field(metadata=field_options(alias="isBlank"), default=False)
     has_five_star: bool = field(
         metadata=field_options(alias="hasFiveStar"), default=False
     )
     keywords: list[str] = field(default_factory=list)
+    summary: str | None = None
+    """Optional AI summary snippet for this page/date when the `summary` component is active."""
     image_url: str | None = field(
         metadata=field_options(alias="imageUrl"), default=None
     )
@@ -122,6 +124,7 @@ class TimelineDayCountVO(DataClassJSONMixin):
     count: int
     created_count: int = field(metadata=field_options(alias="createdCount"), default=0)
     edited_count: int = field(metadata=field_options(alias="editedCount"), default=0)
+    dated_count: int = field(metadata=field_options(alias="datedCount"), default=0)
 
     class Config(BaseConfig):
         serialize_by_alias = True

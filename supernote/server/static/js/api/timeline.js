@@ -43,6 +43,8 @@ export async function fetchTimelinePages(options = {}) {
         isBlank: Boolean(item.isBlank),
         hasFiveStar: Boolean(item.hasFiveStar),
         keywords: Array.isArray(item.keywords) ? item.keywords.map(String) : [],
+        summary:
+            typeof item.summary === 'string' && item.summary.trim() ? item.summary.trim() : null,
         imageUrl: typeof item.imageUrl === 'string' ? item.imageUrl : null,
     }));
     return {
@@ -79,5 +81,6 @@ export async function fetchTimelineDays(options = {}) {
         count: Number(day.count || 0),
         createdCount: Number(day.createdCount || 0),
         editedCount: Number(day.editedCount || 0),
+        datedCount: Number(day.datedCount || 0),
     }));
 }

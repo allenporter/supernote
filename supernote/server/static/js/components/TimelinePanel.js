@@ -112,8 +112,10 @@ export default {
         function activityBadgeLabel(item) {
             const hasCreated = item.sources.includes('created');
             const hasEdited = item.sources.includes('edited');
+            const hasDated = item.sources.includes('dated');
             if (hasEdited && !hasCreated) return 'Edited';
             if (hasEdited && hasCreated) return 'Created · Edited';
+            if (hasDated && !hasCreated && !hasEdited) return 'Dated in notes';
             return null;
         }
 
@@ -338,6 +340,9 @@ export default {
                                 <span class="text-[11px] font-mono text-stone-500 shrink-0">
                                     p. {{ item.pageIndex + 1 }}
                                 </span>
+                            </div>
+                            <div v-if="item.summary" class="text-[11px] text-stone-600 leading-snug line-clamp-2">
+                                {{ item.summary }}
                             </div>
                             <div v-if="item.keywords.length > 0" class="flex flex-wrap gap-1">
                                 <span v-for="kw in item.keywords.slice(0, 2)" :key="kw"

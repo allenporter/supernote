@@ -573,6 +573,7 @@ interface TimelinePage {
     isBlank: boolean;
     hasFiveStar: boolean;
     keywords: string[];
+    summary: string | null;
     imageUrl: string | null;
 }
 
@@ -587,4 +588,5 @@ interface TimelineDayCount {
     count: number;
     createdCount: number;
     editedCount: number;
+    datedCount: number;
 }

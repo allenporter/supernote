@@ -65,8 +65,11 @@ async def handle_timeline_pages(request: web.Request) -> web.Response:
     user_email, user_id = resolved_user
 
     timeline_service: TimelineService = request.app[TIMELINE_SERVICE_KEY]
+    include_summaries = request.app[COMPONENT_LOADER_KEY].get("summary") is not None
     try:
-        result_vo = await timeline_service.list_pages(user_id, req_dto)
+        result_vo = await timeline_service.list_pages(
+            user_id, req_dto, include_summaries=include_summaries
+        )
     except SupernoteError as err:
         return err.to_response()
     except Exception as err:
@@ -109,8 +112,11 @@ async def handle_timeline_days(request: web.Request) -> web.Response:
     _, user_id = resolved_user
 
     timeline_service: TimelineService = request.app[TIMELINE_SERVICE_KEY]
+    include_summaries = request.app[COMPONENT_LOADER_KEY].get("summary") is not None
     try:
-        result_vo = await timeline_service.list_days(user_id, req_dto)
+        result_vo = await timeline_service.list_days(
+            user_id, req_dto, include_summaries=include_summaries
+        )
     except SupernoteError as err:
         return err.to_response()
     except Exception as err:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from aiohttp.test_utils import TestClient
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.keys import BLOB_STORAGE_KEY, COMPONENT_LOADER_KEY
 from supernote.server.utils.paths import get_page_png_path
@@ -111,7 +113,13 @@ async def test_timeline_days_route_returns_counts(
     assert resp.status == 200
     body = await resp.json()
     assert body["days"] == [
-        {"date": "2026-03-14", "count": 1, "createdCount": 1, "editedCount": 0}
+        {
+            "date": "2026-03-14",
+            "count": 1,
+            "createdCount": 1,
+            "editedCount": 0,
+            "datedCount": 0,
+        }
     ]
 
 
@@ -136,3 +144,58 @@ async def test_timeline_routes_return_400_for_invalid_payloads(
 ) -> None:
     resp = await client.post(path, json=payload, headers=auth_headers)
     assert resp.status == 400
+
+
+async def test_timeline_pages_gates_summary_enrichment_on_summary_component(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    assert client.app is not None
+    file_id, _ = await _seed_single_page(session_manager, test_user_id)
+    async with session_manager.session() as session:
+        session.add(
+            SummaryDO(
+                user_id=test_user_id,
+                file_id=file_id,
+                name="Journal",
+                unique_identifier="sum-3001",
+                is_summary_group=False,
+                is_deleted=False,
+                extra_metadata=json.dumps(
+                    {
+                        "segments": [
+                            {
+                                "date_range": "2026-03-20",
+                                "summary": "Handwritten planner entry",
+                                "extracted_dates": ["2026-03-20"],
+                                "page_refs": [1],
+                            }
+                        ]
+                    }
+                ),
+            )
+        )
+        await session.commit()
+
+    resp = await client.post(
+        "/api/extended/timeline/pages", json={}, headers=auth_headers
+    )
+    assert resp.status == 200
+    items = (await resp.json())["items"]
+    assert [(i["date"], i["sources"], i["summary"]) for i in items] == [
+        ("2026-03-20", ["dated"], "Handwritten planner entry"),
+        ("2026-03-14", ["created"], None),
+    ]
+
+    loader = client.app[COMPONENT_LOADER_KEY]
+    with patch.object(loader, "get", return_value=None):
+        resp_disabled = await client.post(
+            "/api/extended/timeline/pages", json={}, headers=auth_headers
+        )
+    assert resp_disabled.status == 200
+    disabled_items = (await resp_disabled.json())["items"]
+    assert [(i["date"], i["sources"], i["summary"]) for i in disabled_items] == [
+        ("2026-03-14", ["created"], None),
+    ]
