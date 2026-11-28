@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from supernote.models.base import BooleanEnum, TaskType
 from supernote.models.summary import (
+    METADATA_CHUNKS,
     METADATA_SEGMENTS,
     AddSummaryDTO,
     AddSummaryGroupDTO,
@@ -13,10 +14,10 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.server.ai.base import AIError
-from supernote.server.ai.prompts import SummarySegment
+from supernote.server.ai.prompts import SummaryResponse, SummarySegment
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
-from supernote.server.components.summary import SummaryService
+from supernote.server.components.summary import SummaryConfig, SummaryService
 from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
@@ -1400,3 +1401,179 @@ async def test_summary_component_registers_summary_stage_via_processor_platform(
     assert service.task_graph.depends_on(TaskType.SUMMARY_GENERATION) == (
         "OCR_EXTRACTION",
     )
+
+
+class _SequencedSummaryModel(FakeSummaryModel):
+    """Test helper returning deterministic per-chunk segments and recording prompts."""
+
+    def __init__(self, model_name: str = "seq-model-v1") -> None:
+        super().__init__()
+        self._model_name = model_name
+        self.call_prompts: list[str] = []
+
+    @property
+    def model_id(self) -> str:
+        return self._model_name
+
+    async def summarize(self, prompt: str) -> SummaryResponse:
+        self.call_prompts.append(prompt)
+        idx = len(self.call_prompts)
+        # Inspect transcript to emit a segment referencing the pages in this chunk
+        transcript = prompt.split("TRANSCRIPT:", maxsplit=1)[-1]
+        page_nums = [
+            int(line.split("Page ", maxsplit=1)[1].split(" ", maxsplit=1)[0])
+            for line in transcript.splitlines()
+            if line.startswith("--- Page ")
+        ]
+        date_range = f"2026-01-{page_nums[0]:02d}" if page_nums else f"Chunk {idx}"
+        return SummaryResponse(
+            segments=[
+                SummarySegment(
+                    date_range=date_range,
+                    summary=f"- Chunk summary for pages {page_nums}",
+                    extracted_dates=[date_range] if page_nums else [],
+                    page_refs=page_nums,
+                )
+            ]
+        )
+
+
+async def test_summary_iterative_chunking_carry_over_and_incremental_append(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """Large notebooks chunk with carry-over context and reuse unchanged chunks on append."""
+    user_id = 301
+    user_email = "chunk@example.com"
+    file_id = 3001
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="chunk_key",
+                file_name="Daily.note",
+                directory_id=0,
+            )
+        )
+        for i in range(5):
+            session.add(
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=i,
+                    page_id=f"P2026010{i + 1}080000CHK{i:04d}",
+                    content_hash=f"h{i}",
+                    text_content=f"Daily log content for page {i + 1}",
+                )
+            )
+        await session.commit()
+
+    model = _SequencedSummaryModel()
+    module = SummaryModule(
+        file_service=file_service,
+        summary_service=summary_service,
+        summary_model=model,
+        config=SummaryConfig(
+            max_pages_per_chunk=2,
+            max_chars_per_chunk=16_000,
+            incremental=True,
+            carry_over_context=True,
+        ),
+    )
+
+    # Initial pass: 5 pages -> 3 chunks ([1,2], [3,4], [5])
+    await module.process(file_id, session_manager)
+    assert len(model.call_prompts) == 3
+    assert "PRIOR CONTEXT" not in model.call_prompts[0]
+    assert "PRIOR CONTEXT" in model.call_prompts[1]
+    assert "PRIOR CONTEXT" in model.call_prompts[2]
+
+    first = await summary_service.get_summary_by_uuid(
+        user_email, get_summary_id(user_id, file_id)
+    )
+    assert first is not None and first.metadata is not None
+    meta = json.loads(first.metadata)
+    assert len(meta[METADATA_SEGMENTS]) == 3
+    assert len(meta[METADATA_CHUNKS]) == 3
+
+    # Append 1 page (page 6 -> joins chunk 3: [5, 6]); chunks 1 & 2 must be cached!
+    async with session_manager.session() as session:
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=5,
+                page_id="P20260106080000CHK0005",
+                content_hash="h5",
+                text_content="Daily log content for page 6",
+            )
+        )
+        await session.commit()
+
+    model.call_prompts.clear()
+    await module.process(file_id, session_manager)
+    assert len(model.call_prompts) == 1
+    assert "page 6" in model.call_prompts[0]
+    assert "PRIOR CONTEXT" in model.call_prompts[0]
+
+    # Switching model_id invalidates all cached chunks
+    model2 = _SequencedSummaryModel(model_name="seq-model-v2")
+    module.summary_model = model2
+    await module.process(file_id, session_manager)
+    assert len(model2.call_prompts) == 3
+
+
+async def test_summary_incremental_false_reprocesses_all_chunks(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """When incremental=False, all chunks are re-summarized on every run."""
+    user_id = 302
+    user_email = "noinc@example.com"
+    file_id = 3002
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="noinc_key",
+                file_name="Daily.note",
+                directory_id=0,
+            )
+        )
+        for i in range(4):
+            session.add(
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=i,
+                    page_id=f"P2026020{i + 1}080000INC{i:04d}",
+                    content_hash=f"h{i}",
+                    text_content=f"Entry {i + 1}",
+                )
+            )
+        await session.commit()
+
+    model = _SequencedSummaryModel()
+    module = SummaryModule(
+        file_service=file_service,
+        summary_service=summary_service,
+        summary_model=model,
+        config=SummaryConfig(
+            max_pages_per_chunk=2,
+            incremental=False,
+            carry_over_context=False,
+        ),
+    )
+
+    await module.process(file_id, session_manager)
+    assert len(model.call_prompts) == 2
+    assert all("PRIOR CONTEXT" not in p for p in model.call_prompts)
+
+    model.call_prompts.clear()
+    await module.process(file_id, session_manager)
+    assert len(model.call_prompts) == 2

@@ -12,7 +12,7 @@ When `supernote.server.config.ServerConfig.load` and `supernote.server.component
    - Any `SUPERNOTE_*` environment variable overrides `config.yaml`, database overrides, and built-in defaults, and pins the affected component as read-only (`readOnly: true`).
 2. **YAML Configuration File (`yaml`)**:
    - Checks `--config-dir` CLI flag, or `SUPERNOTE_CONFIG_DIR` environment variable (defaults to `config` locally, `/data/config` in Docker), and reads `<config_dir>/config.yaml` if present.
-   - Root-level `<domain>:` sections in `config.yaml` (such as `mcp:`, `metrics:`, `events:`, `http:`, `conversion:`, `processor:`, `web_ui:`, `ai:`, `gemini:`, `openai:`, `webhooks:`, `wiki:`) configure the corresponding vertical component domain (`supernote.server.components.<domain>.config`) and take precedence over database overrides. Legacy top-level flat aliases (such as `mcp_enabled`, `mcp_port`, `metrics_enabled`, `web_enabled`, `web_notebook_preview`, `event_log_retention_days`, `proxy_mode`, `prompts_dir`) remain supported and resolve identically. The server never auto-writes a default `config.yaml` on first boot, so unconfigured components remain editable via the database tier.
+   - Root-level `<domain>:` sections in `config.yaml` (such as `mcp:`, `metrics:`, `events:`, `http:`, `conversion:`, `processor:`, `summary:`, `web_ui:`, `ai:`, `gemini:`, `openai:`, `webhooks:`, `wiki:`) configure the corresponding vertical component domain (`supernote.server.components.<domain>.config`) and take precedence over database overrides. Legacy top-level flat aliases (such as `mcp_enabled`, `mcp_port`, `metrics_enabled`, `web_enabled`, `web_notebook_preview`, `event_log_retention_days`, `proxy_mode`, `prompts_dir`) remain supported and resolve identically. The server never auto-writes a default `config.yaml` on first boot, so unconfigured components remain editable via the database tier.
 3. **Database Overrides (`database`) & Generated Secrets**:
    - Components not pinned by `env` or `yaml` can be configured dynamically via `PUT /api/extended/system/components/{domain}` (persisted under `component_config:<domain>` in `CoordinationService`).
    - If `auth.secret_key` (`SUPERNOTE_JWT_SECRET`) is not provided via environment variable or `config.yaml`, `supernote.server.services.user.UserService` automatically generates and persists a random secret key inside the SQLite coordination store (`storage/system/supernote.db`) so tokens survive restarts without manual secret management.
@@ -313,3 +313,26 @@ wiki:
 | `wiki.daily_token_budget` | — | `int` | `200000` | Per-user UTC daily LLM token cap across compile and lint passes (`>= 0`). |
 | `wiki.lint_event_threshold` | — | `int` | `10` | Minimum compiled events before triggering a thresholded LLM semantic lint pass (`>= 1`). |
 | `wiki.lint_interval_days` | — | `int` | `7` | Maximum days between thresholded LLM semantic lint passes when dirty (`>= 1`). |
+
+---
+
+## Notebook Summary (Digest) Settings (`supernote.server.components.summary.config.SummaryConfig`)
+
+Configured under the `summary:` block in `config.yaml`. Controls the Digest component and how `SummaryModule` chunks, caches, and stitches AI notebook summaries (requires `ai.summary` to be configured).
+
+```yaml
+summary:
+  enabled: true
+  max_pages_per_chunk: 8
+  max_chars_per_chunk: 16000
+  incremental: true
+  carry_over_context: true
+```
+
+| YAML Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `summary.enabled` | `bool` | `true` | Enables the summary (Digest) component, including tablet Digest HTTP sync and AI notebook summarization. |
+| `summary.max_pages_per_chunk` | `int` | `8` | Maximum non-blank pages sent to the LLM in a single summarization chunk (`>= 0`). Large notebooks are split into ordered chunks (preferring date boundaries) and stitched into one Digest summary. Set to `0` to disable chunking and summarize the entire notebook in one LLM call. |
+| `summary.max_chars_per_chunk` | `int` | `16000` | Maximum formatted transcript characters per chunk (`>= 1`), preventing dense pages from exceeding prompt budgets. |
+| `summary.incremental` | `bool` | `true` | Reuses cached per-chunk summaries for unchanged chunks when pages are appended or edited. Changing the model, prompt type, or chunk settings invalidates affected chunks automatically, and manually reprocessing an unchanged notebook bypasses the cache. When `false`, every chunk is re-summarized from scratch on each run. |
+| `summary.carry_over_context` | `bool` | `true` | Passes a bounded tail of the prior chunk's summary (up to 2 segments / 1,200 chars) as read-only `PRIOR CONTEXT` to the next chunk so undated continuation pages crossing a chunk boundary inherit the active date and topic without re-sending earlier transcripts. When `false`, chunks are summarized independently (no cross-chunk dependency on mid-notebook edits, but undated boundary pages may lose date context). |

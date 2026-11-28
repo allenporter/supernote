@@ -21,6 +21,7 @@ from sqlalchemy import delete, select
 
 from supernote.models.base import TaskType
 from supernote.models.summary import (
+    METADATA_CHUNKS,
     METADATA_SEGMENTS,
     AddSummaryDTO,
     AddSummaryGroupDTO,
@@ -46,6 +47,7 @@ from supernote.server.services.file import FileService
 from supernote.server.utils.note_content import (
     format_page_metadata,
     get_page_keywords_map,
+    infer_page_date,
 )
 from supernote.server.utils.paths import (
     AI_SUMMARIES_GROUP_NAME,
@@ -54,6 +56,19 @@ from supernote.server.utils.paths import (
     get_summary_id,
 )
 
+from . import SUMMARY_CONFIG_KEY
+from .chunking import (
+    FormattedPage,
+    PageChunk,
+    compute_chunk_hash,
+    format_prior_context,
+    merge_chunk_segments,
+    normalize_segments,
+    parse_cached_chunks,
+    partition_pages,
+    render_segments_markdown,
+)
+from .config import SummaryConfig
 from .service import SUMMARY_SERVICE_KEY, SummaryService
 
 __all__ = [
@@ -96,10 +111,12 @@ class SummaryModule(ProcessorModule):
         file_service: FileService,
         summary_service: SummaryService,
         summary_model: SummaryModel | None,
+        config: SummaryConfig | None = None,
     ) -> None:
         self.file_service = file_service
         self.summary_service = summary_service
         self.summary_model = summary_model
+        self.config = config if config is not None else SummaryConfig()
         self._group_lock = asyncio.Lock()
 
     @property
@@ -346,22 +363,31 @@ class SummaryModule(ProcessorModule):
             logger.info(f"No OCR pages found for file {file_id}. Skipping summary.")
             return
 
-        # Format transcript with Page markers and inferred dates
-        text_parts = []
+        # Format transcript pages with Page markers and inferred dates
+        formatted_pages: list[FormattedPage] = []
         for p in pages:
             if not p.is_blank:
+                page_id_str = p.page_id or ""
                 metadata = format_page_metadata(
                     page_index=p.page_index,
-                    page_id=p.page_id or "",
+                    page_id=page_id_str,
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
-                    keywords=keywords_map.get(p.page_id or ""),
+                    keywords=keywords_map.get(page_id_str),
                     include_section_divider=True,
                 )
-                text_parts.append(f"{metadata}\n{p.text_content}")
+                inferred = infer_page_date(page_id_str)
+                formatted_pages.append(
+                    FormattedPage(
+                        page_index=int(p.page_index),
+                        page_id=page_id_str,
+                        page_date=inferred.strftime("%Y-%m-%d") if inferred else None,
+                        formatted_text=f"{metadata}\n{p.text_content}",
+                    )
+                )
 
         summary_uuid = get_summary_id(user_id, file_id)
-        if not text_parts:
+        if not formatted_pages:
             await self._delete_blank_file_summary(user_email, summary_uuid)
             logger.info(
                 f"All pages in file {file_id} are blank; skipping summary generation."
@@ -374,53 +400,81 @@ class SummaryModule(ProcessorModule):
             )
             or file_do.file_name
         )
-        full_text = "\n\n".join(text_parts)
-
         custom_type = Path(file_do.file_name).stem.lower()
-        prompt = format_summary_prompt(full_text, custom_type=custom_type)
-        summary_response = await self.summary_model.summarize(prompt)
 
-        # Format segments into Markdown and collect metadata
-        ai_summary = "No summary generated."
-        metadata_str = None
+        chunks = partition_pages(
+            formatted_pages,
+            max_pages_per_chunk=self.config.max_pages_per_chunk,
+            max_chars_per_chunk=self.config.max_chars_per_chunk,
+        )
 
-        summary_parts = []
-        clean_segments = []
+        cached_chunks: dict[str, list[dict[str, object]]] = {}
+        if self.config.incremental and len(chunks) > 1:
+            existing_summary = await self.summary_service.get_summary_by_uuid(
+                user_email, summary_uuid
+            )
+            if existing_summary is not None:
+                candidate_cache = parse_cached_chunks(existing_summary.metadata)
+                # If every chunk in the chain is already cached, `process()` was
+                # explicitly re-triggered (e.g. manual reprocess or prompt edit)
+                # without page changes — bypass cache so regeneration actually runs.
+                if candidate_cache and not self._all_chunks_cached(
+                    chunks,
+                    candidate_cache,
+                    model_id=self.summary_model.model_id,
+                    custom_type=custom_type,
+                ):
+                    cached_chunks = candidate_cache
 
-        for seg in summary_response.segments:
-            date_range = seg.date_range or "Unknown Date"
-            text = (seg.summary or "").replace("\\n", "\n")
-            dates = seg.extracted_dates or []
-            page_refs = seg.page_refs or []
+        chunk_segment_lists: list[list[dict[str, object]]] = []
+        chunk_cache_entries: list[dict[str, object]] = []
+        prior_context: str | None = None
+        cache_hits = 0
 
-            # Markdown Formatting
-            header = f"## {date_range}"
-            # Add page citations to markdown too for readability
-            if page_refs:
-                # e.g. (Pages 45, 46)
-                pages_str = ", ".join(str(p) for p in page_refs)
-                header += f" (Pages {pages_str})"
+        for chunk in chunks:
+            effective_prior = prior_context if self.config.carry_over_context else None
+            chunk_hash = compute_chunk_hash(
+                chunk,
+                model_id=self.summary_model.model_id,
+                custom_type=custom_type,
+                prior_context=effective_prior,
+            )
+            if self.config.incremental and chunk_hash in cached_chunks:
+                chunk_segments = cached_chunks[chunk_hash]
+                cache_hits += 1
+            else:
+                prompt = format_summary_prompt(
+                    chunk.transcript,
+                    custom_type=custom_type,
+                    prior_context=effective_prior,
+                )
+                summary_response = await self.summary_model.summarize(prompt)
+                chunk_segments = normalize_segments(summary_response.segments)
 
-            summary_parts.append(f"{header}\n{text}")
-
-            clean_segments.append(
+            chunk_segment_lists.append(chunk_segments)
+            chunk_cache_entries.append(
                 {
-                    "date_range": date_range,
-                    "summary": text,
-                    "extracted_dates": dates,
-                    "page_refs": page_refs,
+                    "chunk_hash": chunk_hash,
+                    "segments": chunk_segments,
                 }
             )
+            if self.config.carry_over_context and chunk_segments:
+                prior_context = format_prior_context(chunk_segments)
 
-        if summary_parts:
-            ai_summary = "\n\n".join(summary_parts)
+        clean_segments = merge_chunk_segments(chunk_segment_lists)
+        ai_summary = render_segments_markdown(clean_segments)
 
-        # Construct rich metadata for retrieval
+        # Construct rich metadata for retrieval and incremental chunk caching
+        metadata_str: str | None = None
         if clean_segments:
-            meta_obj = {METADATA_SEGMENTS: clean_segments}
+            meta_obj: dict[str, object] = {
+                METADATA_SEGMENTS: clean_segments,
+                METADATA_CHUNKS: chunk_cache_entries,
+            }
             metadata_str = json.dumps(meta_obj)
             logger.info(
-                f"Generated metadata for file {file_id}: segments={len(clean_segments)}"
+                f"Generated metadata for file {file_id}: "
+                f"segments={len(clean_segments)} chunks={len(chunks)} cache_hits={cache_hits}"
             )
 
         await self._upsert_ai_summary(
@@ -433,6 +487,31 @@ class SummaryModule(ProcessorModule):
             source_path=source_path,
             metadata=metadata_str,
         )
+
+    def _all_chunks_cached(
+        self,
+        chunks: list[PageChunk],
+        cached_chunks: dict[str, list[dict[str, object]]],
+        *,
+        model_id: str,
+        custom_type: str,
+    ) -> bool:
+        """Return True if every chunk in `chunks` already exists in `cached_chunks`."""
+        prior_context: str | None = None
+        for chunk in chunks:
+            effective_prior = prior_context if self.config.carry_over_context else None
+            chunk_hash = compute_chunk_hash(
+                chunk,
+                model_id=model_id,
+                custom_type=custom_type,
+                prior_context=effective_prior,
+            )
+            if chunk_hash not in cached_chunks:
+                return False
+            chunk_segments = cached_chunks[chunk_hash]
+            if self.config.carry_over_context and chunk_segments:
+                prior_context = format_prior_context(chunk_segments)
+        return True
 
     async def _ensure_ai_summaries_group(self, user_email: str, user_id: int) -> str:
         """Ensure the shared 'AI Summaries' Digest category exists without overwriting user renames."""
@@ -536,5 +615,6 @@ async def async_setup_processor(
             file_service=core.file_service,
             summary_service=core.app[SUMMARY_SERVICE_KEY],
             summary_model=core.app.get(SUMMARY_MODEL_KEY),
+            config=core.app.get(SUMMARY_CONFIG_KEY),
         )
     )

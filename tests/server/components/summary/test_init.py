@@ -5,7 +5,9 @@ from __future__ import annotations
 from sqlalchemy import delete
 
 from supernote.server.components.summary import (
+    SUMMARY_CONFIG_KEY,
     SUMMARY_SERVICE_KEY,
+    SummaryConfig,
     SummaryService,
 )
 from supernote.server.constants import USER_DATA_BUCKET
@@ -28,6 +30,7 @@ async def test_summary_component_full_lifecycle(
 
     service = component_core.app[SUMMARY_SERVICE_KEY]
     assert isinstance(service, SummaryService)
+    assert isinstance(component_core.app[SUMMARY_CONFIG_KEY], SummaryConfig)
     assert service._purge_task is not None
     assert not service._purge_task.done()
 
