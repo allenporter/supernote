@@ -25,6 +25,7 @@ from aiohttp import web
 
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.extended import (
+    DigestListRequestDTO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
 )
@@ -58,7 +59,15 @@ from supernote.server.components.conversion import (
     CONVERSION_SERVICE_KEY,
     ConversionService,
 )
-from supernote.server.components.http import HttpRegistrar, parse_json_dto
+from supernote.server.components.http import (
+    HttpRegistrar,
+    parse_json_dto,
+    parse_query_dto,
+)
+from supernote.server.components.transcript import (
+    TRANSCRIPT_SERVICE_KEY,
+    TranscriptService,
+)
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.exceptions import (
@@ -70,11 +79,13 @@ from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     REQUEST_USER_KEY,
     URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
 )
 from supernote.server.metrics import OSSTransferKind
 from supernote.server.routes.decorators import public_route
 from supernote.server.routes.oss import stream_blob_response
 from supernote.server.services.blob import BlobStorage
+from supernote.server.services.user import UserService
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
@@ -534,10 +545,47 @@ async def handle_query_summary_id(request: web.Request) -> web.Response:
         return SupernoteError.uncaught(err).to_response()
 
 
+@routes.get("/api/extended/digests")
+async def handle_list_digests(request: web.Request) -> web.Response:
+    """List self-contained Digests with inline handwriting OCR transcripts."""
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        req_dto = parse_query_dto(request, DigestListRequestDTO)
+    except InvalidInputError as err:
+        return err.to_response()
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
+    transcript_service: TranscriptService = request.app[TRANSCRIPT_SERVICE_KEY]
+
+    if not (user_id := await user_service.get_user_id(user_email)):
+        return web.json_response(
+            create_error_response("User not found").to_dict(),
+            status=HTTPStatus.NOT_FOUND,
+        )
+
+    try:
+        vo = await summary_service.list_digests(
+            user_id,
+            transcript_service,
+            file_id=req_dto.file_id,
+            category_id=req_dto.category_id,
+            limit=req_dto.limit,
+            offset=req_dto.offset,
+        )
+        return web.json_response(vo.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        logger.exception("Error listing digests")
+        return SupernoteError.uncaught(err).to_response()
+
+
 @routes.post("/api/extended/file/summary/list")
 async def handle_extended_file_summary_list(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/summary/list
     # Purpose: Extended API to list summaries for a file.
+    # TODO: Deprecate once Web UI and CLI callers migrate to GET /api/extended/digests.
     user_email = request[REQUEST_USER_KEY]
     try:
         req_dto = await parse_json_dto(request, WebSummaryListRequestDTO)

@@ -6,6 +6,10 @@ from supernote.models.extended import (
     ApiKeyVO,
     CreateApiKeyDTO,
     CreateApiKeyResponseVO,
+    DigestHandwritingVO,
+    DigestListRequestDTO,
+    DigestListVO,
+    DigestVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     NoteLinkVO,
@@ -51,6 +55,67 @@ def test_web_summary_list_models() -> None:
         "summaryDOList": [item.to_dict()],
         "totalRecords": 1,
     }
+
+
+def test_digest_models() -> None:
+    req = DigestListRequestDTO(
+        file_id=772252421643567298, category_id="cat-uuid-1", limit=25, offset=5
+    )
+    assert req.to_dict() == {
+        "fileId": "772252421643567298",
+        "categoryId": "cat-uuid-1",
+        "limit": 25,
+        "offset": 5,
+    }
+    assert DigestListRequestDTO.from_dict(req.to_dict()) == req
+
+    digest = DigestVO(
+        id=42,
+        unique_identifier="digest-uuid-1",
+        category_id="cat-uuid-1",
+        file_id=772252421643567298,
+        name="Chapter 1",
+        source_path="/Document/Book.pdf",
+        author="Author",
+        tags=["reading", "notes"],
+        data_source="DEVICE",
+        content="Highlighted passage",
+        comment="Typed note",
+        handwriting=DigestHandwritingVO(
+            md5="abc123",
+            transcript="Handwritten margin note",
+            model_id="ocr-v1",
+            update_time=1700000000000,
+        ),
+        creation_time=1699999000000,
+        update_time=1700000000000,
+    )
+    vo = DigestListVO(digests=[digest], total=1, limit=25, offset=5)
+    data = vo.to_dict()
+    assert data["digests"] == [
+        {
+            "id": "42",
+            "uniqueIdentifier": "digest-uuid-1",
+            "categoryId": "cat-uuid-1",
+            "fileId": "772252421643567298",
+            "name": "Chapter 1",
+            "sourcePath": "/Document/Book.pdf",
+            "author": "Author",
+            "tags": ["reading", "notes"],
+            "dataSource": "DEVICE",
+            "content": "Highlighted passage",
+            "comment": "Typed note",
+            "handwriting": {
+                "md5": "abc123",
+                "transcript": "Handwritten margin note",
+                "modelId": "ocr-v1",
+                "updateTime": 1700000000000,
+            },
+            "creationTime": 1699999000000,
+            "updateTime": 1700000000000,
+        }
+    ]
+    assert DigestListVO.from_dict(data) == vo
 
 
 def test_system_task_models() -> None:

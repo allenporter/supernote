@@ -89,6 +89,12 @@ All tools scope queries strictly to the authenticated user's account.
 | `get_notebook_transcript` | Return the full OCR Markdown transcript for a notebook or a 0-based page slice. | `file_id`, `start_index`, `end_index` |
 | `get_page_image` | Return a normalized PNG image for a `.note` page or standalone image so vision models can inspect sketches and diagrams. | `file_id`, `page_index=0`, `max_dimension=1568` (`64`–`2048`) |
 
+### Digests & AI Notebook Summaries
+
+| Tool | Purpose | Key arguments |
+| :--- | :--- | :--- |
+| `list_digests` | List Digest entries (PDF/EPUB excerpts, lassoed note excerpts, typed comments, AI Notebook Summaries) with inline handwritten annotation OCR transcripts. | `file_id`, `category_id`, `limit=50`, `offset=0` |
+
 ### Tasks & schedule
 
 | Tool | Purpose | Key arguments |

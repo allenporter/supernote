@@ -23,6 +23,7 @@ from sqlalchemy import ColumnElement, Select, and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.base import BooleanEnum
+from supernote.models.extended import DigestHandwritingVO, DigestListVO, DigestVO
 from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
@@ -34,6 +35,7 @@ from supernote.models.summary import (
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
 )
+from supernote.server.components.transcript import TranscriptService
 from supernote.server.constants import RECYCLE_RETENTION_MS
 from supernote.server.db.models.summary import SummaryDO, SummaryTagDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -400,6 +402,7 @@ class SummaryService:
         user_id: int,
         parent_uuid: str | None = None,
         ids: list[int] | None = None,
+        file_id: int | None = None,
     ) -> list[ColumnElement[bool]]:
         """Build SQLAlchemy filter predicates for leaf summaries."""
         filters: list[ColumnElement[bool]] = [
@@ -411,6 +414,8 @@ class SummaryService:
             filters.append(SummaryDO.parent_unique_identifier == parent_uuid)
         if ids is not None:
             filters.append(SummaryDO.id.in_(ids))
+        if file_id is not None:
+            filters.append(SummaryDO.file_id == file_id)
         return filters
 
     @staticmethod
@@ -430,12 +435,26 @@ class SummaryService:
         user_email: str,
         parent_uuid: str | None = None,
         ids: list[int] | None = None,
+        file_id: int | None = None,
     ) -> int:
         """Count total matching summaries for pagination metadata."""
         user_id = await self.user_service.get_user_id(user_email)
+        return await self.count_summaries_for_user(
+            user_id, parent_uuid=parent_uuid, ids=ids, file_id=file_id
+        )
+
+    async def count_summaries_for_user(
+        self,
+        user_id: int,
+        *,
+        parent_uuid: str | None = None,
+        ids: list[int] | None = None,
+        file_id: int | None = None,
+    ) -> int:
+        """Count matching active leaf summaries for `user_id`."""
         async with self.session_manager.session() as session:
             filters = self._build_summary_filters(
-                user_id, parent_uuid=parent_uuid, ids=ids
+                user_id, parent_uuid=parent_uuid, ids=ids, file_id=file_id
             )
             stmt = select(func.count()).select_from(SummaryDO).where(and_(*filters))
             return int((await session.execute(stmt)).scalar() or 0)
@@ -447,12 +466,13 @@ class SummaryService:
         ids: list[int] | None = None,
         page: int | None = 1,
         size: int | None = DEFAULT_SUMMARY_PAGE_SIZE,
+        file_id: int | None = None,
     ) -> list[SummaryItem]:
         """List summaries based on filters."""
         user_id = await self.user_service.get_user_id(user_email)
         async with self.session_manager.session() as session:
             filters = self._build_summary_filters(
-                user_id, parent_uuid=parent_uuid, ids=ids
+                user_id, parent_uuid=parent_uuid, ids=ids, file_id=file_id
             )
             stmt = self._apply_pagination(
                 select(SummaryDO).where(and_(*filters)).order_by(SummaryDO.id.asc()),
@@ -743,16 +763,115 @@ class SummaryService:
         This is NOT part of the standard public API but used by web frontend extensions.
         """
         user_id = await self.user_service.get_user_id(user_email)
+        return await self.list_summaries_for_user(user_id, file_id=file_id)
+
+    async def list_summaries_for_user(
+        self,
+        user_id: int,
+        *,
+        file_id: int | None = None,
+        parent_uuid: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[SummaryItem]:
+        """List active leaf summaries for `user_id`, optionally filtered by `file_id` or category."""
         async with self.session_manager.session() as session:
-            stmt = select(SummaryDO).where(
-                SummaryDO.user_id == user_id,
-                SummaryDO.file_id == file_id,
-                SummaryDO.is_deleted.is_(False),
-                SummaryDO.is_summary_group.is_(False),
+            filters = self._build_summary_filters(
+                user_id, parent_uuid=parent_uuid, file_id=file_id
             )
+            stmt = (
+                select(SummaryDO)
+                .where(and_(*filters))
+                .order_by(SummaryDO.update_time.desc(), SummaryDO.id.desc())
+            )
+            if offset > 0:
+                stmt = stmt.offset(offset)
+            if limit is not None:
+                stmt = stmt.limit(limit)
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
+
+    async def list_digests(
+        self,
+        user_id: int,
+        transcript_service: TranscriptService,
+        *,
+        file_id: int | None = None,
+        category_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> DigestListVO:
+        """List self-contained `DigestVO` items with inline handwriting OCR transcripts."""
+        clamped_limit = max(1, min(limit, 200))
+        clamped_offset = max(0, offset)
+        summaries = await self.list_summaries_for_user(
+            user_id,
+            file_id=file_id,
+            parent_uuid=category_id,
+            limit=clamped_limit,
+            offset=clamped_offset,
+        )
+        total = await self.count_summaries_for_user(
+            user_id,
+            file_id=file_id,
+            parent_uuid=category_id,
+        )
+        summary_ids = [s.id for s in summaries if s.id is not None]
+        transcripts = await transcript_service.get_summary_transcripts(
+            user_id, summary_ids
+        )
+
+        items: list[DigestVO] = []
+        for summary in summaries:
+            if summary.id is None:
+                continue
+            handwriting: DigestHandwritingVO | None = None
+            if summary.handwrite_inner_name:
+                transcript = transcripts.get(summary.id)
+                is_current = (
+                    transcript is not None
+                    and bool(summary.handwrite_md5)
+                    and transcript.handwrite_md5 == summary.handwrite_md5
+                )
+                handwriting = DigestHandwritingVO(
+                    md5=summary.handwrite_md5,
+                    transcript=transcript.text if is_current and transcript else None,
+                    model_id=transcript.model_id if is_current and transcript else None,
+                    update_time=(
+                        transcript.update_time if is_current and transcript else None
+                    ),
+                )
+            tags = (
+                [t.strip() for t in summary.tags.split(",") if t.strip()]
+                if summary.tags
+                else []
+            )
+            items.append(
+                DigestVO(
+                    id=summary.id,
+                    unique_identifier=summary.unique_identifier,
+                    category_id=summary.parent_unique_identifier,
+                    file_id=summary.file_id,
+                    name=summary.name,
+                    source_path=summary.source_path,
+                    author=summary.author,
+                    tags=tags,
+                    data_source=summary.data_source,
+                    content=summary.content,
+                    comment=summary.comment_str,
+                    handwriting=handwriting,
+                    creation_time=summary.creation_time,
+                    update_time=summary.update_time,
+                )
+            )
+
+        return DigestListVO(
+            digests=items,
+            total=total,
+            limit=clamped_limit,
+            offset=clamped_offset,
+        )
 
     @staticmethod
     async def get_referenced_blob_keys(
