@@ -43,11 +43,17 @@ class ExtendedClient:
         self,
         file_id: int | None = None,
         *,
+        parent_unique_identifier: str | None = None,
         page: int | None = None,
         size: int | None = None,
     ) -> WebSummaryListVO:
-        """List summaries for a file or across all files (Extension)."""
-        dto = WebSummaryListRequestDTO(file_id=file_id, page=page, size=size)
+        """List summaries for a file, category, or across all files (Extension)."""
+        dto = WebSummaryListRequestDTO(
+            file_id=file_id,
+            parent_unique_identifier=parent_unique_identifier,
+            page=page,
+            size=size,
+        )
         return await self._client.post_json(
             "/api/extended/file/summary/list", WebSummaryListVO, json=dto.to_dict()
         )

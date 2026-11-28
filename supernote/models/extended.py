@@ -57,18 +57,23 @@ class SummaryTranscriptVO(DataClassJSONMixin):
 
 @dataclass
 class WebSummaryListRequestDTO(DataClassJSONMixin):
-    """Request DTO for listing summaries, optionally filtered by file ID (Web Extension)."""
+    """Request DTO for listing summaries with optional file, category, and pagination filters."""
 
     file_id: int | None = field(
         metadata=field_options(alias="fileId", serialize=str), default=None
     )
-    """Optional ID of the file to filter summaries for; omit to list all active leaf digests."""
+    """Optional ID of the file to filter summaries for; omit to list across all files."""
+
+    parent_unique_identifier: str | None = field(
+        metadata=field_options(alias="parentUniqueIdentifier"), default=None
+    )
+    """Optional category/group UUID to filter summaries by."""
 
     page: int | None = None
-    """Optional 1-indexed page number when listing across all files."""
+    """Optional 1-indexed page number when paginating."""
 
     size: int | None = None
-    """Optional page size when listing across all files."""
+    """Optional page size when paginating."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

@@ -557,14 +557,22 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
     user_service = request.app[USER_SERVICE_KEY]
 
     try:
-        if req_dto.file_id is not None:
-            summaries = await summary_service.list_summaries_for_file_internal(
-                user_email, req_dto.file_id
+        summaries = await summary_service.list_summaries(
+            user_email,
+            parent_uuid=req_dto.parent_unique_identifier,
+            file_id=req_dto.file_id,
+            page=req_dto.page,
+            size=req_dto.size,
+        )
+        total_records = (
+            await summary_service.count_summaries(
+                user_email,
+                parent_uuid=req_dto.parent_unique_identifier,
+                file_id=req_dto.file_id,
             )
-        else:
-            summaries = await summary_service.list_summaries(
-                user_email, page=req_dto.page, size=req_dto.size
-            )
+            if req_dto.size is not None and req_dto.size > 0
+            else len(summaries)
+        )
 
         transcripts: dict[str, SummaryTranscriptVO] = {}
         summary_ids = [s.id for s in summaries if s.id is not None]
@@ -592,7 +600,7 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
         return web.json_response(
             WebSummaryListVO(
                 summary_do_list=summaries,
-                total_records=len(summaries),
+                total_records=total_records,
                 transcripts=transcripts,
             ).to_dict()
         )

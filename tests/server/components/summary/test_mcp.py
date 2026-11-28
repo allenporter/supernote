@@ -99,6 +99,11 @@ async def test_mcp_list_digests_returns_handwrite_transcript_and_filters_by_file
         assert filtered["total"] == 1
         assert filtered["digests"][0]["id"] == str(d1_id)
 
+        paged = await call_mcp_tool(session, "list_digests", {"limit": 1, "offset": 1})
+        assert paged["success"] is True
+        assert paged["total"] == 2
+        assert len(paged["digests"]) == 1
+
 
 async def test_mcp_list_digests_invalid_file_id_returns_error(
     mcp_url: str,

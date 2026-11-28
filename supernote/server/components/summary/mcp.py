@@ -103,13 +103,17 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     async def list_digests(
         ctx: Context,
         file_id: str | None = None,
+        parent_unique_identifier: str | None = None,
         limit: int = _DEFAULT_LIMIT,
+        offset: int = 0,
     ) -> dict[str, Any]:
         """List Supernote Digest highlights, comments, and transcribed handwritten marginalia.
 
         Args:
             file_id: Optional numeric file ID string to filter Digests for one document.
+            parent_unique_identifier: Optional category/group UUID to filter Digests by category.
             limit: Maximum number of Digests to return (1-200, default 50).
+            offset: Number of matching Digests to skip for pagination (default 0).
         """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
@@ -128,8 +132,18 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
                 ).to_dict()
 
         clamped_limit = max(1, min(limit, _MAX_LIMIT))
+        clamped_offset = max(0, offset)
         summaries = await summary_service.list_summaries_for_user(
-            user_id, file_id=parsed_file_id, limit=clamped_limit
+            user_id,
+            file_id=parsed_file_id,
+            parent_uuid=parent_unique_identifier,
+            limit=clamped_limit,
+            offset=clamped_offset,
+        )
+        total = await summary_service.count_summaries_for_user(
+            user_id,
+            file_id=parsed_file_id,
+            parent_uuid=parent_unique_identifier,
         )
         summary_ids = [s.id for s in summaries if s.id is not None]
         transcripts = await transcript_service.get_summary_transcripts(
@@ -164,6 +178,6 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
                 )
             )
 
-        return DigestListResponseVO(digests=items, total=len(items)).to_dict()
+        return DigestListResponseVO(digests=items, total=total).to_dict()
 
     registrar.add_tool(list_digests)

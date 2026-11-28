@@ -646,7 +646,7 @@ async def test_extended_file_summary_list_error(
     with (
         patch.object(
             client.app[SUMMARY_SERVICE_KEY],
-            "list_summaries_for_file_internal",
+            "list_summaries",
             side_effect=SupernoteError("Custom summary error", status_code=400),
         ),
         pytest.raises(ApiException),
@@ -656,7 +656,7 @@ async def test_extended_file_summary_list_error(
     with (
         patch.object(
             client.app[SUMMARY_SERVICE_KEY],
-            "list_summaries_for_file_internal",
+            "list_summaries",
             side_effect=ValueError("Uncaught error"),
         ),
         pytest.raises(ApiException),
@@ -1051,3 +1051,7 @@ async def test_extended_summary_list_returns_current_transcripts_and_all_files(
     assert all_digests.total_records == 2
     assert str(add_1.id) in all_digests.transcripts
     assert str(add_2.id) not in all_digests.transcripts
+
+    paged = await extended_client.list_summaries(page=1, size=1)
+    assert len(paged.summary_do_list) == 1
+    assert paged.total_records == 2

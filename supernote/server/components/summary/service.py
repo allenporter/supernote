@@ -400,6 +400,7 @@ class SummaryService:
         user_id: int,
         parent_uuid: str | None = None,
         ids: list[int] | None = None,
+        file_id: int | None = None,
     ) -> list[ColumnElement[bool]]:
         """Build SQLAlchemy filter predicates for leaf summaries."""
         filters: list[ColumnElement[bool]] = [
@@ -411,6 +412,8 @@ class SummaryService:
             filters.append(SummaryDO.parent_unique_identifier == parent_uuid)
         if ids is not None:
             filters.append(SummaryDO.id.in_(ids))
+        if file_id is not None:
+            filters.append(SummaryDO.file_id == file_id)
         return filters
 
     @staticmethod
@@ -430,12 +433,26 @@ class SummaryService:
         user_email: str,
         parent_uuid: str | None = None,
         ids: list[int] | None = None,
+        file_id: int | None = None,
     ) -> int:
         """Count total matching summaries for pagination metadata."""
         user_id = await self.user_service.get_user_id(user_email)
+        return await self.count_summaries_for_user(
+            user_id, parent_uuid=parent_uuid, ids=ids, file_id=file_id
+        )
+
+    async def count_summaries_for_user(
+        self,
+        user_id: int,
+        *,
+        parent_uuid: str | None = None,
+        ids: list[int] | None = None,
+        file_id: int | None = None,
+    ) -> int:
+        """Count matching active leaf summaries for `user_id`."""
         async with self.session_manager.session() as session:
             filters = self._build_summary_filters(
-                user_id, parent_uuid=parent_uuid, ids=ids
+                user_id, parent_uuid=parent_uuid, ids=ids, file_id=file_id
             )
             stmt = select(func.count()).select_from(SummaryDO).where(and_(*filters))
             return int((await session.execute(stmt)).scalar() or 0)
@@ -447,12 +464,13 @@ class SummaryService:
         ids: list[int] | None = None,
         page: int | None = 1,
         size: int | None = DEFAULT_SUMMARY_PAGE_SIZE,
+        file_id: int | None = None,
     ) -> list[SummaryItem]:
         """List summaries based on filters."""
         user_id = await self.user_service.get_user_id(user_email)
         async with self.session_manager.session() as session:
             filters = self._build_summary_filters(
-                user_id, parent_uuid=parent_uuid, ids=ids
+                user_id, parent_uuid=parent_uuid, ids=ids, file_id=file_id
             )
             stmt = self._apply_pagination(
                 select(SummaryDO).where(and_(*filters)).order_by(SummaryDO.id.asc()),
@@ -750,18 +768,22 @@ class SummaryService:
         user_id: int,
         *,
         file_id: int | None = None,
+        parent_uuid: str | None = None,
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[SummaryItem]:
-        """List active leaf summaries for `user_id`, optionally filtered by `file_id`."""
+        """List active leaf summaries for `user_id`, optionally filtered by `file_id` or category."""
         async with self.session_manager.session() as session:
-            stmt = select(SummaryDO).where(
-                SummaryDO.user_id == user_id,
-                SummaryDO.is_deleted.is_(False),
-                SummaryDO.is_summary_group.is_(False),
+            filters = self._build_summary_filters(
+                user_id, parent_uuid=parent_uuid, file_id=file_id
             )
-            if file_id is not None:
-                stmt = stmt.where(SummaryDO.file_id == file_id)
-            stmt = stmt.order_by(SummaryDO.update_time.desc(), SummaryDO.id.desc())
+            stmt = (
+                select(SummaryDO)
+                .where(and_(*filters))
+                .order_by(SummaryDO.update_time.desc(), SummaryDO.id.desc())
+            )
+            if offset > 0:
+                stmt = stmt.offset(offset)
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
