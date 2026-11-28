@@ -266,3 +266,44 @@ async def test_files_mcp_upload_quota_exceeded(
 
     assert over_quota["success"] is False
     assert over_quota["errorCode"] == ErrorCode.QUOTA_EXCEEDED
+
+
+async def test_files_mcp_upload_conflict_and_overwrite(
+    client: Any,
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    test_users: list[str],
+) -> None:
+    """`upload_document` rejects conflicts by default (`CONFLICT`) and replaces when `overwrite=True`."""
+    file_service = client.app[FILE_SERVICE_KEY]
+    await file_service.create_directory(test_users[0], "/INBOX")
+
+    async with mcp_session(mcp_url, auth_headers) as session:
+        first = await call_mcp_tool(
+            session,
+            "upload_document",
+            {"directory_path": "/INBOX", "file_name": "notes.md", "content": "v1"},
+        )
+        assert first["success"] is True
+
+        conflict = await call_mcp_tool(
+            session,
+            "upload_document",
+            {"directory_path": "/INBOX", "file_name": "notes.md", "content": "v2"},
+        )
+        assert conflict["success"] is False
+        assert conflict["errorCode"] == ErrorCode.CONFLICT
+
+        replaced = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "notes.md",
+                "content": "v2 updated",
+                "overwrite": True,
+            },
+        )
+        assert replaced["success"] is True
+        assert replaced["file"]["file_id"] == first["file"]["file_id"]
+        assert replaced["file"]["md5"] == hashlib.md5(b"v2 updated").hexdigest()

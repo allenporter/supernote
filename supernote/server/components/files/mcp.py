@@ -24,6 +24,7 @@ from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_provenance
 from supernote.server.exceptions import (
+    FileAlreadyExists,
     FileNotFound,
     InvalidPath,
     QuotaExceeded,
@@ -145,20 +146,18 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         file_name: str,
         content: str,
         encoding: str = "utf-8",
+        overwrite: bool = False,
         cause_seq: str | None = None,
         reason: str | None = None,
     ) -> dict[str, Any]:
         """Upload a document to Supernote cloud storage and trigger device sync.
-
-        TODO(#444): Currently overwrites existing files with the same name
-        (matching `FileService.upload_finish_web`). Add `overwrite=False` support
-        if non-destructive conflict rejection is needed.
 
         Args:
             directory_path: Existing target folder path (e.g. `"/INBOX"`, `"/DOCUMENT"`).
             file_name: Target filename without path separators (e.g. `"brief.md"`, `"paper.pdf"`).
             content: File content as UTF-8 text or base64-encoded bytes (up to 10 MiB).
             encoding: Content encoding: `"utf-8"` (default) or `"base64"`.
+            overwrite: Replace an existing file with the same name when True (default: False).
             cause_seq: Optional causal domain event sequence ID for provenance tracking.
             reason: Optional human-readable reason for uploading the file.
         """
@@ -194,11 +193,17 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             else f"/{file_name}"
         )
         existing = await file_service.get_file_info(email, target_path)
-        if existing is not None and existing.is_folder:
-            return create_error_response(
-                f"Target path is an existing directory: {target_path}",
-                ErrorCode.BAD_REQUEST,
-            ).to_dict()
+        if existing is not None:
+            if existing.is_folder:
+                return create_error_response(
+                    f"Target path is an existing directory: {target_path}",
+                    ErrorCode.BAD_REQUEST,
+                ).to_dict()
+            if not overwrite:
+                return create_error_response(
+                    f"File already exists: {target_path}",
+                    ErrorCode.CONFLICT,
+                ).to_dict()
 
         inner_name: str | None = None
         try:
@@ -215,7 +220,10 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
                     file_name=file_name,
                     md5=md5,
                     inner_name=inner_name,
+                    overwrite=overwrite,
                 )
+        except FileAlreadyExists as err:
+            return create_error_response(str(err), ErrorCode.CONFLICT).to_dict()
         except QuotaExceeded as err:
             return create_error_response(str(err), ErrorCode.QUOTA_EXCEEDED).to_dict()
         except SupernoteError as err:
