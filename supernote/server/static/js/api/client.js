@@ -3,6 +3,7 @@
  */
 
 import { getFileExtension, normalizeEpochMs } from '../utils/format.js';
+import { fetchDigests } from './digests.js';
 import { ApiError, apiRequest, getToken, onLogout, setToken } from './http.js';
 
 /** @type {SocketClient | null} */
@@ -418,22 +419,14 @@ export async function fetchTranscript(fileId) {
  * @returns {Promise<NoteSummary[]>}
  */
 export async function fetchSummaries(fileId) {
-    const data = await apiRequest(
-        `/api/extended/digests?fileId=${encodeURIComponent(String(fileId))}&limit=200`,
-        {
-            method: 'GET',
-            errorPrefix: 'Summary fetch failed',
-        },
-    );
-    /** @type {Array<Record<string, any>>} */
-    const rawList = Array.isArray(data?.digests) ? data.digests : [];
-    return rawList
-        .filter((s) => String(s.dataSource || '').toUpperCase() !== 'OCR')
-        .map((s, idx) => ({
-            id: String(s.id ?? s.uniqueIdentifier ?? idx),
-            name: s.name || null,
-            content: s.content || '',
-            dataSource: s.dataSource || null,
+    const digests = await fetchDigests({ fileId, errorPrefix: 'Summary fetch failed' });
+    return digests
+        .filter((d) => String(d.dataSource || '').toUpperCase() !== 'OCR')
+        .map((d, idx) => ({
+            id: d.id || d.uniqueIdentifier || String(idx),
+            name: d.name,
+            content: d.content,
+            dataSource: d.dataSource,
         }));
 }
 

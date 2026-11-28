@@ -13,8 +13,6 @@ import {
     normalizeDigestCategory,
     normalizeDigestItem,
     normalizeSourcePath,
-    parseDigestMetadata,
-    parseDigestTags,
     resolveSourceFileId,
     updateDigest,
     updateDigestCategory,
@@ -58,22 +56,14 @@ test('digests.js: generateDigestUuid produces 32-char lowercase hex with LAN-HTT
     }
 });
 
-test('digests.js: normalizeSourcePath, parseDigestMetadata, and parseDigestTags sanitize wire values', () => {
+test('digests.js: normalizeSourcePath sanitizes wire values', () => {
     assert.equal(normalizeSourcePath('/Document/Archive/Paper.pdf'), 'Document/Archive/Paper.pdf');
     assert.equal(normalizeSourcePath('  Note/Daily.note '), 'Note/Daily.note');
     assert.equal(normalizeSourcePath('///'), null);
     assert.equal(normalizeSourcePath(null), null);
-
-    assert.deepEqual(parseDigestMetadata('{"author":"Ada","page":3}'), { author: 'Ada', page: 3 });
-    assert.equal(parseDigestMetadata('not-json'), null);
-    assert.equal(parseDigestMetadata('[1,2]'), null);
-    assert.equal(parseDigestMetadata('   '), null);
-
-    assert.deepEqual(parseDigestTags('work, design , , review'), ['work', 'design', 'review']);
-    assert.deepEqual(parseDigestTags(null), []);
 });
 
-test('digests.js: normalizeDigestCategory and normalizeDigestItem unwrap fields and author fallback', () => {
+test('digests.js: normalizeDigestCategory, normalizeDigestItem, and formatDigestMarkdown', () => {
     assert.deepEqual(
         normalizeDigestCategory({
             id: '750000000000000001',
@@ -93,51 +83,17 @@ test('digests.js: normalizeDigestCategory and normalizeDigestItem unwrap fields 
         },
     );
 
-    const item = normalizeDigestItem({
-        id: '750000000000000123',
-        uniqueIdentifier: 'b'.repeat(32),
-        parentUniqueIdentifier: '',
-        fileId: null,
-        content: 'Highlighted quote',
-        commentStr: '  Great point  ',
-        author: null,
-        metadata: JSON.stringify({ author: 'Grace Hopper' }),
-        sourcePath: '/Document/Book.pdf',
-        handwriteInnerName: 'hw-key',
-        tags: 'reading, classics',
-        creationTime: 1700000000000,
-        lastModifiedTime: 1700000005000,
-    });
-    assert.deepEqual(item, {
-        id: '750000000000000123',
-        uniqueIdentifier: 'b'.repeat(32),
-        parentUniqueIdentifier: null,
-        fileId: null,
-        content: 'Highlighted quote',
-        commentStr: 'Great point',
-        author: 'Grace Hopper',
-        sourcePath: 'Document/Book.pdf',
-        dataSource: null,
-        tags: ['reading', 'classics'],
-        hasHandwriting: true,
-        handwriting: null,
-        handwriteInnerName: 'hw-key',
-        commentHandwriteName: null,
-        creationTime: 1700000000000,
-        lastModifiedTime: 1700000005000,
-        metadata: { author: 'Grace Hopper' },
-    });
-
     const digestVo = normalizeDigestItem({
         id: '750000000000000124',
         uniqueIdentifier: 'e'.repeat(32),
         categoryId: 'f'.repeat(32),
         fileId: '750000000000000888',
+        name: 'Tail Latency',
         content: 'Latency matters',
-        comment: 'Measure p99',
+        comment: 'Measure p99\nand p999',
         author: 'Jeff Dean',
-        sourcePath: 'Document/Systems.pdf',
-        tags: ['perf', 'systems'],
+        sourcePath: '/Document/Systems.pdf',
+        tags: ['perf', ' systems ', ''],
         handwriting: {
             md5: 'abc123',
             transcript: 'Check tail latency under load',
@@ -152,8 +108,9 @@ test('digests.js: normalizeDigestCategory and normalizeDigestItem unwrap fields 
         uniqueIdentifier: 'e'.repeat(32),
         parentUniqueIdentifier: 'f'.repeat(32),
         fileId: '750000000000000888',
+        name: 'Tail Latency',
         content: 'Latency matters',
-        commentStr: 'Measure p99',
+        commentStr: 'Measure p99\nand p999',
         author: 'Jeff Dean',
         sourcePath: 'Document/Systems.pdf',
         dataSource: null,
@@ -165,20 +122,31 @@ test('digests.js: normalizeDigestCategory and normalizeDigestItem unwrap fields 
             modelId: 'gemini-2.5-flash',
             updateTime: 1700000010000,
         },
-        handwriteInnerName: null,
-        commentHandwriteName: null,
         creationTime: 1700000000000,
         lastModifiedTime: 1700000009000,
-        metadata: null,
     });
 
     assert.equal(
         formatDigestMarkdown(digestVo),
-        'Latency matters\n\n> Measure p99\n\n**Handwritten annotation:**\n\nCheck tail latency under load',
+        'Latency matters\n\n> Measure p99\n> and p999\n\n**Handwritten annotation:**\n\nCheck tail latency under load',
+    );
+    assert.equal(
+        formatDigestMarkdown(normalizeDigestItem({ id: '1', content: 'Excerpt only' })),
+        'Excerpt only',
+    );
+    assert.equal(
+        formatDigestMarkdown(
+            normalizeDigestItem({
+                id: '2',
+                content: '',
+                handwriting: { md5: 'm1', transcript: 'Margin note only' },
+            }),
+        ),
+        '**Handwritten annotation:**\n\nMargin note only',
     );
 });
 
-test('digests.js: fetchDigestCategories and fetchDigests query categories and paginated /api/extended/digests', async () => {
+test('digests.js: fetchDigestCategories and fetchDigests paginate, deduplicate, and handle empty responses', async () => {
     const origFetch = globalThis.fetch;
     /** @type {Array<{ url: string, method: string, body: any }>} */
     const calls = [];
@@ -227,36 +195,47 @@ test('digests.js: fetchDigestCategories and fetchDigests query categories and pa
                     { status: 200 },
                 );
             }
-            return new Response(
-                JSON.stringify({
-                    digests: [
-                        {
-                            id: '750000000000000011',
-                            uniqueIdentifier: 'e'.repeat(32),
-                            content: 'Second page digest',
-                            handwriting: {
-                                md5: 'hw-md5',
-                                transcript: 'Handwritten note',
-                                modelId: 'gemini-2.5-flash',
-                                updateTime: 3000,
+            if (url === '/api/extended/digests?limit=200&offset=1') {
+                return new Response(
+                    JSON.stringify({
+                        digests: [
+                            // Duplicate shifted from page 1 during concurrent write
+                            {
+                                id: '750000000000000010',
+                                uniqueIdentifier: 'd'.repeat(32),
+                                content: '# Daily Notes',
                             },
-                        },
-                    ],
-                    total: 2,
-                    limit: 200,
-                    offset: 1,
-                }),
-                { status: 200 },
-            );
+                            {
+                                id: '750000000000000011',
+                                uniqueIdentifier: 'e'.repeat(32),
+                                content: 'Second page digest',
+                                handwriting: {
+                                    md5: 'hw-md5',
+                                    transcript: 'Handwritten note',
+                                    modelId: 'gemini-2.5-flash',
+                                    updateTime: 3000,
+                                },
+                            },
+                        ],
+                        total: 2,
+                        limit: 200,
+                        offset: 1,
+                    }),
+                    { status: 200 },
+                );
+            }
+            return new Response(JSON.stringify({ digests: [], total: 0 }), { status: 200 });
         };
 
         const categories = await fetchDigestCategories();
         const digests = await fetchDigests();
+        const emptyDigests = await fetchDigests({ fileId: 404 });
         assert.equal(categories.length, 1);
         assert.equal(categories[0].name, 'AI Summaries');
         assert.equal(digests.length, 2);
         assert.equal(digests[0].fileId, '750000000000000999');
         assert.equal(digests[1].handwriting?.transcript, 'Handwritten note');
+        assert.deepEqual(emptyDigests, []);
         assert.deepEqual(calls[0], {
             url: '/api/file/query/summary/group',
             method: 'POST',
@@ -269,6 +248,11 @@ test('digests.js: fetchDigestCategories and fetchDigests query categories and pa
         });
         assert.deepEqual(calls[2], {
             url: '/api/extended/digests?limit=200&offset=1',
+            method: 'GET',
+            body: null,
+        });
+        assert.deepEqual(calls[3], {
+            url: '/api/extended/digests?limit=200&offset=0&fileId=404',
             method: 'GET',
             body: null,
         });

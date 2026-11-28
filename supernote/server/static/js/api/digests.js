@@ -1,11 +1,11 @@
 /**
- * Digest & Summary API Client Functions (`/api/file/<op>/summary`).
+ * Digest & Category API Client Functions (`GET /api/extended/digests` and `/api/file/<op>/summary`).
  *
- * Unwraps Supernote `SummaryItem` wire envelopes into normalized `DigestCategory`
- * and `DigestItem` models aligned with Partner App / Digest 2.0 conventions:
+ * Unwraps `DigestVO` (from `GET /api/extended/digests`) and `SummaryItem` category
+ * envelopes into normalized `DigestCategory` and `DigestItem` models aligned with
+ * Partner App / Digest 2.0 conventions:
  * - Categories map to `SummaryGroup` (`isSummaryGroup === 'Y'`).
- * - Leaf digests link to categories via `parentUniqueIdentifier` (`""` or `null` = Uncategorized).
- * - `author` falls back to `parsedMetadata.author` when top-level `author` is null.
+ * - Leaf digests link to categories via `categoryId` (`""` or `null` = Uncategorized).
  * - `sourcePath` is normalized without a leading `/` for display and grouping.
  */
 import { apiRequest } from './http.js';
@@ -72,34 +72,6 @@ export function normalizeSourcePath(rawPath) {
 }
 
 /**
- * Defensively parse a JSON-encoded `metadata` string on a `SummaryItem`.
- * @param {unknown} raw
- * @returns {Record<string, unknown> | null}
- */
-export function parseDigestMetadata(raw) {
-    if (typeof raw !== 'string' || !raw.trim()) return null;
-    try {
-        const parsed = JSON.parse(raw);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Parse legacy comma-separated summary tags into trimmed non-empty labels.
- * @param {unknown} raw
- * @returns {string[]}
- */
-export function parseDigestTags(raw) {
-    if (typeof raw !== 'string' || !raw.trim()) return [];
-    return raw
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
-}
-
-/**
  * Normalize a raw `SummaryItem` group record into a `DigestCategory`.
  * @param {Record<string, any>} raw
  * @returns {DigestCategory}
@@ -134,39 +106,32 @@ function normalizeDigestHandwriting(raw) {
 }
 
 /**
- * Normalize a raw `DigestVO` (from `GET /api/extended/digests`) or `SummaryItem`
- * record into a `DigestItem`.
+ * Normalize a raw `DigestVO` (from `GET /api/extended/digests`) into a `DigestItem`.
  * @param {Record<string, any>} raw
  * @returns {DigestItem}
  */
 export function normalizeDigestItem(raw) {
-    const metadata = parseDigestMetadata(raw.metadata);
     const handwriting = normalizeDigestHandwriting(raw.handwriting);
-    const handwriteInnerName = nonEmptyStr(raw.handwriteInnerName);
-    const commentHandwriteName = nonEmptyStr(raw.commentHandwriteName);
     const tags = Array.isArray(raw.tags)
         ? raw.tags.map((t) => String(t).trim()).filter(Boolean)
-        : parseDigestTags(raw.tags);
+        : [];
 
     return {
         id: String(raw.id ?? ''),
         uniqueIdentifier: String(raw.uniqueIdentifier ?? ''),
-        parentUniqueIdentifier: nonEmptyStr(raw.categoryId ?? raw.parentUniqueIdentifier),
+        parentUniqueIdentifier: nonEmptyStr(raw.categoryId),
         fileId: toOptionalId(raw.fileId),
+        name: nonEmptyStr(raw.name),
         content: typeof raw.content === 'string' ? raw.content : '',
-        commentStr: nonEmptyStr(raw.comment ?? raw.commentStr),
-        author: nonEmptyStr(raw.author) || nonEmptyStr(metadata?.author),
+        commentStr: nonEmptyStr(raw.comment),
+        author: nonEmptyStr(raw.author),
         sourcePath: normalizeSourcePath(raw.sourcePath),
         dataSource: nonEmptyStr(raw.dataSource),
         tags,
-        hasHandwriting: Boolean(handwriting || handwriteInnerName || commentHandwriteName),
+        hasHandwriting: Boolean(handwriting),
         handwriting,
-        handwriteInnerName,
-        commentHandwriteName,
-        creationTime: Number(raw.creationTime ?? raw.createTime ?? 0) || 0,
-        lastModifiedTime:
-            Number(raw.lastModifiedTime ?? raw.updateTime ?? raw.createTime ?? 0) || 0,
-        metadata,
+        creationTime: Number(raw.creationTime ?? 0) || 0,
+        lastModifiedTime: Number(raw.updateTime ?? raw.creationTime ?? 0) || 0,
     };
 }
 
@@ -206,30 +171,45 @@ export async function fetchDigestCategories() {
 }
 
 /**
- * Fetch all leaf Digests with inline handwriting OCR transcripts via GET /api/extended/digests.
+ * Fetch leaf Digests with inline handwriting OCR transcripts via GET /api/extended/digests.
+ * @param {{ fileId?: string | number | null, errorPrefix?: string }} [options]
  * @returns {Promise<DigestItem[]>}
  */
-export async function fetchDigests() {
+export async function fetchDigests(options = {}) {
     /** @type {DigestItem[]} */
     const items = [];
+    /** @type {Set<string>} */
+    const seenKeys = new Set();
     let offset = 0;
     let total = Number.POSITIVE_INFINITY;
+    const errorPrefix = options.errorPrefix || 'Failed to fetch digests';
+    const fileIdParam =
+        options.fileId !== undefined && options.fileId !== null
+            ? `&fileId=${encodeURIComponent(String(options.fileId))}`
+            : '';
 
     while (offset < total) {
         const data = await apiRequest(
-            `/api/extended/digests?limit=${DIGEST_PAGE_SIZE}&offset=${offset}`,
+            `/api/extended/digests?limit=${DIGEST_PAGE_SIZE}&offset=${offset}${fileIdParam}`,
             {
                 method: 'GET',
-                errorPrefix: 'Failed to fetch digests',
+                errorPrefix,
             },
         );
         /** @type {Array<Record<string, any>>} */
         const batch = Array.isArray(data?.digests) ? data.digests : [];
         for (const raw of batch) {
-            items.push(normalizeDigestItem(raw));
+            const item = normalizeDigestItem(raw);
+            const dedupeKey = item.id || item.uniqueIdentifier;
+            if (dedupeKey && seenKeys.has(dedupeKey)) continue;
+            if (dedupeKey) seenKeys.add(dedupeKey);
+            items.push(item);
         }
-        const reportedTotal = Number(data?.total);
-        total = Number.isFinite(reportedTotal) ? reportedTotal : items.length;
+        if (typeof data?.total === 'number' && Number.isFinite(data.total)) {
+            total = data.total;
+        } else if (batch.length < DIGEST_PAGE_SIZE) {
+            total = offset + batch.length;
+        }
         if (batch.length === 0) break;
         offset += batch.length;
     }

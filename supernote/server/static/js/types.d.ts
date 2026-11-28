@@ -250,6 +250,7 @@ interface DigestItem {
     uniqueIdentifier: string;
     parentUniqueIdentifier: string | null;
     fileId: string | null;
+    name: string | null;
     content: string;
     commentStr: string | null;
     author: string | null;
@@ -258,11 +259,8 @@ interface DigestItem {
     tags: string[];
     hasHandwriting: boolean;
     handwriting: DigestHandwriting | null;
-    handwriteInnerName: string | null;
-    commentHandwriteName: string | null;
     creationTime: number;
     lastModifiedTime: number;
-    metadata: Record<string, unknown> | null;
 }
 
 interface DigestInput {

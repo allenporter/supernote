@@ -536,6 +536,17 @@ async def test_web_ui_digests_browser_view(
             )
         )
         await session.commit()
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=None,
+            unique_identifier="d" * 32,
+            parent_unique_identifier="",
+            content="Make illegal states unrepresentable.",
+            handwrite_inner_name="hw-blob-pending",
+            handwrite_md5="hw-md5-pending",
+        ),
+    )
 
     base_url = str(client.make_url("")).rstrip("/")
     token = auth_headers["x-access-token"]
@@ -571,9 +582,14 @@ async def test_web_ui_digests_browser_view(
             )
             await page.get_by_text("Edsger Dijkstra").wait_for(state="visible")
             await page.get_by_text("Apply this to sync state").wait_for(state="visible")
-            await page.get_by_text("Handwritten", exact=True).wait_for(state="visible")
+            await page.get_by_text("Handwritten", exact=True).first.wait_for(
+                state="visible"
+            )
             await page.get_by_text(
                 "Keep state machines minimal and deterministic"
+            ).wait_for(state="visible")
+            await page.get_by_text(
+                "Handwritten annotation attached — transcript pending."
             ).wait_for(state="visible")
 
             await page.get_by_role(

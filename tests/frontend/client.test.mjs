@@ -323,7 +323,7 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
     try {
         setToken('ext-tok');
         globalThis.fetch = async (url) => {
-            if (url === '/api/extended/digests?fileId=20&limit=200') {
+            if (url === '/api/extended/digests?limit=200&offset=0&fileId=20') {
                 return new Response(
                     JSON.stringify({
                         digests: [

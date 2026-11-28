@@ -800,7 +800,12 @@ class SummaryService:
             stmt = (
                 select(SummaryDO)
                 .where(and_(*filters))
-                .order_by(SummaryDO.update_time.desc(), SummaryDO.id.desc())
+                .order_by(
+                    func.coalesce(
+                        SummaryDO.last_modified_time, SummaryDO.update_time
+                    ).desc(),
+                    SummaryDO.id.desc(),
+                )
             )
             if offset > 0:
                 stmt = stmt.offset(offset)
