@@ -41,6 +41,11 @@ def test_format_ocr_prompt_with_vocabulary(tmp_path: Path) -> None:
     ocr_dir = tmp_path / "ocr" / "common"
     ocr_dir.mkdir(parents=True)
     (ocr_dir / "prompt.md").write_text("Transcribe this page.", encoding="utf-8")
+    vocab_dir = tmp_path / "ocr_vocabulary" / "default"
+    vocab_dir.mkdir(parents=True)
+    (vocab_dir / "prompt.md").write_text(
+        "Prefer these spellings when supported:", encoding="utf-8"
+    )
     page_metadata = PageMetadata(
         file_name="Plan.note",
         page_index=0,
@@ -50,17 +55,13 @@ def test_format_ocr_prompt_with_vocabulary(tmp_path: Path) -> None:
     loader = PromptLoader(tmp_path)
 
     plain = format_ocr_prompt(page_metadata, prompt_loader=loader)
-    assert "may appear in the text" not in plain
+    assert "Prefer these spellings" not in plain
 
     prompt = format_ocr_prompt(
         page_metadata, vocabulary=["Lovelace", "ks-tilt"], prompt_loader=loader
     )
     assert prompt.startswith(plain)
-    assert prompt.endswith(
-        "These names and terms may appear in the text: Lovelace, ks-tilt. "
-        "If a handwritten word closely matches one of them, prefer that spelling. "
-        "Never insert one of these terms where the handwriting does not support it."
-    )
+    assert prompt.endswith("Prefer these spellings when supported: Lovelace, ks-tilt")
 
 
 def test_format_summary_prompt_and_schema(tmp_path: Path) -> None:
@@ -142,6 +143,9 @@ def test_format_ocr_prompt_vocabulary_skips_the_pages_own_keywords(
     ocr_dir = tmp_path / "ocr" / "common"
     ocr_dir.mkdir(parents=True)
     (ocr_dir / "prompt.md").write_text("Transcribe this page.", encoding="utf-8")
+    vocab_dir = tmp_path / "ocr_vocabulary" / "default"
+    vocab_dir.mkdir(parents=True)
+    (vocab_dir / "prompt.md").write_text("Vocabulary:", encoding="utf-8")
     loader = PromptLoader(tmp_path)
     page_metadata = PageMetadata(
         file_name="Plan.note",
@@ -154,12 +158,12 @@ def test_format_ocr_prompt_vocabulary_skips_the_pages_own_keywords(
     prompt = format_ocr_prompt(
         page_metadata, vocabulary=["lovelace", "Babbage"], prompt_loader=loader
     )
-    assert "may appear in the text: Babbage." in prompt
+    assert prompt.endswith("Vocabulary: Babbage")
 
     only_own = format_ocr_prompt(
         page_metadata, vocabulary=["Lovelace"], prompt_loader=loader
     )
-    assert "may appear in the text" not in only_own
+    assert "Vocabulary:" not in only_own
 
 
 def test_format_image_ocr_prompt_excludes_rapid_logging_legend() -> None:

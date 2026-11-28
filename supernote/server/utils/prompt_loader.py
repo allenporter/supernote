@@ -20,6 +20,7 @@ RESOURCES_DIR = importlib.resources.files("supernote.server") / "resources" / "p
 
 class PromptId(str, enum.Enum):
     OCR_TRANSCRIPTION = "ocr_transcription"
+    OCR_VOCABULARY = "ocr_vocabulary"
     IMAGE_TRANSCRIPTION = "image_transcription"
     TITLE_TRANSCRIPTION = "title_transcription"
     SUMMARY_GENERATION = "summary_generation"
@@ -30,6 +31,7 @@ class PromptId(str, enum.Enum):
 
 CATEGORY_MAP = {
     "ocr": PromptId.OCR_TRANSCRIPTION.value,
+    "ocr_vocabulary": PromptId.OCR_VOCABULARY.value,
     "image": PromptId.IMAGE_TRANSCRIPTION.value,
     "title": PromptId.TITLE_TRANSCRIPTION.value,
     "summary": PromptId.SUMMARY_GENERATION.value,

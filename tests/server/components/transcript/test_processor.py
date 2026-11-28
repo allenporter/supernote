@@ -467,7 +467,7 @@ async def test_ocr_prompt_gets_keywords_from_the_notebooks_folder(
     )
 
     [(_, prompt)] = fake_ocr_model.calls
-    assert ("may appear in the text: Lovelace." in prompt) is offered
+    assert ("may appear in the text." in prompt and "Lovelace" in prompt) is offered
 
 
 async def test_ocr_emits_previous_text_diff_on_retranscription(
