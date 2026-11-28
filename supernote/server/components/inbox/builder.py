@@ -13,7 +13,6 @@ Markdown without requiring native browser or LaTeX dependencies:
 from __future__ import annotations
 
 import datetime
-import html as html_lib
 import io
 import re
 import uuid
@@ -54,10 +53,12 @@ _PDF_MEDIA_TYPE = "application/pdf"
 _PDF_MARGIN = 14 * mm
 _PDF_CONTENT_WIDTH = A5[0] - (2 * _PDF_MARGIN)
 _PDF_MAX_CODE_LINE_CHARS = 65
+_PDF_LIST_BASE_INDENT = 14
 _MAX_FILENAME_STEM_LEN = 120
 _SAFE_FILENAME_RE = re.compile(r"[^\w\s.\-()]+", re.UNICODE)
 _WHITESPACE_RE = re.compile(r"\s+")
-_VOID_HTML_TAGS = frozenset({"br", "hr", "img"})
+_XML_ILLEGAL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_VOID_HTML_TAGS = frozenset({"br", "hr"})
 _ALLOWED_TAGS = frozenset(
     {
         "h1",
@@ -168,15 +169,23 @@ class BuiltDocument:
     """MIME media type (`application/epub+zip` or `application/pdf`)."""
 
 
+def _strip_xml_illegal_chars(text: str) -> str:
+    """Remove ASCII control characters forbidden in XML 1.0 documents."""
+    return _XML_ILLEGAL_CHARS_RE.sub("", text)
+
+
+def _normalize_metadata(title: str, author: str | None) -> tuple[str, str]:
+    """Strip illegal XML control characters and apply fallback title/author."""
+    doc_title = _strip_xml_illegal_chars(title).strip() or "Untitled"
+    doc_author = _strip_xml_illegal_chars(author or "Supernote").strip() or "Supernote"
+    return doc_title, doc_author
+
+
 def sanitize_filename(title: str, extension: str) -> str:
     """Convert a document title into a safe single-segment filename with `extension`."""
-    cleaned = _SAFE_FILENAME_RE.sub("", title.strip())
+    cleaned = _SAFE_FILENAME_RE.sub("", _strip_xml_illegal_chars(title).strip())
     cleaned = _WHITESPACE_RE.sub(" ", cleaned).strip(" .")
-    if not cleaned:
-        cleaned = "Untitled"
-    stem = cleaned[:_MAX_FILENAME_STEM_LEN].rstrip(" .")
-    if not stem:
-        stem = "Untitled"
+    stem = cleaned[:_MAX_FILENAME_STEM_LEN].rstrip(" .") or "Untitled"
     ext = extension.lstrip(".").lower()
     return f"{stem}.{ext}"
 
@@ -237,7 +246,7 @@ class _HtmlToXhtmlTreeBuilder(HTMLParser):
 def _markdown_to_xhtml_tree(markdown: str) -> ET.Element:
     """Convert Markdown text into a sanitized, well-formed XHTML `<div>` element."""
     raw_html = markdown2.markdown(
-        markdown,
+        _strip_xml_illegal_chars(markdown),
         extras=["fenced-code-blocks", "tables", "strike", "cuddled-lists"],
         safe_mode="escape",
     )
@@ -263,8 +272,7 @@ def _assign_heading_ids(body: ET.Element) -> list[tuple[str, str]]:
 
 def build_epub(title: str, markdown: str, *, author: str | None = None) -> bytes:
     """Build a valid EPUB 3 archive from Markdown text."""
-    doc_title = title.strip() or "Untitled"
-    doc_author = (author or "Supernote").strip() or "Supernote"
+    doc_title, doc_author = _normalize_metadata(title, author)
     book_id = f"urn:uuid:{uuid.uuid4()}"
     modified = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -272,8 +280,8 @@ def build_epub(title: str, markdown: str, *, author: str | None = None) -> bytes
     toc_entries = _assign_heading_ids(body_tree)
     body_xhtml = ET.tostring(body_tree, encoding="unicode", method="xml")
 
-    escaped_title = html_lib.escape(doc_title)
-    escaped_author = html_lib.escape(doc_author)
+    escaped_title = xml_escape(doc_title)
+    escaped_author = xml_escape(doc_author)
 
     content_xhtml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -292,7 +300,7 @@ def build_epub(title: str, markdown: str, *, author: str | None = None) -> bytes
 
     if toc_entries:
         nav_items = "\n".join(
-            f'      <li><a href="content.xhtml#{anchor}">{html_lib.escape(text)}</a></li>'
+            f'      <li><a href="content.xhtml#{anchor}">{xml_escape(text)}</a></li>'
             for anchor, text in toc_entries
         )
     else:
@@ -486,6 +494,39 @@ def _pdf_styles() -> dict[str, ParagraphStyle]:
     }
 
 
+def _append_list_items(
+    list_elem: ET.Element,
+    flowables: list[Flowable],
+    styles: dict[str, ParagraphStyle],
+    *,
+    depth: int = 0,
+) -> None:
+    """Render `ul`/`ol` items and nested sublists with depth-based indentation."""
+    item_style = (
+        styles["list_item"]
+        if depth == 0
+        else ParagraphStyle(
+            f"EinkListItemD{depth}",
+            parent=styles["list_item"],
+            leftIndent=_PDF_LIST_BASE_INDENT + (12 * depth),
+        )
+    )
+    for idx, item in enumerate(list_elem.findall("li"), start=1):
+        prefix = f"{idx}. " if list_elem.tag == "ol" else "• "
+        nested_lists = [c for c in item if c.tag in ("ul", "ol")]
+        # Serialize only non-list children for the item's own line.
+        inline_copy = ET.Element("li")
+        inline_copy.text = item.text
+        for child in item:
+            if child.tag not in ("ul", "ol"):
+                inline_copy.append(child)
+        line_text = _inline_to_rml(inline_copy).strip()
+        if line_text:
+            flowables.append(Paragraph(f"{prefix}{line_text}", item_style))
+        for nested in nested_lists:
+            _append_list_items(nested, flowables, styles, depth=depth + 1)
+
+
 def _append_pdf_flowables(
     container: ET.Element,
     flowables: list[Flowable],
@@ -500,15 +541,18 @@ def _append_pdf_flowables(
         elif tag == "p":
             flowables.append(Paragraph(_inline_to_rml(elem), styles["body"]))
         elif tag == "blockquote":
-            text = _inline_to_rml(elem).strip()
-            if text:
-                flowables.append(Paragraph(text, styles["quote"]))
+            paragraphs = elem.findall("p")
+            if paragraphs:
+                for p in paragraphs:
+                    text = _inline_to_rml(p).strip()
+                    if text:
+                        flowables.append(Paragraph(text, styles["quote"]))
+            else:
+                text = _inline_to_rml(elem).strip()
+                if text:
+                    flowables.append(Paragraph(text, styles["quote"]))
         elif tag in ("ul", "ol"):
-            for idx, item in enumerate(elem.findall("li"), start=1):
-                prefix = f"{idx}. " if tag == "ol" else "• "
-                flowables.append(
-                    Paragraph(f"{prefix}{_inline_to_rml(item)}", styles["list_item"])
-                )
+            _append_list_items(elem, flowables, styles)
             flowables.append(Spacer(1, 3))
         elif tag == "pre":
             code_text = "".join(elem.itertext()).rstrip("\n")
@@ -539,8 +583,12 @@ def _append_pdf_flowables(
                     rows.append(row)
             if rows:
                 num_cols = max(len(r) for r in rows)
+                padded_rows = [
+                    r + [Paragraph("", styles["body"])] * (num_cols - len(r))
+                    for r in rows
+                ]
                 col_widths = [_PDF_CONTENT_WIDTH / num_cols] * num_cols
-                table = Table(rows, colWidths=col_widths, hAlign="LEFT")
+                table = Table(padded_rows, colWidths=col_widths, hAlign="LEFT")
                 table.setStyle(
                     TableStyle(
                         [
@@ -560,8 +608,7 @@ def _append_pdf_flowables(
 
 def build_pdf(title: str, markdown: str, *, author: str | None = None) -> bytes:
     """Build an e-ink-friendly A5 PDF document from Markdown text."""
-    doc_title = title.strip() or "Untitled"
-    doc_author = (author or "Supernote").strip() or "Supernote"
+    doc_title, doc_author = _normalize_metadata(title, author)
     body_tree = _markdown_to_xhtml_tree(markdown)
     styles = _pdf_styles()
 

@@ -127,3 +127,47 @@ def test_build_document_dispatches_epub_and_pdf() -> None:
     assert pdf_doc.file_name == "Daily Brief.pdf"
     assert pdf_doc.media_type == "application/pdf"
     assert pdf_doc.content.startswith(b"%PDF-")
+
+
+def test_builders_strip_illegal_xml_control_characters() -> None:
+    """ASCII control characters forbidden in XML 1.0 are stripped from EPUB and PDF."""
+    dirty_md = "Line with\x00null and\x0cform-feed and\x07bell."
+    epub_bytes = build_epub("Title\x00Bad", dirty_md, author="Ada\x0c")
+    with zipfile.ZipFile(io.BytesIO(epub_bytes), "r") as zf:
+        for xml_path in (
+            "OEBPS/content.opf",
+            "OEBPS/nav.xhtml",
+            "OEBPS/content.xhtml",
+        ):
+            ET.fromstring(zf.read(xml_path))
+        content = zf.read("OEBPS/content.xhtml").decode("utf-8")
+        assert "\x00" not in content
+        assert "\x0c" not in content
+        assert "\x07" not in content
+
+    pdf_bytes = build_pdf("Title\x00Bad", dirty_md, author="Ada\x0c")
+    assert pdf_bytes.startswith(b"%PDF-")
+
+
+def test_build_pdf_handles_ragged_tables_nested_lists_and_multi_paragraph_quotes() -> (
+    None
+):
+    """Ragged tables, nested lists, and multi-paragraph blockquotes render without crashing."""
+    edge_md = """\
+> First quoted paragraph.
+>
+> Second quoted paragraph.
+
+- Parent bullet
+  - Nested bullet A
+  - Nested bullet B
+- Next parent
+
+| A | B | C |
+| - | - | - |
+| 1 | 2 |
+| 3 | 4 | 5 |
+"""
+    pdf_bytes = build_pdf("Edge Cases", edge_md)
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert b"%%EOF" in pdf_bytes
