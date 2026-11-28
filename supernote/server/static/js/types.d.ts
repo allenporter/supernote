@@ -553,3 +553,38 @@ interface PluginHostContext {
 interface SupernoteUiPlugin {
     register(host: PluginHostContext): void | Promise<void>;
 }
+
+interface TimelineFilterOptions {
+    startDate?: string | null;
+    endDate?: string | null;
+    includeBlank?: boolean;
+    starredOnly?: boolean;
+    tzOffsetMinutes?: number;
+}
+
+interface TimelinePage {
+    date: string;
+    timestampMs: number;
+    fileId: string;
+    fileName: string;
+    pageIndex: number;
+    pageId: string;
+    sources: string[];
+    isBlank: boolean;
+    hasFiveStar: boolean;
+    keywords: string[];
+    imageUrl: string | null;
+}
+
+interface TimelinePagesResult {
+    items: TimelinePage[];
+    nextCursor: string | null;
+    hasMore: boolean;
+}
+
+interface TimelineDayCount {
+    date: string;
+    count: number;
+    createdCount: number;
+    editedCount: number;
+}

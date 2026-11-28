@@ -108,6 +108,9 @@ export function parseUrlHash(hashString) {
     if (parts[0] === 'recycle') {
         return { tab: 'files', view: 'recycle', dirId: '0', showSystem: false };
     }
+    if (parts[0] === 'timeline') {
+        return { tab: 'files', view: 'timeline', dirId: '0', showSystem: false };
+    }
     if (parts[0] === 'settings') {
         return { tab: 'settings', view: 'grid', dirId: '0', showSystem: false };
     }
@@ -162,6 +165,9 @@ export function buildUrlHash(
     }
     if (viewState === 'recycle') {
         return '#/recycle';
+    }
+    if (viewState === 'timeline') {
+        return '#/timeline';
     }
     if (viewState === 'viewer' && fileObj?.id) {
         if (typeof pageIndex === 'number' && pageIndex > 0) {
@@ -504,10 +510,10 @@ export function useRouter({
         }
 
         activeTab.value = 'files';
-        if (parsed.view === 'recycle') {
+        if (parsed.view === 'recycle' || parsed.view === 'timeline') {
             selectedFile.value = null;
             selectedPageIndex.value = null;
-            view.value = 'recycle';
+            view.value = parsed.view;
             viewerOpenedFromHistory = false;
             selectedIds.value = [];
             return;
@@ -568,6 +574,29 @@ export function useRouter({
         if (activeTab.value === 'wiki' && !showSystemPanel.value) {
             updateUrl(replace);
         }
+    }
+
+    function openTimeline() {
+        showSystemPanel.value = false;
+        systemOpenedFromHistory = false;
+        activeTab.value = 'files';
+        selectedFile.value = null;
+        selectedPageIndex.value = null;
+        viewerOpenedFromHistory = false;
+        selectedIds.value = [];
+        view.value = 'timeline';
+        updateUrl();
+    }
+
+    async function closeTimeline() {
+        resetViewerSelection();
+        viewerOpenedFromHistory = false;
+        updateUrl();
+        await restoreDirectoryState(
+            String(currentDirectoryId.value || '0'),
+            false,
+            ++activeSyncSeq,
+        );
     }
 
     function openRecycleBin() {
@@ -813,6 +842,8 @@ export function useRouter({
         clearOAuthRoute,
         switchTab,
         navigateToWikiSlug,
+        openTimeline,
+        closeTimeline,
         openRecycleBin,
         closeRecycleBin,
         openSettingsPanel,

@@ -24,6 +24,7 @@ import RecycleBinPanel from './components/RecycleBinPanel.js';
 import SearchModal from './components/SearchModal.js';
 import SettingsPanel from './components/SettingsPanel.js';
 import TaskPanel from './components/TaskPanel.js';
+import TimelinePanel from './components/TimelinePanel.js';
 import WikiPanel from './components/WikiPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { resetEscapeStack } from './composables/useModalEscape.js';
@@ -39,6 +40,7 @@ createApp({
     components: {
         'file-browser-panel': FileBrowserPanel,
         'recycle-bin-panel': RecycleBinPanel,
+        'timeline-panel': TimelinePanel,
         DigestPanel,
         SearchModal,
         TaskPanel,
@@ -102,7 +104,8 @@ createApp({
         } = useRecycleBin();
 
         // Server Feature Availability
-        const { isTabAvailable, loadServerFeatures, resetServerFeatures } = useServerFeatures();
+        const { isComponentRunning, isTabAvailable, loadServerFeatures, resetServerFeatures } =
+            useServerFeatures();
 
         // Host Navigation & URL Routing
         const {
@@ -121,6 +124,8 @@ createApp({
             clearOAuthRoute,
             switchTab,
             navigateToWikiSlug,
+            openTimeline,
+            closeTimeline,
             openRecycleBin,
             closeRecycleBin,
             openSettingsPanel,
@@ -450,6 +455,7 @@ createApp({
             handleLogin,
             handleLogout,
             activeTab,
+            isComponentRunning,
             isTabAvailable,
             selectedWikiSlug,
             navigateToWikiSlug,
@@ -472,6 +478,8 @@ createApp({
             uploadFiles,
             handleRenameItem,
             switchTab,
+            openTimeline,
+            closeTimeline,
             openRecycleBin,
             closeRecycleBin,
             recycleItems,
