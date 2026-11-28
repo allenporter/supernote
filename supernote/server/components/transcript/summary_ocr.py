@@ -1,10 +1,32 @@
-"""OCR transcription stage (`TaskType.SUMMARY_OCR`) for handwritten Digest annotations.
+"""Background OCR for handwritten Supernote Digest annotations (`TaskType.SUMMARY_OCR`).
 
-`SummaryOcrModule` runs under `ProcessorService` (`entity_type = TaskEntityType.SUMMARY`),
-rendering a Digest summary's `.mark` handwriting blob to PNG page(s) via `ConversionService`,
-transcribing each page with `OcrModel` using `format_ocr_prompt` (and folder vocabulary when
-linked to a notebook), joining multi-page text, and persisting the result via
-`TranscriptService.upsert_summary_transcript`.
+Supernote devices let users attach handwritten marginalia (stored as `.mark` blobs) to
+Digests (summaries). This module turns those handwritten notes into plain text so they
+can be read, indexed, and reused across the server.
+
+### How It Fits In
+
+`SummaryOcrModule` is registered with `ProcessorService` alongside notebook page OCR
+(`OcrModule`), targeting `TaskEntityType.SUMMARY` instead of VFS files. Running inside
+`ProcessorService` means Digest OCR shares the same worker pool, per-entity locking,
+pause/resume controls, startup recovery, retry handling, and System Tasks tracking.
+
+### Workflow
+
+1. **Trigger**: When a Digest with handwriting is created or updated (or found missing a
+   checkpoint during startup recovery), `ProcessorService` enqueues it for background
+   processing.
+2. **Staleness check**: Under a per-summary lock, `SummaryOcrModule` loads the live
+   `SummaryDO` row and skips work if OCR is unconfigured, the summary has no handwriting,
+   or `TranscriptService` already has a transcript matching the current `handwrite_md5`.
+3. **Render & transcribe**: The `.mark` blob is rendered to cached PNG page(s) via
+   `ConversionService`. Each page is transcribed by the configured `OcrModel` using the
+   shared OCR prompt (plus notebook folder vocabulary when the Digest is linked to a
+   file), and multi-page results are joined with blank lines.
+4. **Persist & cleanup**: After re-verifying the summary has not been deleted or updated
+   mid-flight, the transcript is saved to `SummaryTranscriptDO` via `TranscriptService`.
+   Deleting a summary or clearing its handwriting removes the stored transcript and its
+   `SystemTaskDO` checkpoint.
 """
 
 from __future__ import annotations
