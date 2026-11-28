@@ -53,6 +53,7 @@ async def test_files_mcp_upload_utf8_and_list_files(
         assert {
             "list_files",
             "upload_document",
+            "create_upload_url",
             "create_folder",
             "delete_item",
         }.issubset({t.name for t in tools.tools})
@@ -472,3 +473,61 @@ async def test_files_mcp_delete_item_user_isolation(
     # Owner's file is untouched
     items = await file_service.list_folder(test_users[0], "/INBOX")
     assert [i.name for i in items] == ["owned.md"]
+
+
+async def test_files_mcp_upload_document_expected_md5(
+    client: Any,
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    test_users: list[str],
+) -> None:
+    """`upload_document` verifies optional `expected_md5` and rejects corrupted payloads."""
+    file_service = client.app[FILE_SERVICE_KEY]
+    await file_service.create_directory(test_users[0], "/INBOX")
+
+    payload = b"%PDF-1.4 intact"
+    good_md5 = hashlib.md5(payload).hexdigest()
+
+    async with mcp_session(mcp_url, auth_headers) as session:
+        bad_fmt = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "a.pdf",
+                "content": base64.b64encode(payload).decode("ascii"),
+                "encoding": "base64",
+                "expected_md5": "not-hex",
+            },
+        )
+        assert bad_fmt["success"] is False
+        assert bad_fmt["errorCode"] == ErrorCode.BAD_REQUEST
+
+        mismatch = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "a.pdf",
+                "content": base64.b64encode(payload).decode("ascii"),
+                "encoding": "base64",
+                "expected_md5": "0" * 32,
+            },
+        )
+        assert mismatch["success"] is False
+        assert mismatch["errorCode"] == ErrorCode.BAD_REQUEST
+        assert "MD5 mismatch" in mismatch["errorMsg"]
+
+        ok = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "a.pdf",
+                "content": base64.b64encode(payload).decode("ascii"),
+                "encoding": "base64",
+                "expected_md5": good_md5.upper(),
+            },
+        )
+        assert ok["success"] is True
+        assert ok["file"]["md5"] == good_md5

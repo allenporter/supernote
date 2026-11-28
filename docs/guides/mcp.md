@@ -100,7 +100,8 @@ All tools scope queries strictly to the authenticated user's account.
 | Tool | Purpose | Key arguments |
 | :--- | :--- | :--- |
 | `list_files` | Browse files and folders across your Supernote cloud storage. | `path="/"`, `recursive=False` |
-| `upload_document` | Upload a UTF-8 text or base64 binary document (up to 10 MiB) into a cloud folder and sync it to your tablet. | `directory_path`, `file_name`, `content`, `encoding="utf-8"`, `overwrite=False` |
+| `upload_document` | Upload a UTF-8 text or base64 binary document (up to 10 MiB) into a cloud folder and sync it to your tablet. | `directory_path`, `file_name`, `content`, `encoding="utf-8"`, `overwrite=False`, `expected_md5` |
+| `create_upload_url` | Mint a short-lived, single-use HTTP `PUT` URL for streaming raw binary files (such as PDFs) without passing base64 through tool arguments. | `directory_path`, `file_name`, `expected_md5`, `expected_size`, `overwrite=False` |
 | `create_folder` | Create a new folder path in your cloud storage (including missing parent directories). | `path` |
 | `delete_item` | Move a file or folder to the recycle bin (soft delete); protected system folders cannot be deleted. | `file_id` |
 

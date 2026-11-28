@@ -20,7 +20,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `conversion` | Yes | `ai`, `processor` | `http`, `mcp`, `processor` | `.note` and digest handwriting conversion to PDF, PNG, and SVG (`/api/file/*/to/*`), PNG caching, and `get_page_image` MCP tool. |
 | `events` | Yes | — | `http`, `mcp` | Durable domain event log (`f_user_event`), retention pruning, and event inspection. |
 | `fake_ai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | Deterministic in-memory AI provider for tests and ephemeral local runs. |
-| `files` | Yes | — | `mcp` | Cloud file browsing, document upload, folder creation, and soft-delete MCP tools (`list_files`, `upload_document`, `create_folder`, `delete_item`). |
+| `files` | Yes | — | `http`, `mcp` | Cloud file browsing, inline/presigned document uploads (`PUT /api/extended/uploads/{token}`), folder creation, and soft-delete MCP tools. |
 | `gemini` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | Google Gemini Vision, text, and embedding provider (auto-enabled when a Gemini key is configured). |
 | `http` | Yes | — | — | Main-port `aiohttp` route registrar (`http` platform host). |
 | `inbox` | Yes | — | — | Markdown-to-EPUB/PDF e-ink document builder for `/INBOX` reading material. |
