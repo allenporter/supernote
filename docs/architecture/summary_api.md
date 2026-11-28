@@ -54,7 +54,7 @@ While the official `/api/file/*/summary*` endpoints preserve exact Supernote dev
 
 *   **Query Parameters (`DigestListRequestDTO`)**:
     *   `fileId` (optional): Filter Digests linked to one Source VFS file ID.
-    *   `categoryId` (optional): Filter Digests belonging to one Digest Category (`parentUniqueIdentifier`).
+    *   `categoryId` (optional): Filter Digests belonging to one Digest Category (`parentUniqueIdentifier`). *(TODO: consider adding optional `categoryName` lookup/filtering and a `list_digest_categories` endpoint/MCP tool for human-readable category discovery.)*
     *   `limit` (optional, `1–200`, default `50`) and `offset` (optional, default `0`): Offset pagination.
 *   **Response (`DigestListVO`)**: Returns `{digests: DigestVO[], total, limit, offset}` where every `DigestVO` is self-contained—carrying `id`, `uniqueIdentifier`, `categoryId`, `fileId`, `name`, `sourcePath`, `author`, parsed `tags`, `dataSource`, `content`, `comment`, and an optional inline `handwriting` object (`DigestHandwritingVO`: `md5`, `transcript`, `modelId`, `updateTime`).
 *   **Freshness guarantee**: `handwriting.transcript` is populated only when the stored `SummaryTranscriptDO.handwrite_md5` matches the Digest's current `handwrite_md5`; pending or stale OCR omits `transcript` while keeping `handwriting.md5`.
