@@ -27,6 +27,7 @@ from supernote.models.user import UserRegisterDTO
 from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.components.summary.service import DEFAULT_SUMMARY_PAGE_SIZE
+from supernote.server.components.transcript import TRANSCRIPT_SERVICE_KEY
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.summary import SummaryDO, SummaryTranscriptDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -1158,3 +1159,104 @@ async def test_extended_list_digests_resolves_author_and_orders_by_last_modified
         1700000002000,
         1700000001000,
     ]
+
+
+async def test_extended_export_digests_markdown_and_filters(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/extended/digests/export renders grouped Markdown and validates format."""
+    # Empty export
+    empty_resp = await client.get("/api/extended/digests/export", headers=auth_headers)
+    assert empty_resp.status == 200
+    assert empty_resp.content_type == "text/markdown"
+    assert 'filename="digests.md"' in empty_resp.headers["Content-Disposition"]
+    assert "_No digests found._" in await empty_resp.text()
+
+    # Unsupported format returns 400
+    bad_resp = await client.get(
+        "/api/extended/digests/export?format=xml", headers=auth_headers
+    )
+    assert bad_resp.status == 400
+
+    # Seed two digests (one with handwriting OCR transcript, one in another category)
+    cat_a = "a" * 32
+    cat_b = "b" * 32
+    r1 = await client.post(
+        "/api/file/add/summary",
+        headers=auth_headers,
+        json={
+            "uniqueIdentifier": "export-digest-1",
+            "parentUniqueIdentifier": cat_a,
+            "content": "Simplicity is prerequisite for reliability.",
+            "commentStr": "Apply to sync layer",
+            "author": "Edsger Dijkstra",
+            "sourcePath": "Document/Papers/Reliability.pdf",
+            "tags": "classic, systems",
+            "handwriteInnerName": "hw-export-1",
+            "handwriteMD5": "hw-export-md5-1",
+            "lastModifiedTime": 1700000000000,
+        },
+    )
+    assert r1.status == 200
+    summary_id = int((await r1.json())["id"])
+
+    r2 = await client.post(
+        "/api/file/add/summary",
+        headers=auth_headers,
+        json={
+            "uniqueIdentifier": "export-digest-2",
+            "parentUniqueIdentifier": cat_b,
+            "content": "Standalone note",
+            "lastModifiedTime": 1700000001000,
+        },
+    )
+    assert r2.status == 200
+
+    user_id = await client.app[USER_SERVICE_KEY].get_user_id(TEST_USERNAME)
+    assert user_id is not None
+    await client.app[TRANSCRIPT_SERVICE_KEY].upsert_summary_transcript(
+        user_id=user_id,
+        summary_id=summary_id,
+        handwrite_md5="hw-export-md5-1",
+        text_content="Keep state machines minimal",
+        model_id="gemini-2.5-flash",
+    )
+
+    resp = await client.get("/api/extended/digests/export", headers=auth_headers)
+    assert resp.status == 200
+    body = await resp.text()
+    assert "## Reliability.pdf" in body
+    assert "Source: `Document/Papers/Reliability.pdf`" in body
+    assert "Simplicity is prerequisite for reliability." in body
+    assert "> Apply to sync layer" in body
+    assert "**Handwritten annotation:**\n\nKeep state machines minimal" in body
+    assert "Edsger Dijkstra · #classic #systems · 2023-11-14" in body
+    assert "## Standalone Digests" in body
+    assert "Standalone note" in body
+
+    filtered = await client.get(
+        f"/api/extended/digests/export?categoryId={cat_a}", headers=auth_headers
+    )
+    assert filtered.status == 200
+    filtered_body = await filtered.text()
+    assert "Simplicity is prerequisite for reliability." in filtered_body
+    assert "Standalone note" not in filtered_body
+
+    # Invalid fileId returns 400
+    bad_file_resp = await client.get(
+        "/api/extended/digests/export?fileId=not-an-int", headers=auth_headers
+    )
+    assert bad_file_resp.status == 400
+
+    # Other user's export never sees this user's digests
+    other_user = "export-other@example.com"
+    await client.app[USER_SERVICE_KEY].register(
+        UserRegisterDTO(email=other_user, password="c" * 32)
+    )
+    await client.app[SUMMARY_SERVICE_KEY].add_summary(
+        other_user,
+        AddSummaryDTO(content="Private other-user digest"),
+    )
+    resp_again = await client.get("/api/extended/digests/export", headers=auth_headers)
+    assert "Private other-user digest" not in await resp_again.text()

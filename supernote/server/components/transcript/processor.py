@@ -520,5 +520,6 @@ async def async_setup_processor(
             conversion_service=core.app[CONVERSION_SERVICE_KEY],
             transcript_service=core.app[TRANSCRIPT_SERVICE_KEY],
             ocr_model=ocr_model,
+            event_bus=core.event_bus,
         )
     )

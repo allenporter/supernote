@@ -614,12 +614,22 @@ async def test_web_ui_digests_browser_view(
                 state="hidden"
             )
 
-            # Digests view excludes AI Notebook Summaries
+            # Digests view excludes AI Notebook Summaries and exports Markdown cleanly
             await page.locator('[data-digest-view="digests"]').click()
             await page.get_by_text(
                 "Simplicity is prerequisite for reliability."
             ).wait_for(state="visible")
             await page.get_by_text("Weekly Architecture Recap").wait_for(state="hidden")
+            async with page.expect_download() as download_info:
+                await page.locator("[data-digest-export-md]").click()
+            download = await download_info.value
+            assert download.suggested_filename == "digests.md"
+            exported_path = await download.path()
+            assert exported_path is not None
+            exported_md = Path(exported_path).read_text(encoding="utf-8")
+            assert "Simplicity is prerequisite for reliability." in exported_md
+            assert "Keep state machines minimal and deterministic" in exported_md
+            assert "Weekly Architecture Recap" not in exported_md
 
             await page.get_by_role(
                 "button", name=re.compile(r"^Uncategorized\b")

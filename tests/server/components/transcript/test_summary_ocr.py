@@ -6,8 +6,10 @@ import asyncio
 from pathlib import Path
 
 from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
+from supernote.models.events import DomainEntityType, DomainEventType
 from supernote.models.summary import AddSummaryDTO, UpdateSummaryDTO
 from supernote.server.components.ai import OCR_MODEL_KEY
+from supernote.server.components.events import EVENT_LOG_SERVICE_KEY
 from supernote.server.components.processor import (
     PROCESSOR_SERVICE_KEY,
     ProcessorWorkItem,
@@ -512,3 +514,60 @@ async def test_summary_deleted_cleans_up_system_task_checkpoint(
         )
         is None
     )
+
+
+async def test_summary_ocr_publishes_summary_transcribed_domain_event(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+    test_data_dir: Path,
+) -> None:
+    """Completing Digest handwriting OCR records a `summary.transcribed` domain event."""
+    await load_components(
+        "ai",
+        "events",
+        "fake_ai",
+        "processor",
+        "summary",
+        "transcript",
+        configs=FAKE_OCR_CONFIG,
+    )
+    summary_service = component_core.app[SUMMARY_SERVICE_KEY]
+    event_log = component_core.app[EVENT_LOG_SERVICE_KEY]
+
+    await blob_storage.put(
+        USER_DATA_BUCKET,
+        "digest_evt.mark",
+        (test_data_dir / DIGEST_MARK).read_bytes(),
+    )
+    created = await summary_service.add_summary(
+        TEST_USERNAME,
+        AddSummaryDTO(
+            unique_identifier="digest-ocr-event-1",
+            content="Excerpt for event test",
+            source_path="Document/EventBook.pdf",
+            handwrite_inner_name="digest_evt.mark",
+            handwrite_md5="88888888888888888888888888888888",
+        ),
+    )
+    assert created.id is not None
+    await _drain_processor(component_core)
+
+    page = await event_log.list_events(
+        test_user_id,
+        event_types=[DomainEventType.SUMMARY_TRANSCRIBED],
+    )
+    assert len(page.events) == 1
+    evt = page.events[0]
+    assert evt.event_type == DomainEventType.SUMMARY_TRANSCRIBED
+    assert evt.entity_type == DomainEntityType.SUMMARY
+    assert evt.entity_id == str(created.id)
+    assert evt.related_file_id is None
+    assert evt.actor == "system:processor"
+    assert evt.payload["summary_id"] == str(created.id)
+    assert evt.payload["unique_identifier"] == "digest-ocr-event-1"
+    assert evt.payload["handwrite_md5"] == "88888888888888888888888888888888"
+    assert evt.payload["model_id"] == "fake-ocr-v1"
+    assert evt.payload["source_path"] == "Document/EventBook.pdf"
+    assert evt.payload["text_content"].startswith("Transcribed (")

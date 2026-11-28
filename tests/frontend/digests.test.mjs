@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    buildDigestExportFilename,
     createDigest,
     createDigestCategory,
     deleteDigest,
@@ -10,6 +11,7 @@ import {
     fetchDigestHandwritingPages,
     fetchDigests,
     formatDigestMarkdown,
+    formatDigestsMarkdownExport,
     generateDigestUuid,
     isAiSummaryDigest,
     normalizeDigestCategory,
@@ -513,4 +515,63 @@ test('digests.js: fetchDigestHandwritingPages requests PNG render and sorts vali
         await logout({ reload: false });
         globalThis.fetch = origFetch;
     }
+});
+
+test('digests.js: formatDigestsMarkdownExport and buildDigestExportFilename produce PKM-ready Markdown', () => {
+    assert.equal(buildDigestExportFilename(''), 'digests.md');
+    assert.equal(buildDigestExportFilename('Digests'), 'digests.md');
+    assert.equal(buildDigestExportFilename('Reliability.pdf'), 'reliability-digests.md');
+    assert.equal(buildDigestExportFilename('AI Summaries'), 'ai-summaries-digests.md');
+
+    assert.equal(
+        formatDigestsMarkdownExport([], { title: 'Empty View' }),
+        '# Empty View\n\n_No digests found._\n',
+    );
+
+    const md = formatDigestsMarkdownExport(
+        [
+            normalizeDigestItem({
+                id: '1',
+                content: 'Simplicity is prerequisite for reliability.',
+                comment: 'Apply to sync layer',
+                author: 'Edsger Dijkstra',
+                sourcePath: 'Document/Papers/Reliability.pdf',
+                tags: ['classic', 'systems'],
+                handwriting: {
+                    md5: 'm1',
+                    transcript: 'Keep state machines minimal',
+                    modelId: 'gemini-2.5-flash',
+                    updateTime: 1700000000000,
+                },
+                updateTime: 1700000000000,
+            }),
+            normalizeDigestItem({
+                id: '2',
+                content: 'Standalone quote',
+                updateTime: 0,
+            }),
+        ],
+        { title: 'Reading Notes' },
+    );
+
+    assert.equal(
+        md,
+        '# Reading Notes\n\n' +
+            '## Reliability.pdf\n\n' +
+            'Source: `Document/Papers/Reliability.pdf`\n\n' +
+            'Simplicity is prerequisite for reliability.\n\n' +
+            '> Apply to sync layer\n\n' +
+            '**Handwritten annotation:**\n\n' +
+            'Keep state machines minimal\n\n' +
+            '_Edsger Dijkstra · #classic #systems · 2023-11-14_\n\n' +
+            '## Standalone Digests\n\n' +
+            'Standalone quote\n',
+    );
+    assert.equal(
+        formatDigestsMarkdownExport(
+            [normalizeDigestItem({ id: '3', content: '   ', sourcePath: 'Document/Blank.pdf' })],
+            { title: 'Blank' },
+        ),
+        '# Blank\n\n_No digests found._\n',
+    );
 });
