@@ -243,6 +243,23 @@ async def test_more_recently_updated_sibling_wins_folder_order(
     ]
 
 
+async def test_short_names_and_acronyms_are_not_dropped_by_stopword_plurals(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    await _keywords(
+        session_manager,
+        NOTEBOOK_ID,
+        ["Wes", "UPS", "AES", "SOS", "ToS", "we", "up"],
+    )
+    assert await _terms(session_manager, NOTEBOOK_ID) == [
+        "Wes",
+        "UPS",
+        "AES",
+        "SOS",
+        "ToS",
+    ]
+
+
 async def test_an_unknown_notebook_has_no_terms(
     session_manager: DatabaseSessionManager,
 ) -> None:

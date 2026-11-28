@@ -65,52 +65,52 @@ class PromptLoader:
         return self._resources_dir or RESOURCES_DIR
 
     def _load_prompts(self) -> None:
-        """Load all prompts from the resources directory into memory."""
-        self._prompts = {}
-        if not self.resources_dir.is_dir():
-            logger.warning(f"Prompts directory not found at {self.resources_dir}")
+        """Load built-in prompts, then overlay any categories present in `resources_dir`."""
+        self._prompts = {pid.value: {} for pid in PromptId}
+        self._load_directory(RESOURCES_DIR)
+        if self._resources_dir is not None and self._resources_dir != RESOURCES_DIR:
+            self._load_directory(self._resources_dir)
+
+    def _load_directory(self, directory: Path | Traversable) -> None:
+        """Load prompt categories from `directory`, replacing each present category."""
+        assert self._prompts is not None
+        if not directory.is_dir():
+            logger.warning(f"Prompts directory not found at {directory}")
             return
 
-        # Initialize dicts for known prompt IDs
-        for pid in PromptId:
-            self._prompts[pid.value] = {}
-
         try:
-            # Map categories to PromptId
             for category, prompt_id in CATEGORY_MAP.items():
-                category_dir = self.resources_dir / category
+                category_dir = directory / category
                 if not category_dir.is_dir():
                     continue
 
-                if prompt_id not in self._prompts:
-                    self._prompts[prompt_id] = {}
+                category_prompts: dict[str, str] = {}
 
-                # 1. Load Common Prompts (Always On)
                 common_dir = category_dir / COMMON
                 if common_dir.is_dir():
                     common_text = self._read_prompts_from_dir(common_dir)
                     if common_text:
-                        self._prompts[prompt_id][COMMON] = common_text
+                        category_prompts[COMMON] = common_text
 
-                # 2. Load Default Prompts
                 default_dir = category_dir / DEFAULT
                 if default_dir.is_dir():
                     default_text = self._read_prompts_from_dir(default_dir)
                     if default_text:
-                        self._prompts[prompt_id][DEFAULT] = default_text
+                        category_prompts[DEFAULT] = default_text
 
-                # 3. Load Custom Prompts (sub-directories)
                 for item in category_dir.iterdir():
                     if item.is_dir() and item.name not in [COMMON, DEFAULT]:
                         custom_type = item.name.lower()
                         custom_text = self._read_prompts_from_dir(item)
                         if custom_text:
-                            self._prompts[prompt_id][custom_type] = custom_text
+                            category_prompts[custom_type] = custom_text
 
-            logger.info(f"Loaded prompts from {self.resources_dir}")
+                self._prompts[prompt_id] = category_prompts
+
+            logger.info(f"Loaded prompts from {directory}")
 
         except (OSError, UnicodeDecodeError) as e:
-            logger.error(f"Failed to load prompts from {self.resources_dir}: {e}")
+            logger.error(f"Failed to load prompts from {directory}: {e}")
 
     def _read_prompts_from_dir(self, directory: Path | Traversable) -> str:
         """Read and concatenate all .md files in a directory."""

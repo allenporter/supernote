@@ -14,6 +14,7 @@ only its own keywords.
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
@@ -98,24 +99,29 @@ progress purpose question recent reference related risk scope session similar
 specific summary takeaway timeline topic various
 """
 
-_COMMON_WORDS = STOPWORDS | frozenset(
+_CONTENT_WORDS = frozenset(
     word for block in (_ENGLISH, _TECHNICAL, _ABSTRACT) for word in block.split()
 )
+_COMMON_WORDS = STOPWORDS | _CONTENT_WORDS
 
 
 def _is_common(term: str) -> bool:
     """Whether `term` is a single ordinary word, allowing simple plurals.
 
     A phrase is never common: `action item` is worth keeping even though both
-    of its words are ordinary.
+    of its words are ordinary. Plural stripping applies only to content words
+    of at least 3 letters so short names/acronyms like `Wes`, `UPS`, or `AES`
+    are not dropped via closed-class stopwords (`we`, `up`, `a`).
     """
-    word = term.strip().lower()
-    if not word or any(c.isspace() for c in word):
+    word = term.lower()
+    if " " in word:
         return False
     if word in _COMMON_WORDS:
         return True
     return any(
-        word.endswith(suffix) and word[: -len(suffix)] in _COMMON_WORDS
+        word.endswith(suffix)
+        and len(word) - len(suffix) >= 3
+        and word[: -len(suffix)] in _CONTENT_WORDS
         for suffix in ("s", "es")
     )
 
@@ -151,6 +157,12 @@ async def notebook_terms(
         )
     rows = await session.scalars(
         select(NotePageMetadataDO)
+        .options(
+            load_only(
+                NotePageMetadataDO.file_id,
+                NotePageMetadataDO.keywords_json,
+            )
+        )
         .join(
             UserFileDO,
             (UserFileDO.id == NotePageMetadataDO.file_id)
@@ -179,19 +191,24 @@ def _dedupe(terms: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for term in terms:
-        if term.casefold() not in seen:
-            seen.add(term.casefold())
+        key = term.casefold()
+        if key not in seen:
+            seen.add(key)
             out.append(term)
     return out
 
 
 async def _scope(vfs: VirtualFileSystem, user_id: int, note: UserFileDO) -> int | None:
     """The highest non-system folder above a notebook, or None if it has none."""
+    if note.directory_id == 0:
+        return None
     scope_id: int | None = None
     current = await vfs.get_node_by_id(user_id, note.directory_id)
     for _ in range(_MAX_FOLDER_DEPTH):
         if current is None or await vfs.is_system_directory(user_id, current):
             break
         scope_id = current.id
+        if current.directory_id == 0:
+            break
         current = await vfs.get_node_by_id(user_id, current.directory_id)
     return scope_id

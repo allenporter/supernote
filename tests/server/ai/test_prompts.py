@@ -64,6 +64,28 @@ def test_format_ocr_prompt_with_vocabulary(tmp_path: Path) -> None:
     assert prompt.endswith("Prefer these spellings when supported: Lovelace, ks-tilt")
 
 
+def test_format_ocr_prompt_with_vocabulary_uses_builtin_fallback_for_partial_override(
+    tmp_path: Path,
+) -> None:
+    ocr_dir = tmp_path / "ocr" / "common"
+    ocr_dir.mkdir(parents=True)
+    (ocr_dir / "prompt.md").write_text("Custom OCR prompt.", encoding="utf-8")
+    loader = PromptLoader(tmp_path)
+    page_metadata = PageMetadata(
+        file_name="Plan.note",
+        page_index=0,
+        page_id="P1",
+        notebook_create_time=None,
+    )
+
+    prompt = format_ocr_prompt(
+        page_metadata, vocabulary=["Lovelace"], prompt_loader=loader
+    )
+    assert "Custom OCR prompt." in prompt
+    assert "may appear in the text" in prompt
+    assert prompt.endswith(": Lovelace")
+
+
 def test_format_summary_prompt_and_schema(tmp_path: Path) -> None:
     daily_dir = tmp_path / "summary" / "daily"
     daily_dir.mkdir(parents=True)
