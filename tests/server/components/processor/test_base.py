@@ -3,13 +3,14 @@ import asyncio
 import pytest
 from prometheus_client import REGISTRY
 
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.server.components.processor import (
     DuplicateTaskError,
     MissingTaskDependencyError,
     ProcessorModule,
     TaskDependencyCycleError,
     TaskGraph,
+    TaskGraphError,
     TaskScope,
 )
 from supernote.server.components.transcript.processor import OcrModule
@@ -330,3 +331,99 @@ def test_task_graph_validation_and_effective_enabled() -> None:
     assert graph.is_effectively_enabled("A") is True
     assert graph.is_effectively_enabled("B") is False
     assert graph.is_effectively_enabled("C") is False
+
+
+def test_task_graph_entity_type_partitioning_and_validation() -> None:
+    """TaskGraph partitions modules by entity_type and rejects cross-entity deps or non-file PAGE scope."""
+
+    class _EntityModule(_GraphModule):
+        def __init__(
+            self,
+            task_type: str,
+            *,
+            entity_type: TaskEntityType,
+            scope: TaskScope = TaskScope.FILE,
+            depends_on: tuple[str, ...] = (),
+        ) -> None:
+            super().__init__(task_type, scope=scope, depends_on=depends_on)
+            self._entity_type = entity_type
+
+        @property
+        def entity_type(self) -> TaskEntityType:
+            return self._entity_type
+
+    file_mod = _EntityModule("FILE_STEP", entity_type=TaskEntityType.FILE)
+    summary_mod = _EntityModule("SUMMARY_STEP", entity_type=TaskEntityType.SUMMARY)
+    graph = TaskGraph.build([file_mod, summary_mod])
+    assert [
+        m.task_type for m in graph.for_entity_type(TaskEntityType.FILE).modules
+    ] == ["FILE_STEP"]
+    assert [
+        m.task_type for m in graph.for_entity_type(TaskEntityType.SUMMARY).modules
+    ] == ["SUMMARY_STEP"]
+
+    with pytest.raises(TaskGraphError, match="cannot depend on"):
+        TaskGraph.build(
+            [
+                file_mod,
+                _EntityModule(
+                    "BAD_SUMMARY",
+                    entity_type=TaskEntityType.SUMMARY,
+                    depends_on=("FILE_STEP",),
+                ),
+            ]
+        )
+
+    with pytest.raises(TaskGraphError, match="only 'file' supports PAGE scope"):
+        TaskGraph.build(
+            [
+                _EntityModule(
+                    "BAD_PAGE",
+                    entity_type=TaskEntityType.SUMMARY,
+                    scope=TaskScope.PAGE,
+                )
+            ]
+        )
+
+
+async def test_processor_module_run_persists_non_file_entity_type(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """ProcessorModule.run writes SystemTaskDO checkpoints under the module's entity_type."""
+
+    class _SummaryModule(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "SummaryTestModule"
+
+        @property
+        def task_type(self) -> str:
+            return "SUMMARY_CUSTOM"
+
+        @property
+        def entity_type(self) -> TaskEntityType:
+            return TaskEntityType.SUMMARY
+
+        async def process(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            **kwargs: object,
+        ) -> None:
+            return None
+
+    mod = _SummaryModule()
+    assert await mod.run(505, session_manager, user_id=7) is True
+    task = await get_task(
+        session_manager,
+        7,
+        505,
+        "SUMMARY_CUSTOM",
+        "global",
+        entity_type=TaskEntityType.SUMMARY,
+    )
+    assert task is not None
+    assert task.entity_type == TaskEntityType.SUMMARY.value
+    assert task.status == ProcessingStatus.COMPLETED

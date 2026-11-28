@@ -89,6 +89,8 @@ def test_system_task_models() -> None:
                 "lastError": None,
                 "fileName": "Weekly Review.note",
                 "pageIndex": 2,
+                "entityType": None,
+                "entityId": None,
             }
         ],
         "paused": False,

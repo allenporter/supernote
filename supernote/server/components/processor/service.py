@@ -65,6 +65,9 @@ from .base import ProcessorModule, TaskGraph, TaskScope
 
 logger = logging.getLogger(__name__)
 
+ProcessorWorkItem = tuple[TaskEntityType, int, int]
+"""Queued work item `(entity_type, user_id, entity_id)` processed by `ProcessorService`."""
+
 _IMAGE_NAME_SUFFIX_PATTERNS: tuple[str, ...] = (
     "%.png",
     "%.jpg",
@@ -108,12 +111,12 @@ class ProcessorService:
         self.image_include_patterns = tuple(image_include_patterns)
         self.image_exclude_patterns = tuple(image_exclude_patterns)
 
-        self.queue: asyncio.Queue[tuple[int, int]] = (
+        self.queue: asyncio.Queue[ProcessorWorkItem] = (
             asyncio.Queue()
-        )  # Queue of (user_id, file_id)
-        self.processing_files: set[tuple[int, int]] = set()
-        self._file_locks: dict[tuple[int, int], asyncio.Lock] = {}
-        self._file_lock_refcounts: dict[tuple[int, int], int] = {}
+        )  # Queue of (entity_type, user_id, entity_id)
+        self.processing_entities: set[ProcessorWorkItem] = set()
+        self._entity_locks: dict[ProcessorWorkItem, asyncio.Lock] = {}
+        self._entity_lock_refcounts: dict[ProcessorWorkItem, int] = {}
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
@@ -126,18 +129,31 @@ class ProcessorService:
         self.task_graph: TaskGraph = TaskGraph.empty()
 
     @property
+    def processing_files(self) -> set[tuple[int, int]]:
+        """Currently queued or in-flight `(user_id, file_id)` pairs."""
+        return {
+            (uid, eid)
+            for etype, uid, eid in self.processing_entities
+            if etype == TaskEntityType.FILE
+        }
+
+    @property
     def page_modules(self) -> list[ProcessorModule]:
         """Page-scoped modules in deterministic topological order."""
-        return [m for m in self.task_graph.modules if m.scope == TaskScope.PAGE]
+        return [
+            m
+            for m in self.task_graph.for_entity_type(TaskEntityType.FILE).modules
+            if m.scope == TaskScope.PAGE
+        ]
 
     @property
     def global_post_modules(self) -> list[ProcessorModule]:
         """File-scoped modules that depend transitively on at least one page module."""
+        file_graph = self.task_graph.for_entity_type(TaskEntityType.FILE)
         return [
             m
-            for m in self.task_graph.modules
-            if m.scope == TaskScope.FILE
-            and self.task_graph.has_page_ancestor(m.task_type)
+            for m in file_graph.modules
+            if m.scope == TaskScope.FILE and file_graph.has_page_ancestor(m.task_type)
         ]
 
     def _set_processing_enabled(self, enabled: bool) -> None:
@@ -151,24 +167,36 @@ class ProcessorService:
     def _update_queue_metrics(self) -> None:
         PROCESSOR_QUEUE_SIZE.set(self.queue.qsize())
 
+    async def enqueue_entity(
+        self, entity_type: TaskEntityType, user_id: int, entity_id: int
+    ) -> None:
+        """Deduplicate and enqueue `(entity_type, user_id, entity_id)` for background processing."""
+        item: ProcessorWorkItem = (entity_type, user_id, entity_id)
+        if item not in self.processing_entities:
+            self.processing_entities.add(item)
+            await self.queue.put(item)
+            self._update_queue_metrics()
+
     @asynccontextmanager
-    async def _file_lock(self, user_id: int, file_id: int) -> AsyncGenerator[None]:
-        """Serialize processing and deletion per (user_id, file_id) without leaking idle locks."""
-        lock_key = (user_id, file_id)
-        lock = self._file_locks.setdefault(lock_key, asyncio.Lock())
-        self._file_lock_refcounts[lock_key] = (
-            self._file_lock_refcounts.get(lock_key, 0) + 1
+    async def _entity_lock(
+        self, entity_type: TaskEntityType, user_id: int, entity_id: int
+    ) -> AsyncGenerator[None]:
+        """Serialize processing and deletion per `(entity_type, user_id, entity_id)` without leaking idle locks."""
+        lock_key: ProcessorWorkItem = (entity_type, user_id, entity_id)
+        lock = self._entity_locks.setdefault(lock_key, asyncio.Lock())
+        self._entity_lock_refcounts[lock_key] = (
+            self._entity_lock_refcounts.get(lock_key, 0) + 1
         )
         try:
             async with lock:
                 yield
         finally:
-            remaining = self._file_lock_refcounts[lock_key] - 1
+            remaining = self._entity_lock_refcounts[lock_key] - 1
             if remaining <= 0:
-                self._file_lock_refcounts.pop(lock_key, None)
-                self._file_locks.pop(lock_key, None)
+                self._entity_lock_refcounts.pop(lock_key, None)
+                self._entity_locks.pop(lock_key, None)
             else:
-                self._file_lock_refcounts[lock_key] = remaining
+                self._entity_lock_refcounts[lock_key] = remaining
 
     def set_modules(self, modules: Sequence[ProcessorModule]) -> None:
         """Validate and install the processor task dependency graph."""
@@ -317,11 +345,7 @@ class ProcessorService:
                 await session.commit()
             return
         logger.info(f"Received update for file: {event.file_id} ({file_path})")
-        item = (event.user_id, event.file_id)
-        if item not in self.processing_files:
-            self.processing_files.add(item)
-            await self.queue.put(item)
-            self._update_queue_metrics()
+        await self.enqueue_entity(TaskEntityType.FILE, event.user_id, event.file_id)
 
     async def handle_sync_completed(self, event: Event) -> None:
         """Discover and enqueue unprocessed or updated .note files after sync completes."""
@@ -338,8 +362,10 @@ class ProcessorService:
         file_id = event.item_id
         logger.info(f"Received delete for note: {file_id}")
 
-        async with self._file_lock(event.user_id, file_id):
-            for module in reversed(self.task_graph.modules):
+        async with self._entity_lock(TaskEntityType.FILE, event.user_id, file_id):
+            for module in reversed(
+                self.task_graph.for_entity_type(TaskEntityType.FILE).modules
+            ):
                 await module.cleanup_file(file_id, event.user_id, self.session_manager)
 
             async with self.session_manager.session() as session:
@@ -363,24 +389,33 @@ class ProcessorService:
         """Check DB for incomplete tasks on startup."""
         logger.info("Recovering pending processing tasks...")
         async with self.session_manager.session() as session:
-            # Find all (user_id, entity_id) pairs that have any file task NOT in COMPLETED status
             stmt = (
-                select(SystemTaskDO.user_id, SystemTaskDO.entity_id)
-                .where(
-                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
-                    SystemTaskDO.status != ProcessingStatus.COMPLETED,
+                select(
+                    SystemTaskDO.entity_type,
+                    SystemTaskDO.user_id,
+                    SystemTaskDO.entity_id,
                 )
+                .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
                 .distinct()
             )
             result = await session.execute(stmt)
             targets = result.all()
 
-        for uid, file_id in targets:
-            logger.info(f"Recovering incomplete pipeline for user {uid} file {file_id}")
-            item = (uid, file_id)
-            if item not in self.processing_files:
-                self.processing_files.add(item)
-                await self.queue.put(item)
+        for raw_entity_type, uid, entity_id in targets:
+            try:
+                entity_type = TaskEntityType(raw_entity_type)
+            except ValueError:
+                logger.warning(
+                    "Skipping recovery for unknown entity_type=%r (user %s, entity %s)",
+                    raw_entity_type,
+                    uid,
+                    entity_id,
+                )
+                continue
+            logger.info(
+                f"Recovering incomplete pipeline for user {uid} {entity_type.value} {entity_id}"
+            )
+            await self.enqueue_entity(entity_type, uid, entity_id)
         self._update_queue_metrics()
 
     async def poll_loop(self) -> None:
@@ -407,8 +442,11 @@ class ProcessorService:
 
         async with self.session_manager.session() as session:
             stmt = (
-                select(SystemTaskDO.user_id, SystemTaskDO.entity_id)
-                .where(SystemTaskDO.entity_type == TaskEntityType.FILE.value)
+                select(
+                    SystemTaskDO.entity_type,
+                    SystemTaskDO.user_id,
+                    SystemTaskDO.entity_id,
+                )
                 .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
                 .where(SystemTaskDO.update_time < stale_threshold_ms)
                 .distinct()
@@ -419,14 +457,17 @@ class ProcessorService:
         if not targets:
             return
 
-        logger.info(f"Found {len(targets)} stalled files. Enqueuing...")
+        logger.info(f"Found {len(targets)} stalled entities. Enqueuing...")
         PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL.inc(len(targets))
-        for uid, file_id in targets:
-            item = (uid, file_id)
-            if item not in self.processing_files:
-                logger.info(f"Enqueuing stalled user {uid} file {file_id} for retry.")
-                self.processing_files.add(item)
-                await self.queue.put(item)
+        for raw_entity_type, uid, entity_id in targets:
+            try:
+                entity_type = TaskEntityType(raw_entity_type)
+            except ValueError:
+                continue
+            logger.info(
+                f"Enqueuing stalled user {uid} {entity_type.value} {entity_id} for retry."
+            )
+            await self.enqueue_entity(entity_type, uid, entity_id)
         self._update_queue_metrics()
 
     async def recover_missing_tasks(self, user_id: int | None = None) -> None:
@@ -444,7 +485,7 @@ class ProcessorService:
         )
         conditions = [~any_task_exists]
 
-        for module in self.task_graph.modules:
+        for module in self.task_graph.for_entity_type(TaskEntityType.FILE).modules:
             if not self.task_graph.is_effectively_enabled(module.task_type):
                 continue
             if module.scope == TaskScope.FILE:
@@ -524,13 +565,8 @@ class ProcessorService:
         logger.info(f"Found {len(missing)} files with missing tasks. Enqueuing...")
         PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL.inc(len(missing))
         for file_id, uid in missing:
-            item = (uid, file_id)
-            if item not in self.processing_files:
-                logger.info(
-                    f"Enqueuing user {uid} file {file_id} for initial processing."
-                )
-                self.processing_files.add(item)
-                await self.queue.put(item)
+            logger.info(f"Enqueuing user {uid} file {file_id} for initial processing.")
+            await self.enqueue_entity(TaskEntityType.FILE, uid, file_id)
         self._update_queue_metrics()
 
     async def worker_loop(self, worker_id: int) -> None:
@@ -542,7 +578,7 @@ class ProcessorService:
                 await self._processing_enabled.wait()
 
                 item = await self.queue.get()
-                user_id, file_id = item
+                entity_type, user_id, entity_id = item
                 self._update_queue_metrics()
 
                 # Re-check processing enabled status in case it was paused while we were waiting on get()
@@ -553,20 +589,61 @@ class ProcessorService:
                     await asyncio.sleep(0.5)
                     continue
                 try:
-                    await self.process_file(file_id, user_id=user_id)
+                    await self.process_entity(entity_type, entity_id, user_id=user_id)
                 except Exception as e:
                     logger.error(
-                        f"Error processing user {user_id} file {file_id}: {e}",
+                        f"Error processing user {user_id} {entity_type.value} {entity_id}: {e}",
                         exc_info=True,
                     )
                 finally:
-                    self.processing_files.discard(item)
+                    self.processing_entities.discard(item)
                     self.queue.task_done()
                     self._update_queue_metrics()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Worker {worker_id} encountered error: {e}")
+
+    async def process_entity(
+        self,
+        entity_type: TaskEntityType,
+        entity_id: int,
+        *,
+        user_id: int,
+        task_types: Collection[str] | None = None,
+    ) -> bool:
+        """Orchestrate the registered task DAG for a file or non-file entity."""
+        if entity_type == TaskEntityType.FILE:
+            return await self.process_file(
+                entity_id, user_id=user_id, task_types=task_types
+            )
+        async with self._entity_lock(entity_type, user_id, entity_id):
+            entity_graph = self.task_graph.for_entity_type(entity_type)
+            if not entity_graph:
+                return True
+            run_graph = (
+                entity_graph.subset(task_types)
+                if task_types is not None
+                else entity_graph
+            )
+            if not run_graph:
+                return True
+
+            task_succeeded: dict[str, bool] = {}
+            overall_ok = True
+            for mod in run_graph.modules:
+                if any(
+                    not task_succeeded.get(dep, False)
+                    for dep in run_graph.depends_on(mod.task_type)
+                ):
+                    task_succeeded[mod.task_type] = False
+                    overall_ok = False
+                    continue
+                ok = await mod.run(entity_id, self.session_manager, user_id=user_id)
+                task_succeeded[mod.task_type] = ok
+                if not ok:
+                    overall_ok = False
+            return overall_ok
 
     async def process_file(
         self,
@@ -582,7 +659,7 @@ class ProcessorService:
             if task_types is None and page_indices is None
             else NoteProcessingMode.ON_DEMAND
         )
-        async with self._file_lock(user_id, file_id):
+        async with self._entity_lock(TaskEntityType.FILE, user_id, file_id):
             with track_note_processing_run(mode=mode) as run:
                 ok = await self._process_file_locked(
                     file_id,
@@ -637,7 +714,8 @@ class ProcessorService:
     ) -> bool:
         logger.info(f"Processing user {user_id} file {file_id}...")
 
-        if not self.task_graph:
+        file_graph = self.task_graph.for_entity_type(TaskEntityType.FILE)
+        if not file_graph:
             logger.error("Modules not registered. Skipping processing.")
             return False
 
@@ -645,14 +723,14 @@ class ProcessorService:
             requested = (
                 task_types
                 if task_types is not None
-                else [m.task_type for m in self.task_graph.modules]
+                else [m.task_type for m in file_graph.modules]
             )
-            run_graph = self.task_graph.subset(
+            run_graph = file_graph.subset(
                 requested,
                 exclude_page_dependent_file_tasks=page_indices is not None,
             )
         else:
-            run_graph = self.task_graph
+            run_graph = file_graph
 
         if not run_graph:
             return True
@@ -1077,6 +1155,8 @@ class ProcessorService:
                 update_time=task.update_time,
                 file_name=file_name,
                 page_index=page_index,
+                entity_type=task.entity_type,
+                entity_id=task.entity_id,
             )
             for task, file_name, page_index in rows
         ]
@@ -1112,29 +1192,59 @@ class ProcessorService:
             target_file_ids = sorted(
                 (await session.execute(failed_files_stmt)).scalars().all()
             )
-            if not target_file_ids:
+            non_file_targets: list[tuple[str, int]] = []
+            if file_id is None:
+                non_file_stmt = (
+                    select(SystemTaskDO.entity_type, SystemTaskDO.entity_id)
+                    .where(
+                        SystemTaskDO.user_id == user_id,
+                        SystemTaskDO.entity_type != TaskEntityType.FILE.value,
+                        SystemTaskDO.status == ProcessingStatus.FAILED,
+                    )
+                    .distinct()
+                )
+                non_file_targets = [
+                    (etype, eid)
+                    for etype, eid in (await session.execute(non_file_stmt)).all()
+                ]
+
+            if not target_file_ids and not non_file_targets:
                 return []
 
-            await session.execute(
-                delete(SystemTaskDO).where(
-                    SystemTaskDO.user_id == user_id,
-                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
-                    SystemTaskDO.entity_id.in_(target_file_ids),
-                    or_(
-                        SystemTaskDO.status == ProcessingStatus.FAILED,
-                        and_(
-                            SystemTaskDO.key == "global",
-                            SystemTaskDO.task_type != TaskType.PAGE_HASHING.value,
+            if target_file_ids:
+                await session.execute(
+                    delete(SystemTaskDO).where(
+                        SystemTaskDO.user_id == user_id,
+                        SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                        SystemTaskDO.entity_id.in_(target_file_ids),
+                        or_(
+                            SystemTaskDO.status == ProcessingStatus.FAILED,
+                            and_(
+                                SystemTaskDO.key == "global",
+                                SystemTaskDO.task_type != TaskType.PAGE_HASHING.value,
+                            ),
                         ),
-                    ),
+                    )
                 )
-            )
+            if non_file_targets:
+                await session.execute(
+                    delete(SystemTaskDO).where(
+                        SystemTaskDO.user_id == user_id,
+                        SystemTaskDO.entity_type != TaskEntityType.FILE.value,
+                        SystemTaskDO.status == ProcessingStatus.FAILED,
+                    )
+                )
             await session.commit()
 
         for fid in target_file_ids:
             await self.event_bus.publish(
                 NoteUpdatedEvent(file_id=fid, user_id=user_id, file_path="")
             )
+        for raw_etype, eid in non_file_targets:
+            try:
+                await self.enqueue_entity(TaskEntityType(raw_etype), user_id, eid)
+            except ValueError:
+                continue
         return target_file_ids
 
     def _resolve_file_status(

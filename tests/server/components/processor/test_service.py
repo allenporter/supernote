@@ -11,7 +11,7 @@ from PIL import Image
 from prometheus_client import REGISTRY
 from sqlalchemy import select
 
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.notebook import fileformat
 from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, OcrModel
 from supernote.server.components.conversion.processor import (
@@ -204,7 +204,7 @@ async def test_processor_deduplication(processor_service: ProcessorService) -> N
     # Second event for same (user_id, file_id) should be ignored
     await processor_service.handle_note_updated(event)
     assert processor_service.queue.qsize() == 1
-    assert await processor_service.queue.get() == (1, 123)
+    assert await processor_service.queue.get() == (TaskEntityType.FILE, 1, 123)
 
 
 async def test_handle_note_deleted_cleanup(
@@ -524,7 +524,7 @@ async def test_recover_tasks_enqueues_incomplete(
     ids = []
     ids.append(await processor_service.queue.get())
     ids.append(await processor_service.queue.get())
-    assert set(ids) == {(1, 1), (2, 2)}
+    assert set(ids) == {(TaskEntityType.FILE, 1, 1), (TaskEntityType.FILE, 2, 2)}
 
 
 async def test_start_calls_poll_loop(
@@ -595,7 +595,7 @@ async def test_recover_stalled_tasks_time_threshold(
     assert (1, 10) in processor_service.processing_files
     assert (1, 11) not in processor_service.processing_files
     assert processor_service.queue.qsize() == 1
-    assert await processor_service.queue.get() == (1, 10)
+    assert await processor_service.queue.get() == (TaskEntityType.FILE, 1, 10)
 
 
 async def test_page_parallelism(
@@ -701,7 +701,7 @@ async def test_processor_pause_resume(
         processor_service.workers.append(worker)
 
     # Enqueue (user_id, file_id)
-    await processor_service.queue.put((1, 101))
+    await processor_service.enqueue_entity(TaskEntityType.FILE, 1, 101)
     await asyncio.sleep(0.1)
 
     # Module should NOT have been called while paused
@@ -823,7 +823,7 @@ async def test_recover_missing_tasks_skips_inactive_files(
     assert (1, 9002) not in processor_service.processing_files
     assert processor_service.queue.qsize() == 1
     enqueued = await processor_service.queue.get()
-    assert enqueued == (1, 9001)
+    assert enqueued == (TaskEntityType.FILE, 1, 9001)
 
 
 async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
@@ -1420,7 +1420,7 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
     await asyncio.sleep(0.02)
     # Delete must wait until in-flight process_file releases the per-file lock
     assert events_log == ["process_start:777"]
-    assert (42, 777) in processor_service._file_locks
+    assert (TaskEntityType.FILE, 42, 777) in processor_service._entity_locks
 
     allow_finish.set()
     await asyncio.gather(proc_task, del_task)
@@ -1430,8 +1430,8 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
         "process_end:777",
         "cleanup:777:42",
     ]
-    assert processor_service._file_locks == {}
-    assert processor_service._file_lock_refcounts == {}
+    assert processor_service._entity_locks == {}
+    assert processor_service._entity_lock_refcounts == {}
 
 
 async def test_handle_note_deleted_removes_note_and_page_metadata(
@@ -2538,3 +2538,111 @@ async def test_note_metadata_failure_isolates_ocr_while_allowing_png(
     assert statuses_by_type[TaskType.NOTE_METADATA.value] == {"FAILED"}
     assert statuses_by_type[TaskType.PNG_CONVERSION.value] == {"COMPLETED"}
     assert TaskType.OCR_EXTRACTION.value not in statuses_by_type
+
+
+async def test_process_entity_runs_summary_dag_and_skips_downstream_on_failure(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify process_entity executes non-file entity DAGs independently of file modules."""
+    executed: list[tuple[str, int]] = []
+
+    class _EntityStep(ProcessorModule):
+        def __init__(
+            self,
+            task_type: str,
+            entity_type: TaskEntityType,
+            *,
+            depends_on: tuple[str, ...] = (),
+            fail: bool = False,
+        ) -> None:
+            self._task_type = task_type
+            self._entity_type = entity_type
+            self._depends_on = depends_on
+            self._fail = fail
+
+        @property
+        def name(self) -> str:
+            return self._task_type
+
+        @property
+        def task_type(self) -> str:
+            return self._task_type
+
+        @property
+        def entity_type(self) -> TaskEntityType:
+            return self._entity_type
+
+        @property
+        def depends_on(self) -> tuple[str, ...]:
+            return self._depends_on
+
+        async def process(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            **kwargs: object,
+        ) -> None:
+            executed.append((self._task_type, file_id))
+            if self._fail:
+                raise RuntimeError("summary step failed")
+
+    processor_service.set_modules(
+        [
+            _EntityStep("FILE_ONLY", TaskEntityType.FILE),
+            _EntityStep("SUM_A", TaskEntityType.SUMMARY),
+            _EntityStep("SUM_B", TaskEntityType.SUMMARY, depends_on=("SUM_A",)),
+        ]
+    )
+
+    ok = await processor_service.process_entity(TaskEntityType.SUMMARY, 801, user_id=5)
+    assert ok is True
+    assert executed == [("SUM_A", 801), ("SUM_B", 801)]
+
+    # Verify failure stalls downstream summary modules without running FILE modules.
+    executed.clear()
+    processor_service.set_modules(
+        [
+            _EntityStep("FILE_ONLY", TaskEntityType.FILE),
+            _EntityStep("SUM_A", TaskEntityType.SUMMARY, fail=True),
+            _EntityStep("SUM_B", TaskEntityType.SUMMARY, depends_on=("SUM_A",)),
+        ]
+    )
+    ok_fail = await processor_service.process_entity(
+        TaskEntityType.SUMMARY, 802, user_id=5
+    )
+    assert ok_fail is False
+    assert executed == [("SUM_A", 802)]
+
+
+async def test_recover_and_retry_include_non_file_entity_tasks(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify recover_tasks and retry_failed_tasks handle non-file entity tasks."""
+    async with session_manager.session() as session:
+        session.add(
+            SystemTaskDO(
+                user_id=9,
+                entity_type=TaskEntityType.SUMMARY.value,
+                entity_id=7001,
+                task_type="SUMMARY_OCR",
+                key="global",
+                status=ProcessingStatus.FAILED.value,
+            )
+        )
+        await session.commit()
+
+    await processor_service.recover_tasks()
+    assert (TaskEntityType.SUMMARY, 9, 7001) in processor_service.processing_entities
+    assert (9, 7001) not in processor_service.processing_files
+    item = await processor_service.queue.get()
+    assert item == (TaskEntityType.SUMMARY, 9, 7001)
+    processor_service.processing_entities.discard(item)
+
+    retried_files = await processor_service.retry_failed_tasks(user_id=9)
+    assert retried_files == []
+    assert (TaskEntityType.SUMMARY, 9, 7001) in processor_service.processing_entities
+    assert await processor_service.queue.get() == (TaskEntityType.SUMMARY, 9, 7001)

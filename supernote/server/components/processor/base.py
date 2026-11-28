@@ -25,7 +25,7 @@ import time
 from collections.abc import Iterable, Sequence
 from enum import Enum
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.metrics import (
     PROCESSOR_TASK_DURATION_SECONDS,
@@ -129,10 +129,20 @@ class TaskGraph:
         deps: dict[str, tuple[str, ...]] = {}
         sorter: graphlib.TopologicalSorter[str] = graphlib.TopologicalSorter()
         for task_type, mod in by_type.items():
+            if mod.scope == TaskScope.PAGE and mod.entity_type != TaskEntityType.FILE:
+                raise TaskGraphError(
+                    f"Processor task {task_type!r} has scope PAGE but targets "
+                    f"entity_type={mod.entity_type.value!r} (only 'file' supports PAGE scope)"
+                )
             unique_deps = tuple(dict.fromkeys(_task_key(d) for d in mod.depends_on))
             for dep in unique_deps:
                 if dep not in by_type:
                     raise MissingTaskDependencyError(task_type, dep)
+                if by_type[dep].entity_type != mod.entity_type:
+                    raise TaskGraphError(
+                        f"Processor task {task_type!r} ({mod.entity_type.value}) cannot "
+                        f"depend on {dep!r} ({by_type[dep].entity_type.value})"
+                    )
             deps[task_type] = unique_deps
             sorter.add(task_type, *unique_deps)
 
@@ -253,6 +263,11 @@ class TaskGraph:
         ordered = [m for m in self._ordered if _task_key(m.task_type) in selected]
         return TaskGraph.build(ordered)
 
+    def for_entity_type(self, entity_type: TaskEntityType) -> TaskGraph:
+        """Return the sub-graph containing only modules targeting ``entity_type``."""
+        filtered = [m for m in self._ordered if m.entity_type == entity_type]
+        return TaskGraph.build(filtered) if filtered else TaskGraph.empty()
+
 
 class ProcessorModule(abc.ABC):
     """Abstract base class for processor modules in the asynchronous pipeline.
@@ -275,6 +290,11 @@ class ProcessorModule(abc.ABC):
         """The Task Type this module handles.
         Matches the `task_type` column in `f_system_task`.
         """
+
+    @property
+    def entity_type(self) -> TaskEntityType:
+        """Entity kind targeted by this module (derived from `task_type` by default)."""
+        return TaskType.entity_type_for(self.task_type)
 
     @property
     def scope(self) -> TaskScope:
@@ -338,7 +358,14 @@ class ProcessorModule(abc.ABC):
         if not self.enabled:
             return False
         key = self.get_task_key(page_index, page_id)
-        task = await get_task(session_manager, user_id, file_id, self.task_type, key)
+        task = await get_task(
+            session_manager,
+            user_id,
+            file_id,
+            self.task_type,
+            key,
+            entity_type=self.entity_type,
+        )
         if (
             task
             and task.status == ProcessingStatus.COMPLETED
@@ -403,7 +430,9 @@ class ProcessorModule(abc.ABC):
             return True
 
         key = self.get_task_key(page_index, page_id)
-        logger.info(f"Running {self.name} for file {file_id} (key={key})")
+        logger.info(
+            f"Running {self.name} for {self.entity_type.value} {file_id} (key={key})"
+        )
 
         start_time = time.monotonic()
         status_str = "failure"
@@ -419,6 +448,7 @@ class ProcessorModule(abc.ABC):
                 key,
                 ProcessingStatus.COMPLETED,
                 data=self.version,
+                entity_type=self.entity_type,
             )
             status_str = "success"
             return True
@@ -426,7 +456,10 @@ class ProcessorModule(abc.ABC):
             status_str = "cancelled"
             raise
         except Exception as e:
-            logger.error(f"Error in {self.name} for file {file_id}: {e}", exc_info=True)
+            logger.error(
+                f"Error in {self.name} for {self.entity_type.value} {file_id}: {e}",
+                exc_info=True,
+            )
             msg = str(e)
             error_detail = f"{type(e).__name__}: {msg}" if msg else type(e).__name__
             await update_task_status(
@@ -437,6 +470,7 @@ class ProcessorModule(abc.ABC):
                 key,
                 ProcessingStatus.FAILED,
                 error_detail,
+                entity_type=self.entity_type,
             )
             return False
         finally:

@@ -262,18 +262,19 @@ async def handle_admin_list_tasks(request: web.Request) -> web.Response:
         status=status_filter,
         file_id=file_id,
         task_type=task_type_filter,
-        entity_type=TaskEntityType.FILE,
     )
     task_vos = [
         SystemTaskVO(
             id=t.id,
-            file_id=t.entity_id,
+            file_id=t.entity_id if t.entity_type == TaskEntityType.FILE.value else None,
             task_type=t.task_type,
             key=t.key,
             status=ProcessingStatus(t.status),
             retry_count=t.retry_count,
             last_error=t.last_error,
             update_time=t.update_time,
+            entity_type=t.entity_type,
+            entity_id=t.entity_id,
         )
         for t in tasks
     ]
