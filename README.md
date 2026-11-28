@@ -21,7 +21,7 @@ Unlike the official multi-container Java, MariaDB, and Redis Private Cloud stack
 | Tier | Memory Footprint | What's Included | AI Required? |
 | :--- | :--- | :--- | :---: |
 | **1. Bare Sync Server** | ~135 MB RAM | Drop-in Private Cloud sync for Raspberry Pi / NAS, storage quotas (disables Web UI and MCP) | No |
-| **2. Web Workspace & Integrations** | ~160 MB idle (~310 MB peak) | 4-tab Web UI (Files, Digests, Tasks, Wiki), one-click `.note` PDF export, `.ics` calendar feeds, webhooks, built-in Supernote keyword search | No |
+| **2. Web Workspace & Integrations** | ~160 MB idle (~310 MB peak) | 4-tab Web UI (Files with cross-notebook Timeline & Jump to Day calendar, Digests, Tasks, Wiki), one-click `.note` PDF export, `.ics` calendar feeds, webhooks, built-in Supernote keyword search | No |
 | **3. Optional AI & Knowledge Hub** | ~160 MB idle + chosen model | Handwriting & diagram OCR, searchable PDF export with TOC bookmarks, standalone image OCR, hybrid semantic search, opt-in LLM Wiki + Obsidian export, MCP server for Claude/Cursor | Optional (Gemini or local Ollama/vLLM) |
 | **4. Offline `.note` Toolkit** | CLI / library only | Parse `.note` files, convert to PDF/PNG/SVG, or author Bullet Journal `.note` files from Markdown—no server needed | No |
 
@@ -44,7 +44,7 @@ Unlike the official multi-container Java, MariaDB, and Redis Private Cloud stack
 
 ## Quick Tour of the Web UI
 
-Browse synced folders with rendered `.note` cover thumbnails, open handwritten pages side-by-side with AI Markdown transcripts (including rendered Mermaid diagrams), review reading digests, manage synced tasks, or curate your opt-in LLM Wiki—all in a mobile-friendly editorial Web UI.
+Browse synced folders with rendered `.note` cover thumbnails, switch to the **Timeline** view (`#/timeline`) to browse pages written or edited on any day across all notebooks with a **Jump to Day** mini-calendar (plus optional AI summary blurbs and handwritten-date matching), open handwritten pages side-by-side with AI Markdown transcripts (including rendered Mermaid diagrams), review reading digests, manage synced tasks, or curate your opt-in LLM Wiki—all in a mobile-friendly editorial Web UI.
 
 <p align="center">
   <img src="docs/static-assets/web-notebook-viewer.png" alt="Handwritten Notebook Viewer side-by-side with AI Markdown OCR Transcript" width="840">

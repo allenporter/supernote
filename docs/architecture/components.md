@@ -1,6 +1,6 @@
 # Server Component Catalog
 
-`supernote.server` is organized around a concrete core host (`ServerCore`) and **23 lazy-loaded vertical components** under `supernote/server/components/`. Disabled components are never imported at startup, keeping bare sync deployments around ~135 MB of RAM while letting you opt into higher-level capabilities one domain at a time.
+`supernote.server` is organized around a concrete core host (`ServerCore`) and **25 lazy-loaded vertical components** under `supernote/server/components/`. Disabled components are never imported at startup, keeping bare sync deployments around ~135 MB of RAM while letting you opt into higher-level capabilities one domain at a time.
 
 For lifecycle contracts, dependency resolution, and plugin rules, see [ADR 0001: ServerCore and Vertical Component Architecture](./adr/0001-server-core-component-architecture.md), [ADR 0003: Component Configuration and Runtime Reconfiguration Architecture](./adr/0003-component-configuration-architecture.md), [ADR 0004: Notebook Processing, Metadata, Conversion, and Transcript Component Ownership](./adr/0004-note-processing-component-ownership.md), and [Server & Sync Protocol Architecture](./server_architecture.md).
 
@@ -34,6 +34,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `search` | Yes | `ai` | `http`, `mcp`, `processor` | Lexical keyword search, vector embeddings, hybrid ranking, and `list_notebooks` / `search_notebook_chunks` MCP tools. |
 | `socketio` | Yes | — | `http` | Real-time Socket.IO sync notifications (`FILE-SYN`, `TASK-SYN`, `SUMMARY-SYN`). |
 | `summary` | Yes | `ai`, `conversion` | `http`, `processor` | Reading digests, AI notebook summaries, and cached digest handwriting PDF/PNG rendering. |
+| `timeline` | Yes | `note_metadata`, `events` | `http` | Cross-notebook chronological page timeline (`POST /api/extended/timeline/pages` and `/days`) combining `<PAGEID>` creation dates, synced page edit deltas (`note.pages_delta`), and optional AI summary date/blurb enrichment. |
 | `transcript` | Yes | `ai`, `conversion`, `note_metadata` | `http`, `mcp`, `processor` | OCR page transcription stage, transcript storage, and `get_notebook_transcript` MCP tool. |
 | `web_ui` | Yes | — | `http` | Zero-build Vue 3 editorial Web UI served from `supernote/server/static/`. |
 | `webhooks` | No | `events` | — | HMAC-SHA256 signed outbound HTTP webhooks (`note.sync_completed`, etc.). |

@@ -21,14 +21,16 @@ supernote/server/static/
     ├── api/
     │   ├── http.js                   # Shared apiRequest(), token storage & 401 logout hooks
     │   ├── client.js                 # Auth, VFS CRUD, OSS upload, search, note metadata & Socket.IO
-    │   └── schedule.js               # Task groups, tasks CRUD & iCalendar (.ics) feed client
+    │   ├── schedule.js               # Task groups, tasks CRUD & iCalendar (.ics) feed client
+    │   └── timeline.js               # Cross-notebook page timeline & calendar day-counts client
     ├── composables/
     │   ├── useCanvasScrollSync.js    # Bidirectional canvas/transcript scroll sync & zoom controls
     │   ├── useModalEscape.js         # Shared LIFO Escape dismissal stack for overlays & drawers
-    │   ├── useRouter.js              # Hash router (#/files, #/file/<id>?page=N, #/tasks, #/system, OAuth)
+    │   ├── useRouter.js              # Hash router (#/files, #/timeline, #/file/<id>?page=N, #/tasks, #/system, OAuth)
     │   ├── useFileSystem.js          # Directory listing & file mutation state
     │   ├── useProcessingStatus.js    # Background OCR/indexing status polling & digest-sync listener
     │   ├── useSchedule.js            # Task list filtering, device sort order & mutation actions
+    │   ├── useTimeline.js            # Timeline pagination, day grouping, filters & calendar month state
     │   └── useToast.js               # Non-blocking toast notification queue
     ├── utils/
     │   ├── clipboard.js              # Clipboard copy helper with plain-HTTP LAN fallback
@@ -36,7 +38,8 @@ supernote/server/static/
     │   ├── markdown.js               # CommonMark + GFM Markdown renderer sanitized via DOMPurify
     │   └── oauth.js                  # OAuth 2.1 /login-bridge return_to validation & display helpers
     └── components/
-        ├── FileBrowserPanel.js       # Directory browser, Grid/List switcher, multi-select & file modals
+        ├── FileBrowserPanel.js       # Directory browser, Folders/Timeline & Grid/List switchers, multi-select & file modals
+        ├── TimelinePanel.js          # Cross-notebook chronological page grid & Jump to Day mini-calendar
         ├── FileCard.js               # Grid, compact folder & list-row item card with lazy covers
         ├── FileViewer.js             # Split-pane document & .note canvas coordinator
         ├── viewer/
