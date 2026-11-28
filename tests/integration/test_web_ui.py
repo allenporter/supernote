@@ -988,6 +988,7 @@ async def test_web_ui_minimal_components_disabled(
         "schedule",
         "search",
         "summary",
+        "timeline",
         "transcript",
         "wiki",
     )
