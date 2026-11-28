@@ -323,19 +323,19 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
     try {
         setToken('ext-tok');
         globalThis.fetch = async (url) => {
-            if (url === '/api/extended/file/summary/list') {
+            if (url === '/api/extended/digests?fileId=20&limit=200') {
                 return new Response(
                     JSON.stringify({
-                        summaryDOList: [
-                            { id: 1, content: 'raw ocr', dataSource: 'OCR' },
-                            { id: 2, name: 'Group', isSummaryGroup: 'Y' },
+                        digests: [
+                            { id: '1', content: 'raw ocr', dataSource: 'OCR' },
                             {
-                                id: 3,
+                                id: '3',
                                 name: 'Weekly Digest',
                                 content: '## Highlights',
                                 dataSource: 'gemini-2.5-flash',
                             },
                         ],
+                        total: 2,
                     }),
                     { status: 200 },
                 );

@@ -117,27 +117,50 @@ export function normalizeDigestCategory(raw) {
 }
 
 /**
- * Normalize a raw `SummaryItem` leaf record into a `DigestItem`.
+ * Normalize an inline `DigestHandwritingVO` payload into a `DigestHandwriting` object.
+ * @param {unknown} raw
+ * @returns {DigestHandwriting | null}
+ */
+function normalizeDigestHandwriting(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const hw = /** @type {Record<string, unknown>} */ (raw);
+    const updateTime = Number(hw.updateTime);
+    return {
+        md5: nonEmptyStr(hw.md5),
+        transcript: nonEmptyStr(hw.transcript),
+        modelId: nonEmptyStr(hw.modelId),
+        updateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : null,
+    };
+}
+
+/**
+ * Normalize a raw `DigestVO` (from `GET /api/extended/digests`) or `SummaryItem`
+ * record into a `DigestItem`.
  * @param {Record<string, any>} raw
  * @returns {DigestItem}
  */
 export function normalizeDigestItem(raw) {
     const metadata = parseDigestMetadata(raw.metadata);
+    const handwriting = normalizeDigestHandwriting(raw.handwriting);
     const handwriteInnerName = nonEmptyStr(raw.handwriteInnerName);
     const commentHandwriteName = nonEmptyStr(raw.commentHandwriteName);
+    const tags = Array.isArray(raw.tags)
+        ? raw.tags.map((t) => String(t).trim()).filter(Boolean)
+        : parseDigestTags(raw.tags);
 
     return {
         id: String(raw.id ?? ''),
         uniqueIdentifier: String(raw.uniqueIdentifier ?? ''),
-        parentUniqueIdentifier: nonEmptyStr(raw.parentUniqueIdentifier),
+        parentUniqueIdentifier: nonEmptyStr(raw.categoryId ?? raw.parentUniqueIdentifier),
         fileId: toOptionalId(raw.fileId),
         content: typeof raw.content === 'string' ? raw.content : '',
-        commentStr: nonEmptyStr(raw.commentStr),
+        commentStr: nonEmptyStr(raw.comment ?? raw.commentStr),
         author: nonEmptyStr(raw.author) || nonEmptyStr(metadata?.author),
         sourcePath: normalizeSourcePath(raw.sourcePath),
         dataSource: nonEmptyStr(raw.dataSource),
-        tags: parseDigestTags(raw.tags),
-        hasHandwriting: Boolean(handwriteInnerName || commentHandwriteName),
+        tags,
+        hasHandwriting: Boolean(handwriting || handwriteInnerName || commentHandwriteName),
+        handwriting,
         handwriteInnerName,
         commentHandwriteName,
         creationTime: Number(raw.creationTime ?? raw.createTime ?? 0) || 0,
@@ -146,6 +169,27 @@ export function normalizeDigestItem(raw) {
         metadata,
     };
 }
+
+/**
+ * Format a Digest entry as Markdown for clipboard copy, including any typed
+ * comment and handwritten annotation transcript.
+ * @param {DigestItem} digest
+ * @returns {string}
+ */
+export function formatDigestMarkdown(digest) {
+    const parts = [];
+    const content = (digest.content || '').trim();
+    if (content) parts.push(content);
+    const comment = (digest.commentStr || '').trim();
+    if (comment) parts.push(`> ${comment.replace(/\r?\n/g, '\n> ')}`);
+    const transcript = (digest.handwriting?.transcript || '').trim();
+    if (transcript) {
+        parts.push(`**Handwritten annotation:**\n\n${transcript}`);
+    }
+    return parts.join('\n\n');
+}
+
+const DIGEST_PAGE_SIZE = 200;
 
 /**
  * Fetch all Digest categories (`SummaryGroup`) via POST /api/file/query/summary/group.
@@ -162,17 +206,35 @@ export async function fetchDigestCategories() {
 }
 
 /**
- * Fetch all leaf digests/summaries via POST /api/file/query/summary.
+ * Fetch all leaf Digests with inline handwriting OCR transcripts via GET /api/extended/digests.
  * @returns {Promise<DigestItem[]>}
  */
 export async function fetchDigests() {
-    const data = await apiRequest('/api/file/query/summary', {
-        body: { page: 1, size: 0 },
-        errorPrefix: 'Failed to fetch digests',
-    });
-    /** @type {Array<Record<string, any>>} */
-    const rawList = Array.isArray(data?.summaryDOList) ? data.summaryDOList : [];
-    return rawList.map(normalizeDigestItem);
+    /** @type {DigestItem[]} */
+    const items = [];
+    let offset = 0;
+    let total = Number.POSITIVE_INFINITY;
+
+    while (offset < total) {
+        const data = await apiRequest(
+            `/api/extended/digests?limit=${DIGEST_PAGE_SIZE}&offset=${offset}`,
+            {
+                method: 'GET',
+                errorPrefix: 'Failed to fetch digests',
+            },
+        );
+        /** @type {Array<Record<string, any>>} */
+        const batch = Array.isArray(data?.digests) ? data.digests : [];
+        for (const raw of batch) {
+            items.push(normalizeDigestItem(raw));
+        }
+        const reportedTotal = Number(data?.total);
+        total = Number.isFinite(reportedTotal) ? reportedTotal : items.length;
+        if (batch.length === 0) break;
+        offset += batch.length;
+    }
+
+    return items;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
     deleteDigestCategory,
     fetchDigestCategories,
     fetchDigests,
+    formatDigestMarkdown,
     generateDigestUuid,
     normalizeDigestCategory,
     normalizeDigestItem,
@@ -119,15 +120,65 @@ test('digests.js: normalizeDigestCategory and normalizeDigestItem unwrap fields 
         dataSource: null,
         tags: ['reading', 'classics'],
         hasHandwriting: true,
+        handwriting: null,
         handwriteInnerName: 'hw-key',
         commentHandwriteName: null,
         creationTime: 1700000000000,
         lastModifiedTime: 1700000005000,
         metadata: { author: 'Grace Hopper' },
     });
+
+    const digestVo = normalizeDigestItem({
+        id: '750000000000000124',
+        uniqueIdentifier: 'e'.repeat(32),
+        categoryId: 'f'.repeat(32),
+        fileId: '750000000000000888',
+        content: 'Latency matters',
+        comment: 'Measure p99',
+        author: 'Jeff Dean',
+        sourcePath: 'Document/Systems.pdf',
+        tags: ['perf', 'systems'],
+        handwriting: {
+            md5: 'abc123',
+            transcript: 'Check tail latency under load',
+            modelId: 'gemini-2.5-flash',
+            updateTime: 1700000010000,
+        },
+        creationTime: 1700000000000,
+        updateTime: 1700000009000,
+    });
+    assert.deepEqual(digestVo, {
+        id: '750000000000000124',
+        uniqueIdentifier: 'e'.repeat(32),
+        parentUniqueIdentifier: 'f'.repeat(32),
+        fileId: '750000000000000888',
+        content: 'Latency matters',
+        commentStr: 'Measure p99',
+        author: 'Jeff Dean',
+        sourcePath: 'Document/Systems.pdf',
+        dataSource: null,
+        tags: ['perf', 'systems'],
+        hasHandwriting: true,
+        handwriting: {
+            md5: 'abc123',
+            transcript: 'Check tail latency under load',
+            modelId: 'gemini-2.5-flash',
+            updateTime: 1700000010000,
+        },
+        handwriteInnerName: null,
+        commentHandwriteName: null,
+        creationTime: 1700000000000,
+        lastModifiedTime: 1700000009000,
+        metadata: null,
+    });
+
+    assert.equal(
+        formatDigestMarkdown(digestVo),
+        'Latency matters\n\n> Measure p99\n\n**Handwritten annotation:**\n\nCheck tail latency under load',
+    );
 });
 
-test('digests.js: fetchDigestCategories and fetchDigests query unpaginated summary lists', async () => {
+test('digests.js: fetchDigestCategories and fetchDigests query categories and paginated /api/extended/digests', async () => {
     const origFetch = globalThis.fetch;
     /** @type {Array<{ url: string, method: string, body: any }>} */
     const calls = [];
@@ -155,19 +206,45 @@ test('digests.js: fetchDigestCategories and fetchDigests query unpaginated summa
                     { status: 200 },
                 );
             }
+            if (url === '/api/extended/digests?limit=200&offset=0') {
+                return new Response(
+                    JSON.stringify({
+                        digests: [
+                            {
+                                id: '750000000000000010',
+                                uniqueIdentifier: 'd'.repeat(32),
+                                categoryId: 'c'.repeat(32),
+                                fileId: '750000000000000999',
+                                content: '# Daily Notes',
+                                sourcePath: 'Note/Daily.note',
+                                dataSource: 'GEMINI',
+                            },
+                        ],
+                        total: 2,
+                        limit: 200,
+                        offset: 0,
+                    }),
+                    { status: 200 },
+                );
+            }
             return new Response(
                 JSON.stringify({
-                    summaryDOList: [
+                    digests: [
                         {
-                            id: '750000000000000010',
-                            uniqueIdentifier: 'd'.repeat(32),
-                            parentUniqueIdentifier: 'c'.repeat(32),
-                            fileId: '750000000000000999',
-                            content: '# Daily Notes',
-                            sourcePath: 'Note/Daily.note',
-                            dataSource: 'GEMINI',
+                            id: '750000000000000011',
+                            uniqueIdentifier: 'e'.repeat(32),
+                            content: 'Second page digest',
+                            handwriting: {
+                                md5: 'hw-md5',
+                                transcript: 'Handwritten note',
+                                modelId: 'gemini-2.5-flash',
+                                updateTime: 3000,
+                            },
                         },
                     ],
+                    total: 2,
+                    limit: 200,
+                    offset: 1,
                 }),
                 { status: 200 },
             );
@@ -177,17 +254,23 @@ test('digests.js: fetchDigestCategories and fetchDigests query unpaginated summa
         const digests = await fetchDigests();
         assert.equal(categories.length, 1);
         assert.equal(categories[0].name, 'AI Summaries');
-        assert.equal(digests.length, 1);
+        assert.equal(digests.length, 2);
         assert.equal(digests[0].fileId, '750000000000000999');
+        assert.equal(digests[1].handwriting?.transcript, 'Handwritten note');
         assert.deepEqual(calls[0], {
             url: '/api/file/query/summary/group',
             method: 'POST',
             body: { page: 1, size: 0 },
         });
         assert.deepEqual(calls[1], {
-            url: '/api/file/query/summary',
-            method: 'POST',
-            body: { page: 1, size: 0 },
+            url: '/api/extended/digests?limit=200&offset=0',
+            method: 'GET',
+            body: null,
+        });
+        assert.deepEqual(calls[2], {
+            url: '/api/extended/digests?limit=200&offset=1',
+            method: 'GET',
+            body: null,
         });
     } finally {
         await logout({ reload: false });

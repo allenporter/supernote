@@ -418,17 +418,17 @@ export async function fetchTranscript(fileId) {
  * @returns {Promise<NoteSummary[]>}
  */
 export async function fetchSummaries(fileId) {
-    const data = await apiRequest('/api/extended/file/summary/list', {
-        // Extended endpoint expects { fileId } rather than official { id }
-        body: { fileId: String(fileId) },
-        errorPrefix: 'Summary fetch failed',
-    });
+    const data = await apiRequest(
+        `/api/extended/digests?fileId=${encodeURIComponent(String(fileId))}&limit=200`,
+        {
+            method: 'GET',
+            errorPrefix: 'Summary fetch failed',
+        },
+    );
     /** @type {Array<Record<string, any>>} */
-    const rawList = Array.isArray(data?.summaryDOList) ? data.summaryDOList : [];
+    const rawList = Array.isArray(data?.digests) ? data.digests : [];
     return rawList
-        .filter(
-            (s) => s.isSummaryGroup !== 'Y' && String(s.dataSource || '').toUpperCase() !== 'OCR',
-        )
+        .filter((s) => String(s.dataSource || '').toUpperCase() !== 'OCR')
         .map((s, idx) => ({
             id: String(s.id ?? s.uniqueIdentifier ?? idx),
             name: s.name || null,

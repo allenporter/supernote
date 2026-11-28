@@ -238,6 +238,13 @@ interface DigestCategory {
     lastModifiedTime: number;
 }
 
+interface DigestHandwriting {
+    md5: string | null;
+    transcript: string | null;
+    modelId: string | null;
+    updateTime: number | null;
+}
+
 interface DigestItem {
     id: string;
     uniqueIdentifier: string;
@@ -250,6 +257,7 @@ interface DigestItem {
     dataSource: string | null;
     tags: string[];
     hasHandwriting: boolean;
+    handwriting: DigestHandwriting | null;
     handwriteInnerName: string | null;
     commentHandwriteName: string | null;
     creationTime: number;

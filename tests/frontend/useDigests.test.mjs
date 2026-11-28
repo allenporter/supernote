@@ -20,39 +20,45 @@ function makeSeedResponses() {
             {
                 id: '10',
                 uniqueIdentifier: 'd-ai',
-                parentUniqueIdentifier: 'cat-ai',
+                categoryId: 'cat-ai',
                 fileId: '100',
                 content: 'Weekly architecture synthesis',
                 sourcePath: 'Note/Architecture.note',
-                lastModifiedTime: 3000,
+                updateTime: 3000,
             },
             {
                 id: '11',
                 uniqueIdentifier: 'd-book',
-                parentUniqueIdentifier: 'cat-books',
+                categoryId: 'cat-books',
                 fileId: null,
                 content: 'Distributed systems consensus',
-                commentStr: 'Review Paxos section',
-                metadata: JSON.stringify({ author: 'Leslie Lamport' }),
+                comment: 'Review Paxos section',
+                author: 'Leslie Lamport',
                 sourcePath: 'Document/Papers/Consensus.pdf',
-                lastModifiedTime: 5000,
+                handwriting: {
+                    md5: 'hw-1',
+                    transcript: 'Compare Raft leader election',
+                    modelId: 'gemini-2.5-flash',
+                    updateTime: 5100,
+                },
+                updateTime: 5000,
             },
             {
                 id: '12',
                 uniqueIdentifier: 'd-uncat',
-                parentUniqueIdentifier: '',
+                categoryId: '',
                 fileId: null,
                 content: 'Standalone reading quote',
                 sourcePath: 'Document/Papers/Consensus.pdf',
-                lastModifiedTime: 4000,
+                updateTime: 4000,
             },
             {
                 id: '13',
                 uniqueIdentifier: 'd-orphan',
-                parentUniqueIdentifier: 'deleted-cat-uuid',
+                categoryId: 'deleted-cat-uuid',
                 fileId: null,
                 content: 'Orphaned digest falls into uncategorized',
-                lastModifiedTime: 2000,
+                updateTime: 2000,
             },
         ],
     };
@@ -69,14 +75,16 @@ test('useDigests.js: filters by category, orphaned-uncategorized, source, and se
     try {
         setToken('digests-filter-tok');
         const seed = makeSeedResponses();
-        globalThis.fetch = async (url) =>
-            new Response(
-                JSON.stringify({
-                    summaryDOList:
-                        url === '/api/file/query/summary/group' ? seed.groups : seed.items,
-                }),
-                { status: 200 },
-            );
+        globalThis.fetch = async (url) => {
+            if (url === '/api/file/query/summary/group') {
+                return new Response(JSON.stringify({ summaryDOList: seed.groups }), {
+                    status: 200,
+                });
+            }
+            return new Response(JSON.stringify({ digests: seed.items, total: seed.items.length }), {
+                status: 200,
+            });
+        };
 
         const state = mounted.result;
         await state.loadDigests();
@@ -115,6 +123,12 @@ test('useDigests.js: filters by category, orphaned-uncategorized, source, and se
             state.filteredDigests.value.map((d) => d.id),
             ['11'],
         );
+
+        state.searchQuery.value = 'raft leader';
+        assert.deepEqual(
+            state.filteredDigests.value.map((d) => d.id),
+            ['11'],
+        );
     } finally {
         mounted.unmount();
         clearToasts();
@@ -137,7 +151,9 @@ test('useDigests.js: clears stale selectedSourcePath and deleted selectedCategor
                     : seed.groups.filter((g) => g.uniqueIdentifier !== 'cat-books');
                 return new Response(JSON.stringify({ summaryDOList: groups }), { status: 200 });
             }
-            return new Response(JSON.stringify({ summaryDOList: seed.items }), { status: 200 });
+            return new Response(JSON.stringify({ digests: seed.items, total: seed.items.length }), {
+                status: 200,
+            });
         };
 
         const state = mounted.result;
@@ -259,7 +275,8 @@ test('useDigests.js: loadDigests ignores stale responses and captures error stat
         resolvers[3](
             new Response(
                 JSON.stringify({
-                    summaryDOList: [{ id: '20', uniqueIdentifier: 'fresh', content: 'Fresh' }],
+                    digests: [{ id: '20', uniqueIdentifier: 'fresh', content: 'Fresh' }],
+                    total: 1,
                 }),
                 { status: 200 },
             ),
@@ -270,7 +287,8 @@ test('useDigests.js: loadDigests ignores stale responses and captures error stat
         resolvers[1](
             new Response(
                 JSON.stringify({
-                    summaryDOList: [{ id: '10', uniqueIdentifier: 'stale', content: 'Stale' }],
+                    digests: [{ id: '10', uniqueIdentifier: 'stale', content: 'Stale' }],
+                    total: 1,
                 }),
                 { status: 200 },
             ),

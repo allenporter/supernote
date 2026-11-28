@@ -25,6 +25,7 @@ from supernote.models.summary import (
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.summary import SummaryTranscriptDO
 from supernote.server.keys import (
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
@@ -506,7 +507,7 @@ async def test_web_ui_digests_browser_view(
             source_path="Note/Digest_Source.note",
         ),
     )
-    await summary_service.add_summary(
+    hw_digest = await summary_service.add_summary(
         user_email,
         AddSummaryDTO(
             file_id=None,
@@ -517,9 +518,24 @@ async def test_web_ui_digests_browser_view(
             metadata='{"author": "Edsger Dijkstra"}',
             source_path="Document/Papers/Reliability.pdf",
             handwrite_inner_name="hw-blob-001",
+            handwrite_md5="hw-md5-001",
             tags="classic, engineering",
         ),
     )
+    assert hw_digest.id is not None
+    user_id = await client.app[USER_SERVICE_KEY].get_user_id(user_email)
+    assert user_id is not None
+    async with client.app[SESSION_MANAGER_KEY].session() as session:
+        session.add(
+            SummaryTranscriptDO(
+                user_id=user_id,
+                summary_id=hw_digest.id,
+                handwrite_md5="hw-md5-001",
+                text_content="Keep state machines minimal and deterministic",
+                model_id="gemini-2.5-flash",
+            )
+        )
+        await session.commit()
 
     base_url = str(client.make_url("")).rstrip("/")
     token = auth_headers["x-access-token"]
@@ -555,7 +571,10 @@ async def test_web_ui_digests_browser_view(
             )
             await page.get_by_text("Edsger Dijkstra").wait_for(state="visible")
             await page.get_by_text("Apply this to sync state").wait_for(state="visible")
-            await page.get_by_text("Handwritten").wait_for(state="visible")
+            await page.get_by_text("Handwritten", exact=True).wait_for(state="visible")
+            await page.get_by_text(
+                "Keep state machines minimal and deterministic"
+            ).wait_for(state="visible")
 
             await page.get_by_role(
                 "button", name=re.compile(r"^Uncategorized\b")

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import time
 import uuid
@@ -108,6 +109,23 @@ def _to_summary_item(do: SummaryDO) -> SummaryItem:
         update_time=do.update_time,
         author=do.author,
     )
+
+
+def _resolve_digest_author(summary: SummaryItem) -> str | None:
+    """Return top-level author, falling back to JSON metadata['author']."""
+    if summary.author and summary.author.strip():
+        return summary.author.strip()
+    if not summary.metadata or not summary.metadata.strip():
+        return None
+    try:
+        parsed = json.loads(summary.metadata)
+    except ValueError:
+        return None
+    if isinstance(parsed, dict):
+        meta_author = parsed.get("author")
+        if isinstance(meta_author, str) and meta_author.strip():
+            return meta_author.strip()
+    return None
 
 
 class SummaryService:
@@ -855,14 +873,14 @@ class SummaryService:
                     file_id=summary.file_id,
                     name=summary.name,
                     source_path=summary.source_path,
-                    author=summary.author,
+                    author=_resolve_digest_author(summary),
                     tags=tags,
                     data_source=summary.data_source,
                     content=summary.content,
                     comment=summary.comment_str,
                     handwriting=handwriting,
                     creation_time=summary.creation_time,
-                    update_time=summary.update_time,
+                    update_time=summary.last_modified_time or summary.update_time,
                 )
             )
 

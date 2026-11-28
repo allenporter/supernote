@@ -1106,3 +1106,24 @@ async def test_extended_list_digests_invalid_file_id_returns_400(
         headers=auth_headers,
     )
     assert resp.status == 400
+
+
+async def test_extended_list_digests_resolves_author_from_metadata_json(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+) -> None:
+    resp = await client.post(
+        "/api/file/add/summary",
+        headers=auth_headers,
+        json={
+            "uniqueIdentifier": "meta-author-digest",
+            "content": "Simplicity is prerequisite for reliability.",
+            "metadata": '{"author": "Edsger Dijkstra"}',
+        },
+    )
+    assert resp.status == 200
+
+    digests = await extended_client.list_digests()
+    assert digests.total == 1
+    assert digests.digests[0].author == "Edsger Dijkstra"
