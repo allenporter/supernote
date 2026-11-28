@@ -24,17 +24,21 @@ from supernote.server.utils.unique_id import next_id
 logger = logging.getLogger(__name__)
 
 
-def _resolve_entity_type(
-    task_type: str, entity_type: TaskEntityType | str | None
-) -> str:
-    """Resolve explicit `entity_type` or derive it from `task_type`."""
-    if entity_type is not None:
-        return (
-            entity_type.value
-            if isinstance(entity_type, TaskEntityType)
-            else entity_type
+def _resolve_entity_type(task_type: str, entity_type: TaskEntityType | None) -> str:
+    """Resolve explicit `entity_type` or derive it from `task_type`, rejecting contradictions."""
+    try:
+        implied = TaskType(task_type).entity_type
+    except ValueError:
+        implied = None
+
+    if entity_type is None:
+        return (implied or TaskEntityType.FILE).value
+    if implied is not None and entity_type != implied:
+        raise ValueError(
+            f"Task type {task_type!r} implies entity_type={implied.value!r}, "
+            f"got {entity_type.value!r}"
         )
-    return TaskType.entity_type_for(task_type).value
+    return entity_type.value
 
 
 async def get_task(
@@ -44,7 +48,7 @@ async def get_task(
     task_type: str,
     key: str,
     *,
-    entity_type: TaskEntityType | str | None = None,
+    entity_type: TaskEntityType | None = None,
 ) -> SystemTaskDO | None:
     """Retrieve a SystemTaskDO by user_id, entity_type, entity_id, task_type, and key."""
     resolved_entity_type = _resolve_entity_type(task_type, entity_type)
@@ -75,7 +79,7 @@ async def update_task_status(
     error: str | None = None,
     data: str | None = None,
     *,
-    entity_type: TaskEntityType | str | None = None,
+    entity_type: TaskEntityType | None = None,
 ) -> None:
     """Create or update a SystemTaskDO status atomically with retries for lock conflicts."""
     resolved_entity_type = _resolve_entity_type(task_type, entity_type)

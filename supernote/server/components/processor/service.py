@@ -977,6 +977,8 @@ class ProcessorService:
         status: str | None = None,
         file_id: int | None = None,
         task_type: str | None = None,
+        *,
+        entity_type: TaskEntityType | None = None,
     ) -> list[SystemTaskDO]:
         """List recent system tasks with optional filtering, prioritizing failed and active tasks."""
         status_priority = case(
@@ -989,6 +991,8 @@ class ProcessorService:
             stmt = select(SystemTaskDO)
             if user_id is not None:
                 stmt = stmt.where(SystemTaskDO.user_id == user_id)
+            if entity_type is not None:
+                stmt = stmt.where(SystemTaskDO.entity_type == entity_type.value)
             if status:
                 stmt = stmt.where(SystemTaskDO.status == status.upper())
             if file_id is not None:

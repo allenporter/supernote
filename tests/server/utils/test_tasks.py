@@ -1,5 +1,7 @@
 """Tests for system task persistence utilities."""
 
+import pytest
+
 from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.utils.tasks import get_task, update_task_status
@@ -161,3 +163,29 @@ async def test_task_status_isolates_entity_types_with_same_id(
     assert summary_task.entity_type == TaskEntityType.SUMMARY.value
     assert summary_task.status == ProcessingStatus.FAILED
     assert summary_task.last_error == "summary-err"
+
+
+async def test_task_status_rejects_contradictory_entity_type(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify passing an entity_type that contradicts a known TaskType raises ValueError."""
+    with pytest.raises(ValueError, match="implies entity_type='file'"):
+        await get_task(
+            session_manager,
+            42,
+            100,
+            TaskType.OCR_EXTRACTION,
+            "page_p1",
+            entity_type=TaskEntityType.SUMMARY,
+        )
+
+    with pytest.raises(ValueError, match="implies entity_type='file'"):
+        await update_task_status(
+            session_manager,
+            42,
+            100,
+            TaskType.OCR_EXTRACTION,
+            "page_p1",
+            ProcessingStatus.PENDING,
+            entity_type=TaskEntityType.SUMMARY,
+        )

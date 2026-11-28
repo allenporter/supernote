@@ -9,6 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import MetaData, create_engine, event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from supernote.server.config import ServerConfig
 from supernote.server.db.base import Base
@@ -1428,6 +1429,9 @@ def test_system_task_entity_type_migration_upgrade_and_downgrade(
     assert "entity_id" in tbl.c
     assert "entity_type" in tbl.c
     assert not tbl.c["entity_type"].nullable
+    index_names = {idx.name for idx in tbl.indexes}
+    assert "ix_f_system_task_entity_type" in index_names
+    assert "ix_f_system_task_entity_id" in index_names
 
     with engine.begin() as conn:
         row = conn.execute(
@@ -1442,6 +1446,16 @@ def test_system_task_entity_type_migration_upgrade_and_downgrade(
                 "VALUES (1, 1002, 'summary', 55, 'OCR_EXTRACTION', 'page_p1', 'PENDING', 0, 200, 200)"
             )
         )
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO f_system_task "
+                    "(user_id, id, entity_type, entity_id, task_type, key, status, retry_count, create_time, update_time) "
+                    "VALUES (1, 1003, 'summary', 55, 'OCR_EXTRACTION', 'page_p1', 'PENDING', 0, 300, 300)"
+                )
+            )
 
     command.downgrade(alembic_config, "e1f2a3b4c5d6")
     reflected_down = MetaData()

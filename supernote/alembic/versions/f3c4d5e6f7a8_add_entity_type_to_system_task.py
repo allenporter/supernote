@@ -45,6 +45,8 @@ def upgrade() -> None:
             )
         )
 
+    # Recreate uq_system_task in a second batch block because SQLite batch_alter_table
+    # cannot reference a column renamed within the same block when building constraints.
     with op.batch_alter_table(
         "f_system_task", naming_convention=_NAMING_CONVENTION
     ) as batch_op:
