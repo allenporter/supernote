@@ -8,7 +8,7 @@ and `supernote.server.components.search.service.SearchService`.
 
 import re
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,7 +97,7 @@ def infer_page_date(page_id: str) -> datetime | None:
     if not page_id or not page_id.startswith("P"):
         return None
 
-    # Try to extract YYYYYMMDD
+    # Try to extract YYYYMMDD
     match = re.match(r"P(\d{8})", page_id)
     if not match:
         return None
@@ -105,6 +105,24 @@ def infer_page_date(page_id: str) -> datetime | None:
     date_str = match.group(1)
     try:
         return datetime.strptime(date_str, "%Y%m%d")
+    except ValueError:
+        return None
+
+
+def infer_page_created_ms(page_id: str) -> int | None:
+    """Infer a UTC epoch millisecond timestamp from a Supernote PAGEID string.
+
+    Parses ``P<YYYYMMDDHHMMSS>...`` down to the second, returning ``None`` when
+    ``page_id`` does not begin with a valid timestamp.
+    """
+    if not page_id:
+        return None
+    match = re.match(r"P(\d{14})", page_id)
+    if not match:
+        return None
+    try:
+        dt = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+        return int(dt.timestamp() * 1000)
     except ValueError:
         return None
 
