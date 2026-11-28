@@ -1,9 +1,21 @@
-"""MCP platform setup exposing VFS browsing and file upload tools.
+"""MCP tools for browsing cloud folders and uploading documents to a Supernote device.
 
-Registers `list_files`, `upload_document`, `prepare_upload`, and `commit_upload`
-onto `McpRegistrar` via `async_setup_mcp`. Reuses `FileService.list_folder`,
-`FileService.check_upload_apply_web`, `BlobStorage.put`, signed
-`POST /api/oss/upload`, and `FileService.upload_finish_web`.
+AI clients use these tools to inspect folders like `/INBOX` or `/DOCUMENT` and
+deliver reading material (Markdown, text, PDFs, EPUBs) directly into the user's
+cloud storage so connected tablets sync the new files automatically.
+
+Two upload flows are supported to fit different client environments:
+
+- Inline upload (`upload_document`): accepts UTF-8 text or small base64 payloads
+  (up to 10 MiB) directly over MCP, designed for MCP-only clients without shell
+  or outbound HTTP access.
+- Staged upload (`prepare_upload` + `commit_upload`): returns a short-lived
+  signed HTTP upload URL (`/api/oss/upload`) bound to a single-user ticket so
+  local agents can stream large binary files like PDFs out-of-band without
+  passing file bytes through tool-call arguments.
+
+Both flows land files through `FileService.upload_finish_web`, enforcing user
+quotas and publishing domain events for real-time device sync.
 """
 
 from __future__ import annotations
