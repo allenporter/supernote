@@ -1106,3 +1106,55 @@ async def test_extended_list_digests_invalid_file_id_returns_400(
         headers=auth_headers,
     )
     assert resp.status == 400
+
+
+async def test_extended_list_digests_resolves_author_and_orders_by_last_modified(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+) -> None:
+    for payload in [
+        {
+            "uniqueIdentifier": "meta-author-digest",
+            "content": "Metadata author fallback",
+            "metadata": '{"author": "Edsger Dijkstra"}',
+            "lastModifiedTime": 1700000002000,
+        },
+        {
+            "uniqueIdentifier": "top-author-digest",
+            "content": "Top-level author wins",
+            "author": "Grace Hopper",
+            "metadata": '{"author": "Ignored Author"}',
+            "lastModifiedTime": 1700000003000,
+        },
+        {
+            "uniqueIdentifier": "malformed-meta-digest",
+            "content": "Malformed metadata ignored",
+            "metadata": "not-json",
+            "lastModifiedTime": 1700000001000,
+        },
+    ]:
+        resp = await client.post(
+            "/api/file/add/summary",
+            headers=auth_headers,
+            json=payload,
+        )
+        assert resp.status == 200
+
+    digests = await extended_client.list_digests()
+    assert digests.total == 3
+    assert [d.unique_identifier for d in digests.digests] == [
+        "top-author-digest",
+        "meta-author-digest",
+        "malformed-meta-digest",
+    ]
+    assert [d.author for d in digests.digests] == [
+        "Grace Hopper",
+        "Edsger Dijkstra",
+        None,
+    ]
+    assert [d.update_time for d in digests.digests] == [
+        1700000003000,
+        1700000002000,
+        1700000001000,
+    ]

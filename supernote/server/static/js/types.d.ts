@@ -238,11 +238,19 @@ interface DigestCategory {
     lastModifiedTime: number;
 }
 
+interface DigestHandwriting {
+    md5: string | null;
+    transcript: string | null;
+    modelId: string | null;
+    updateTime: number | null;
+}
+
 interface DigestItem {
     id: string;
     uniqueIdentifier: string;
     parentUniqueIdentifier: string | null;
     fileId: string | null;
+    name: string | null;
     content: string;
     commentStr: string | null;
     author: string | null;
@@ -250,11 +258,9 @@ interface DigestItem {
     dataSource: string | null;
     tags: string[];
     hasHandwriting: boolean;
-    handwriteInnerName: string | null;
-    commentHandwriteName: string | null;
+    handwriting: DigestHandwriting | null;
     creationTime: number;
     lastModifiedTime: number;
-    metadata: Record<string, unknown> | null;
 }
 
 interface DigestInput {

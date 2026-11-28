@@ -1,5 +1,5 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { resolveSourceFileId } from '../api/digests.js';
+import { formatDigestMarkdown, resolveSourceFileId } from '../api/digests.js';
 import { formatSourceLabel, useDigests } from '../composables/useDigests.js';
 import { useModalEscape } from '../composables/useModalEscape.js';
 import { showToast } from '../composables/useToast.js';
@@ -269,7 +269,7 @@ export default {
          * @param {DigestItem} digest
          */
         async function handleCopyDigest(digest) {
-            const copied = await copyTextToClipboard(digest.content || '');
+            const copied = await copyTextToClipboard(formatDigestMarkdown(digest));
             showToast(
                 copied ? 'Copied digest to clipboard' : 'Nothing to copy',
                 copied ? 'success' : 'info',

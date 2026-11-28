@@ -24,6 +24,11 @@ export default {
      */
     setup(props) {
         const renderedContent = computed(() => renderMarkdown(props.digest.content || ''));
+        const renderedHandwritingTranscript = computed(() =>
+            props.digest.handwriting?.transcript
+                ? renderMarkdown(props.digest.handwriting.transcript)
+                : '',
+        );
         const displayDate = computed(() =>
             formatShortDate(props.digest.lastModifiedTime || props.digest.creationTime),
         );
@@ -37,6 +42,7 @@ export default {
 
         return {
             renderedContent,
+            renderedHandwritingTranscript,
             displayDate,
             isAiSummary,
             hasSourceLink,
@@ -60,7 +66,7 @@ export default {
                     data-digest-handwriting-badge
                     title="Contains handwritten annotation ink"
                     class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80">
-                    <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
                     </svg>
                     Handwritten
@@ -115,11 +121,30 @@ export default {
             v-html="renderedContent"></div>
         <p v-else class="text-sm italic text-stone-500">No digest content.</p>
 
-        <!-- Optional Annotation Comment -->
+        <!-- Optional Typed Comment -->
         <div v-if="digest.commentStr"
-            class="border-l-2 border-amber-400 bg-amber-50/50 rounded-r-xl px-3.5 py-2.5 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
+            class="border-l-2 border-stone-300 bg-stone-50/80 rounded-r-xl px-3.5 py-2.5 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
             {{ digest.commentStr }}
         </div>
+
+        <!-- Optional Handwritten Annotation Transcript -->
+        <div v-if="renderedHandwritingTranscript"
+            data-digest-handwriting-transcript
+            class="border-l-2 border-amber-400 bg-amber-50/60 rounded-r-xl px-3.5 py-2.5 space-y-1">
+            <div class="flex items-center gap-1.5 text-[11px] font-medium text-amber-900/90">
+                <svg aria-hidden="true" class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                </svg>
+                <span>Handwritten annotation</span>
+            </div>
+            <div class="markdown-prose text-xs text-slate-700 leading-relaxed break-words"
+                v-html="renderedHandwritingTranscript"></div>
+        </div>
+        <p v-else-if="digest.hasHandwriting"
+            data-digest-handwriting-pending
+            class="text-[11px] italic text-stone-500">
+            Handwritten annotation attached — transcript pending.
+        </p>
 
         <!-- Footer Provenance -->
         <div v-if="digest.author || digest.sourcePath || (digest.tags && digest.tags.length > 0)"

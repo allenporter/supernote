@@ -158,6 +158,7 @@ export function useDigests() {
             list = list.filter((item) => {
                 if (item.content.toLowerCase().includes(q)) return true;
                 if (item.commentStr?.toLowerCase().includes(q)) return true;
+                if (item.handwriting?.transcript?.toLowerCase().includes(q)) return true;
                 if (item.author?.toLowerCase().includes(q)) return true;
                 if (item.sourcePath?.toLowerCase().includes(q)) return true;
                 return item.tags.some((t) => t.toLowerCase().includes(q));

@@ -1,11 +1,11 @@
 /**
- * Digest & Summary API Client Functions (`/api/file/<op>/summary`).
+ * Digest & Category API Client Functions (`GET /api/extended/digests` and `/api/file/<op>/summary`).
  *
- * Unwraps Supernote `SummaryItem` wire envelopes into normalized `DigestCategory`
- * and `DigestItem` models aligned with Partner App / Digest 2.0 conventions:
+ * Unwraps `DigestVO` (from `GET /api/extended/digests`) and `SummaryItem` category
+ * envelopes into normalized `DigestCategory` and `DigestItem` models aligned with
+ * Partner App / Digest 2.0 conventions:
  * - Categories map to `SummaryGroup` (`isSummaryGroup === 'Y'`).
- * - Leaf digests link to categories via `parentUniqueIdentifier` (`""` or `null` = Uncategorized).
- * - `author` falls back to `parsedMetadata.author` when top-level `author` is null.
+ * - Leaf digests link to categories via `categoryId` (`""` or `null` = Uncategorized).
  * - `sourcePath` is normalized without a leading `/` for display and grouping.
  */
 import { apiRequest } from './http.js';
@@ -72,34 +72,6 @@ export function normalizeSourcePath(rawPath) {
 }
 
 /**
- * Defensively parse a JSON-encoded `metadata` string on a `SummaryItem`.
- * @param {unknown} raw
- * @returns {Record<string, unknown> | null}
- */
-export function parseDigestMetadata(raw) {
-    if (typeof raw !== 'string' || !raw.trim()) return null;
-    try {
-        const parsed = JSON.parse(raw);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Parse legacy comma-separated summary tags into trimmed non-empty labels.
- * @param {unknown} raw
- * @returns {string[]}
- */
-export function parseDigestTags(raw) {
-    if (typeof raw !== 'string' || !raw.trim()) return [];
-    return raw
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
-}
-
-/**
  * Normalize a raw `SummaryItem` group record into a `DigestCategory`.
  * @param {Record<string, any>} raw
  * @returns {DigestCategory}
@@ -117,35 +89,72 @@ export function normalizeDigestCategory(raw) {
 }
 
 /**
- * Normalize a raw `SummaryItem` leaf record into a `DigestItem`.
+ * Normalize an inline `DigestHandwritingVO` payload into a `DigestHandwriting` object.
+ * @param {unknown} raw
+ * @returns {DigestHandwriting | null}
+ */
+function normalizeDigestHandwriting(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const hw = /** @type {Record<string, unknown>} */ (raw);
+    const updateTime = Number(hw.updateTime);
+    return {
+        md5: nonEmptyStr(hw.md5),
+        transcript: nonEmptyStr(hw.transcript),
+        modelId: nonEmptyStr(hw.modelId),
+        updateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : null,
+    };
+}
+
+/**
+ * Normalize a raw `DigestVO` (from `GET /api/extended/digests`) into a `DigestItem`.
  * @param {Record<string, any>} raw
  * @returns {DigestItem}
  */
 export function normalizeDigestItem(raw) {
-    const metadata = parseDigestMetadata(raw.metadata);
-    const handwriteInnerName = nonEmptyStr(raw.handwriteInnerName);
-    const commentHandwriteName = nonEmptyStr(raw.commentHandwriteName);
+    const handwriting = normalizeDigestHandwriting(raw.handwriting);
+    const tags = Array.isArray(raw.tags)
+        ? raw.tags.map((t) => String(t).trim()).filter(Boolean)
+        : [];
 
     return {
         id: String(raw.id ?? ''),
         uniqueIdentifier: String(raw.uniqueIdentifier ?? ''),
-        parentUniqueIdentifier: nonEmptyStr(raw.parentUniqueIdentifier),
+        parentUniqueIdentifier: nonEmptyStr(raw.categoryId),
         fileId: toOptionalId(raw.fileId),
+        name: nonEmptyStr(raw.name),
         content: typeof raw.content === 'string' ? raw.content : '',
-        commentStr: nonEmptyStr(raw.commentStr),
-        author: nonEmptyStr(raw.author) || nonEmptyStr(metadata?.author),
+        commentStr: nonEmptyStr(raw.comment),
+        author: nonEmptyStr(raw.author),
         sourcePath: normalizeSourcePath(raw.sourcePath),
         dataSource: nonEmptyStr(raw.dataSource),
-        tags: parseDigestTags(raw.tags),
-        hasHandwriting: Boolean(handwriteInnerName || commentHandwriteName),
-        handwriteInnerName,
-        commentHandwriteName,
-        creationTime: Number(raw.creationTime ?? raw.createTime ?? 0) || 0,
-        lastModifiedTime:
-            Number(raw.lastModifiedTime ?? raw.updateTime ?? raw.createTime ?? 0) || 0,
-        metadata,
+        tags,
+        hasHandwriting: Boolean(handwriting),
+        handwriting,
+        creationTime: Number(raw.creationTime ?? 0) || 0,
+        lastModifiedTime: Number(raw.updateTime ?? raw.creationTime ?? 0) || 0,
     };
 }
+
+/**
+ * Format a Digest entry as Markdown for clipboard copy, including any typed
+ * comment and handwritten annotation transcript.
+ * @param {DigestItem} digest
+ * @returns {string}
+ */
+export function formatDigestMarkdown(digest) {
+    const parts = [];
+    const content = (digest.content || '').trim();
+    if (content) parts.push(content);
+    const comment = (digest.commentStr || '').trim();
+    if (comment) parts.push(`> ${comment.replace(/\r?\n/g, '\n> ')}`);
+    const transcript = (digest.handwriting?.transcript || '').trim();
+    if (transcript) {
+        parts.push(`**Handwritten annotation:**\n\n${transcript}`);
+    }
+    return parts.join('\n\n');
+}
+
+const DIGEST_PAGE_SIZE = 200;
 
 /**
  * Fetch all Digest categories (`SummaryGroup`) via POST /api/file/query/summary/group.
@@ -162,17 +171,50 @@ export async function fetchDigestCategories() {
 }
 
 /**
- * Fetch all leaf digests/summaries via POST /api/file/query/summary.
+ * Fetch leaf Digests with inline handwriting OCR transcripts via GET /api/extended/digests.
+ * @param {{ fileId?: string | number | null, errorPrefix?: string }} [options]
  * @returns {Promise<DigestItem[]>}
  */
-export async function fetchDigests() {
-    const data = await apiRequest('/api/file/query/summary', {
-        body: { page: 1, size: 0 },
-        errorPrefix: 'Failed to fetch digests',
-    });
-    /** @type {Array<Record<string, any>>} */
-    const rawList = Array.isArray(data?.summaryDOList) ? data.summaryDOList : [];
-    return rawList.map(normalizeDigestItem);
+export async function fetchDigests(options = {}) {
+    /** @type {DigestItem[]} */
+    const items = [];
+    /** @type {Set<string>} */
+    const seenKeys = new Set();
+    let offset = 0;
+    let total = Number.POSITIVE_INFINITY;
+    const errorPrefix = options.errorPrefix || 'Failed to fetch digests';
+    const fileIdParam =
+        options.fileId !== undefined && options.fileId !== null
+            ? `&fileId=${encodeURIComponent(String(options.fileId))}`
+            : '';
+
+    while (offset < total) {
+        const data = await apiRequest(
+            `/api/extended/digests?limit=${DIGEST_PAGE_SIZE}&offset=${offset}${fileIdParam}`,
+            {
+                method: 'GET',
+                errorPrefix,
+            },
+        );
+        /** @type {Array<Record<string, any>>} */
+        const batch = Array.isArray(data?.digests) ? data.digests : [];
+        for (const raw of batch) {
+            const item = normalizeDigestItem(raw);
+            const dedupeKey = item.id || item.uniqueIdentifier;
+            if (dedupeKey && seenKeys.has(dedupeKey)) continue;
+            if (dedupeKey) seenKeys.add(dedupeKey);
+            items.push(item);
+        }
+        if (typeof data?.total === 'number' && Number.isFinite(data.total)) {
+            total = data.total;
+        } else if (batch.length < DIGEST_PAGE_SIZE) {
+            total = offset + batch.length;
+        }
+        if (batch.length === 0) break;
+        offset += batch.length;
+    }
+
+    return items;
 }
 
 /**
