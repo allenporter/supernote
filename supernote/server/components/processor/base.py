@@ -438,7 +438,12 @@ class ProcessorModule(abc.ABC):
         status_str = "failure"
         try:
             await self.process(
-                file_id, session_manager, page_index, page_id=page_id, **kwargs
+                file_id,
+                session_manager,
+                page_index,
+                page_id=page_id,
+                user_id=user_id,
+                **kwargs,
             )
             await update_task_status(
                 session_manager,

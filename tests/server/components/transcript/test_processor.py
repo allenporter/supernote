@@ -733,6 +733,7 @@ async def test_transcript_component_registers_ocr_stage_via_processor_platform(
         TaskType.PNG_CONVERSION,
         TaskType.NOTE_METADATA,
         TaskType.OCR_EXTRACTION,
+        TaskType.SUMMARY_OCR,
     ]
     assert service.task_graph.depends_on(TaskType.OCR_EXTRACTION) == (
         "PNG_CONVERSION",

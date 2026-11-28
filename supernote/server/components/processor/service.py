@@ -23,7 +23,12 @@ from typing import Any
 
 from sqlalchemy import and_, case, delete, or_, select
 
-from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
+from supernote.models.base import (
+    BooleanEnum,
+    ProcessingStatus,
+    TaskEntityType,
+    TaskType,
+)
 from supernote.models.extended import (
     SystemTaskVO,
 )
@@ -35,6 +40,7 @@ from supernote.server.db.models.note_processing import (
     NotePageContentDO,
     SystemTaskDO,
 )
+from supernote.server.db.models.summary import SummaryDO, SummaryTranscriptDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     Event,
@@ -42,6 +48,9 @@ from supernote.server.events import (
     NoteProcessingCompletedEvent,
     NoteProcessingFailedEvent,
     NoteUpdatedEvent,
+    SummaryCreatedEvent,
+    SummaryDeletedEvent,
+    SummaryUpdatedEvent,
     SyncCompletedEvent,
     VfsItemPurgedEvent,
 )
@@ -261,6 +270,9 @@ class ProcessorService:
         self.event_bus.subscribe(NoteUpdatedEvent, self.handle_note_updated)
         self.event_bus.subscribe(VfsItemPurgedEvent, self.handle_vfs_item_purged)
         self.event_bus.subscribe(SyncCompletedEvent, self.handle_sync_completed)
+        self.event_bus.subscribe(SummaryCreatedEvent, self.handle_summary_changed)
+        self.event_bus.subscribe(SummaryUpdatedEvent, self.handle_summary_changed)
+        self.event_bus.subscribe(SummaryDeletedEvent, self.handle_summary_deleted)
 
         # Start workers
         for i in range(self.concurrency):
@@ -412,6 +424,49 @@ class ProcessorService:
                 await session.commit()
 
         logger.info(f"Cleanup complete for deleted note: {file_id}")
+
+    async def handle_summary_changed(self, event: Event) -> None:
+        """Enqueue handwritten Digest summaries for background processing."""
+        if not isinstance(event, (SummaryCreatedEvent, SummaryUpdatedEvent)):
+            return
+        summary = event.summary
+        if summary.id is None or summary.is_summary_group == BooleanEnum.YES:
+            return
+        summary_id = int(summary.id)
+        if summary.handwrite_inner_name and summary.handwrite_md5:
+            if self.task_graph.for_entity_type(TaskEntityType.SUMMARY):
+                await self.enqueue_entity(
+                    TaskEntityType.SUMMARY, event.user_id, summary_id
+                )
+            return
+
+        async with self._entity_lock(TaskEntityType.SUMMARY, event.user_id, summary_id):
+            async with self.session_manager.session() as session:
+                await session.execute(
+                    delete(SystemTaskDO).where(
+                        SystemTaskDO.user_id == event.user_id,
+                        SystemTaskDO.entity_type == TaskEntityType.SUMMARY.value,
+                        SystemTaskDO.entity_id == summary_id,
+                    )
+                )
+                await session.commit()
+
+    async def handle_summary_deleted(self, event: Event) -> None:
+        """Clean up system task checkpoints when a leaf summary is deleted."""
+        if not isinstance(event, SummaryDeletedEvent) or event.is_summary_group:
+            return
+        async with self._entity_lock(
+            TaskEntityType.SUMMARY, event.user_id, event.summary_id
+        ):
+            async with self.session_manager.session() as session:
+                await session.execute(
+                    delete(SystemTaskDO).where(
+                        SystemTaskDO.user_id == event.user_id,
+                        SystemTaskDO.entity_type == TaskEntityType.SUMMARY.value,
+                        SystemTaskDO.entity_id == event.summary_id,
+                    )
+                )
+                await session.commit()
 
     async def recover_tasks(self) -> None:
         """Check DB for incomplete tasks on startup."""
@@ -587,14 +642,60 @@ class ProcessorService:
                     continue
             missing.append((file_id, uid))
 
-        if not missing:
+        if missing:
+            logger.info(f"Found {len(missing)} files with missing tasks. Enqueuing...")
+            PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL.inc(len(missing))
+            for file_id, uid in missing:
+                logger.info(
+                    f"Enqueuing user {uid} file {file_id} for initial processing."
+                )
+                await self.enqueue_entity(TaskEntityType.FILE, uid, file_id)
+            self._update_queue_metrics()
+
+        await self._recover_missing_summary_tasks(user_id=user_id)
+
+    async def _recover_missing_summary_tasks(self, user_id: int | None = None) -> None:
+        """Enqueue handwritten Digest summaries whose OCR transcript is missing or stale."""
+        if not self.task_graph.is_effectively_enabled(TaskType.SUMMARY_OCR):
             return
 
-        logger.info(f"Found {len(missing)} files with missing tasks. Enqueuing...")
-        PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL.inc(len(missing))
-        for file_id, uid in missing:
-            logger.info(f"Enqueuing user {uid} file {file_id} for initial processing.")
-            await self.enqueue_entity(TaskEntityType.FILE, uid, file_id)
+        async with self.session_manager.session() as session:
+            stmt = (
+                select(SummaryDO.user_id, SummaryDO.id)
+                .outerjoin(
+                    SummaryTranscriptDO,
+                    and_(
+                        SummaryTranscriptDO.user_id == SummaryDO.user_id,
+                        SummaryTranscriptDO.summary_id == SummaryDO.id,
+                    ),
+                )
+                .where(
+                    SummaryDO.is_deleted.is_(False),
+                    SummaryDO.is_summary_group.is_(False),
+                    SummaryDO.handwrite_inner_name.is_not(None),
+                    SummaryDO.handwrite_inner_name != "",
+                    SummaryDO.handwrite_md5.is_not(None),
+                    SummaryDO.handwrite_md5 != "",
+                    or_(
+                        SummaryTranscriptDO.summary_id.is_(None),
+                        SummaryTranscriptDO.handwrite_md5 != SummaryDO.handwrite_md5,
+                    ),
+                )
+            )
+            if user_id is not None:
+                stmt = stmt.where(SummaryDO.user_id == user_id)
+            missing_summaries = list((await session.execute(stmt)).all())
+
+        if not missing_summaries:
+            return
+
+        logger.info(
+            "Found %d handwritten summaries with missing/stale transcripts. Enqueuing...",
+            len(missing_summaries),
+        )
+        PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL.inc(len(missing_summaries))
+        for uid, summary_id in missing_summaries:
+            await self.enqueue_entity(TaskEntityType.SUMMARY, uid, summary_id)
         self._update_queue_metrics()
 
     async def worker_loop(self, worker_id: int) -> None:

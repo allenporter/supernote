@@ -25,6 +25,7 @@ from aiohttp import web
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from supernote.models.base import BooleanEnum
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
@@ -33,7 +34,11 @@ from supernote.server.db.models.note_processing import (
 )
 from supernote.server.db.models.summary import SummaryTranscriptDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus, SummaryDeletedEvent
+from supernote.server.events import (
+    LocalEventBus,
+    SummaryDeletedEvent,
+    SummaryUpdatedEvent,
+)
 from supernote.server.utils.note_content import (
     format_page_metadata,
     get_page_keywords_map,
@@ -87,6 +92,9 @@ class TranscriptService:
         if self._event_bus is not None:
             self._event_bus.subscribe(
                 SummaryDeletedEvent, self._handle_summary_deleted, inline=True
+            )
+            self._event_bus.subscribe(
+                SummaryUpdatedEvent, self._handle_summary_updated, inline=True
             )
 
     async def _fetch_notebook_pages(
@@ -393,6 +401,17 @@ class TranscriptService:
             user_id=event.user_id,
             summary_id=event.summary_id,
         )
+
+    async def _handle_summary_updated(self, event: SummaryUpdatedEvent) -> None:
+        """Remove stored handwriting transcript when a leaf summary clears its handwriting."""
+        summary = event.summary
+        if summary.id is None or summary.is_summary_group == BooleanEnum.YES:
+            return
+        if not summary.handwrite_inner_name or not summary.handwrite_md5:
+            await self.delete_summary_transcript(
+                user_id=event.user_id,
+                summary_id=summary.id,
+            )
 
 
 TRANSCRIPT_SERVICE_KEY: web.AppKey[TranscriptService] = web.AppKey("transcript_service")

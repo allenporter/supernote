@@ -23,6 +23,7 @@ from supernote.server.ai.prompts import (
     format_title_ocr_prompt,
 )
 from supernote.server.components.ai import OCR_MODEL_KEY
+from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.components.note_metadata import (
     NOTE_METADATA_SERVICE_KEY,
     NoteMetadataService,
@@ -47,6 +48,8 @@ from supernote.server.utils.image import is_image_filename
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
+from .service import TRANSCRIPT_SERVICE_KEY
+from .summary_ocr import SummaryOcrModule
 from .vocabulary import notebook_terms
 
 logger = logging.getLogger(__name__)
@@ -502,11 +505,20 @@ async def async_setup_processor(
     core: ServerCore,
     registrar: ProcessorRegistrar,
 ) -> None:
-    """Register `OcrModule` with the `"processor"` platform."""
+    """Register `OcrModule` and `SummaryOcrModule` with the `"processor"` platform."""
+    ocr_model = core.app.get(OCR_MODEL_KEY)
     registrar.register_module(
         OcrModule(
             file_service=core.file_service,
-            ocr_model=core.app.get(OCR_MODEL_KEY),
+            ocr_model=ocr_model,
             note_metadata_service=core.app.get(NOTE_METADATA_SERVICE_KEY),
+        )
+    )
+    registrar.register_module(
+        SummaryOcrModule(
+            blob_storage=core.blob_storage,
+            conversion_service=core.app[CONVERSION_SERVICE_KEY],
+            transcript_service=core.app[TRANSCRIPT_SERVICE_KEY],
+            ocr_model=ocr_model,
         )
     )

@@ -109,6 +109,7 @@ class TaskType(str, BaseEnum):
     OCR_EXTRACTION = ("OCR_EXTRACTION", "ocr")
     EMBEDDING_GENERATION = ("EMBEDDING_GENERATION", "embedding")
     SUMMARY_GENERATION = ("SUMMARY_GENERATION", "summary")
+    SUMMARY_OCR = ("SUMMARY_OCR", "summary_ocr", TaskEntityType.SUMMARY)
 
     @classmethod
     def entity_type_for(cls, task_type: str) -> TaskEntityType:
