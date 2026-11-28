@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import urllib.parse
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 from sqlalchemy import update
 
 from supernote.models.base import ErrorCode
+from supernote.server.components.files import mcp as files_mcp
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import VfsItemCreatedEvent
@@ -69,7 +71,12 @@ async def test_files_mcp_staged_upload_roundtrip_and_list_files(
     async with mcp_session(mcp_url, auth_headers) as session:
         tools = await session.list_tools()
         tool_names = {t.name for t in tools.tools}
-        assert {"list_files", "prepare_upload", "commit_upload"}.issubset(tool_names)
+        assert {
+            "list_files",
+            "upload_document",
+            "prepare_upload",
+            "commit_upload",
+        }.issubset(tool_names)
 
         prep = await call_mcp_tool(
             session,
@@ -279,3 +286,103 @@ async def test_files_mcp_validation_and_quota_errors(
         )
         assert over_quota["success"] is False
         assert over_quota["errorCode"] == ErrorCode.QUOTA_EXCEEDED
+
+
+async def test_files_mcp_upload_document_utf8_and_base64(
+    client: Any,
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    test_user_id: int,
+    test_users: list[str],
+) -> None:
+    """`upload_document` uploads UTF-8 text and base64 binary payloads directly over MCP."""
+    file_service = client.app[FILE_SERVICE_KEY]
+    event_bus = client.app[EVENT_BUS_KEY]
+    await file_service.create_directory(test_users[0], "/INBOX")
+
+    created_events: list[VfsItemCreatedEvent] = []
+
+    async def _on_created(ev: VfsItemCreatedEvent) -> None:
+        created_events.append(ev)
+
+    event_bus.subscribe(VfsItemCreatedEvent, _on_created)
+
+    md_text = "# Research Brief\n\nSummary for e-ink reading.\n"
+    pdf_bytes = b"%PDF-1.4 inline pdf"
+
+    async with mcp_session(mcp_url, auth_headers) as session:
+        md_res = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "brief.md",
+                "content": md_text,
+                "reason": "deliver brief from mcp-only client",
+            },
+        )
+        assert md_res["success"] is True
+        assert md_res["file"]["path"] == "/INBOX/brief.md"
+        assert md_res["file"]["size"] == len(md_text.encode("utf-8"))
+        assert md_res["file"]["md5"] == hashlib.md5(md_text.encode("utf-8")).hexdigest()
+
+        pdf_res = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "small.pdf",
+                "content": base64.b64encode(pdf_bytes).decode("ascii"),
+                "encoding": "base64",
+            },
+        )
+        await asyncio.sleep(0)
+
+        assert pdf_res["success"] is True
+        assert pdf_res["file"]["path"] == "/INBOX/small.pdf"
+        assert pdf_res["file"]["size"] == len(pdf_bytes)
+        assert pdf_res["file"]["md5"] == hashlib.md5(pdf_bytes).hexdigest()
+        assert len(created_events) == 2
+        assert all(ev.user_id == test_user_id for ev in created_events)
+
+        # Invalid base64 & unsupported encoding rejected
+        bad_b64 = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "bad.pdf",
+                "content": "not-valid-base64!!!",
+                "encoding": "base64",
+            },
+        )
+        assert bad_b64["success"] is False
+        assert bad_b64["errorCode"] == ErrorCode.BAD_REQUEST
+
+        bad_enc = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "bad.txt",
+                "content": "hello",
+                "encoding": "latin-1",
+            },
+        )
+        assert bad_enc["success"] is False
+        assert bad_enc["errorCode"] == ErrorCode.BAD_REQUEST
+
+        # Size limit enforced
+        monkeypatch.setattr(files_mcp, "MAX_INLINE_UPLOAD_BYTES", 8)
+        too_big = await call_mcp_tool(
+            session,
+            "upload_document",
+            {
+                "directory_path": "/INBOX",
+                "file_name": "too_big.txt",
+                "content": "0123456789",
+            },
+        )
+        assert too_big["success"] is False
+        assert too_big["errorCode"] == ErrorCode.BAD_REQUEST

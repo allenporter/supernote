@@ -1,7 +1,15 @@
-"""Virtual File System (VFS) MCP tools component (`FilesComponent`).
+"""Cloud file management over MCP (`FilesComponent`).
 
-Exposes MCP tools (`list_files`, `prepare_upload`, `commit_upload`) backed by
-core `FileService`, `UrlSigner`, `CoordinationService`, and `/api/oss/upload`.
+Lets AI assistants browse a user's Supernote cloud folders (such as `/INBOX`
+and `/DOCUMENT`) and upload reading material like PDFs or documents so they
+sync automatically to connected Supernote devices.
+
+Core file storage and device sync live directly on `ServerCore.file_service`
+(`FileService`), which always runs regardless of whether MCP is enabled. This
+component is the thin MCP adapter layer that exposes those file operations as
+MCP tools (`list_files`, `upload_document`, `prepare_upload`, `commit_upload`),
+delegating to core `FileService`, `BlobStorage`, `UrlSigner`,
+`CoordinationService`, and `/api/oss/upload`.
 """
 
 from __future__ import annotations
