@@ -558,8 +558,7 @@ async def handle_list_digests(request: web.Request) -> web.Response:
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
     transcript_service: TranscriptService = request.app[TRANSCRIPT_SERVICE_KEY]
 
-    user_id = await user_service.get_user_id(user_email)
-    if not user_id:
+    if not (user_id := await user_service.get_user_id(user_email)):
         return web.json_response(
             create_error_response("User not found").to_dict(),
             status=HTTPStatus.NOT_FOUND,
