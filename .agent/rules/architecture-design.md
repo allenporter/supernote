@@ -14,8 +14,9 @@ Before adding a method, parameter, or dependency to an interface or base class, 
 2. **Expose Intrinsic Facts, Not Caller Mechanisms**:
    - When a driver or caller needs to coordinate across implementations, prefer exposing simple, declarative properties on the interface (identity, capabilities, version, status) so the caller can run its own logic generically—rather than adding procedural hooks that force each implementation to build pieces of the caller's work.
 
-3. **Fix Root Model Gaps Rather Than Working Around Them in Subclasses**:
+3. **Fix Root Model Gaps & Generalize Existing Platform Mechanisms**:
    - If the existing base abstraction or state model cannot express a new requirement, pause and ask what single concept is missing from the core model. Extend the base invariant once rather than writing bespoke overrides in every implementation.
+   - Before adding a parallel ad-hoc execution path (a fire-and-forget `asyncio.create_task` runner, a cloned dry-run pipeline, or a duplicate blob/upload helper), check whether an existing platform mechanism (`ProcessorService`, the real compile pipeline, `BlobStorage`, `FileService`) should be generalized or parameterized instead. When a user questions whether two paths should share code, audit the duplication skeptically rather than reflexively defending just-written code.
 
 4. **Prefer Idiomatic Library Primitives Over Custom Ceremony**:
    - Before writing custom serializers, validators, or wrapper subclasses, check what the underlying library (`mashumaro`, `sqlalchemy`, `aiohttp`, stdlib) already supports natively (e.g., `field_options(serialize=str)` rather than custom serializer/deserializer pairs and wrapper VOs).
@@ -33,4 +34,5 @@ Before adding a method, parameter, or dependency to an interface or base class, 
    - For empirical questions (LLM synthesis quality, prompt design, chunking, ordering, retrieval/ranking), never dismiss a user's alternative or assert an untested intuition as fact—label it explicitly as an unverified hypothesis until measured.
    - Always include the user's proposed alternative as an explicit head-to-head arm in the same experiment alongside the current baseline; never run a single arm and declare victory.
    - Build evals that stress real production constraints (scale, noise ratio, candidate/context limits, undated or messy inputs). If a toy dataset trivially hits 100% on the first pass, treat the dataset as too easy rather than proof that the design is optimal.
+   - Pair aggregate eval metrics with 1–2 concrete input/output examples so the reader can judge actual output quality directly.
    - Be transparent about eval limits: note single-run LLM variance and synthetic-dataset bias honestly, and keep raw run artifacts/logs inspectable so every reported metric is verifiable.

@@ -1,3 +1,9 @@
+---
+trigger: glob
+globs: "**/docs/**, **/README.md, **/script/build_docs.py"
+description: Altitude model, voice, and grading rubric for user and architecture documentation.
+---
+
 # Documentation Authoring & Review Principles
 
 When authoring, restructuring, or reviewing documentation across `README.md`, `docs/`, and `script/build_docs.py`, apply these principles, altitude boundaries, and grading criteria.

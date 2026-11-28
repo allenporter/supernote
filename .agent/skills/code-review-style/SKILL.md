@@ -53,7 +53,7 @@ Execute this prescriptive task list when reviewing code changes, auditing PRs, o
 
 ## Backend Hostile / Adversarial Review Rubric (Two Passes)
 
-Whenever asked for a hostile/adversarial review on Python/backend changes, run both passes (when changes touch Web UI assets, also run the 7-point rubric in [`../server-ui/references/ui-review-and-testing.md`](../server-ui/references/ui-review-and-testing.md)):
+Run both passes by default as the pre-PR self-review gate (and whenever explicitly asked for a hostile/adversarial review) on Python/backend changes (when changes touch Web UI assets, also run the 7-point rubric in [`../server-ui/references/ui-review-and-testing.md`](../server-ui/references/ui-review-and-testing.md)):
 
 1. **Pass 1 — Invariants & Boundaries**: Audit multi-tenant `user_id` PK and query scoping, DB transaction and per-file lock races, wire-protocol and DTO compatibility, and narrow exception types.
 2. **Pass 2 — Subtractive / Anti-Fluff (Required After Every Review Round)**: Run `git diff --stat origin/main` and actively look for code to delete—remove single-caller wrapper classes/factories and optional parameters, replace magic string sentinels (`"0"`, `""`) with `None`, strip speculative runtime `isinstance`/reentrancy guards for impossible internal states, and revert scope creep into unrelated modules.

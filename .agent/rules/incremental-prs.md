@@ -19,3 +19,8 @@ description: Keep changes and pull requests small (~200 LoC target) and decompos
 
 4. **Standalone PR & Documentation Prose**:
    - Write PR descriptions, docstrings, and documentation around what the code does on its own merits—do not frame prose comparatively against rejected drafts or hypothetical alternatives.
+
+5. **Orientation, Progress Anchors & Session Hygiene**:
+   - Start issue reviews and eval proposals with a brief **Big Picture** anchor (user-facing goal, a concrete example of the output/UX, and the slice plan) before diving into file paths or schema details; summarize options inline with one clear recommendation when asking design questions.
+   - Lead every post-merge slice transition with a short **Progress Anchor** (`Done` / `Now` / `Remaining to close #issue`) and note whether end-user docs or Web UI copy need updating to match backend changes.
+   - After 2–3 merged PRs in one conversation, proactively suggest `/compact` or offer a self-contained handoff prompt for a fresh conversation/worktree to avoid context rot, edit misses, and rebase churn.

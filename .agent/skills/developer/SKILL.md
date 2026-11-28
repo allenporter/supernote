@@ -36,8 +36,11 @@ This skill teaches you how to interact with the Supernote codebase using standar
   ```bash
   node --import ./tests/frontend/helpers/register_vue_stub.mjs --test 'tests/frontend/**/*.test.mjs'
   ```
-- **Pre-PR gate (once per slice before commit/push)**: Run `(./script/lint || ./script/lint) && ./script/test` (the first `./script/lint` run lets `biome check --write` / `ruff` auto-format modified files; the second confirms zero remaining issues).
-- **Direct `uv run`, CI & Worktree Notes**: Always include `--no-sync` on ad-hoc `uv run` commands so `requirements_dev.txt` packages remain installed; batch independent `read_file` calls in parallel; watch GitHub Actions with `sleep 3 && gh pr checks --watch <pr_number>` after pushing so new workflow runs register before checking; in secondary git worktrees where `main` is checked out elsewhere, `gh pr merge <pr_number> --squash` merges the PR on GitHub before exiting non-zero on local `git checkout main`—follow with `git fetch origin main` and switch off `origin/main`.
+- **Pre-PR gate (once per slice before commit/push)**:
+  1. **Adversarial self-review by default**: Run a brief two-pass review on `git diff origin/main` before opening the PR—Pass 1 (Invariants & Boundaries: multi-user `user_id` scoping, lifecycle/delete semantics, generalization over parallel ad-hoc paths, `testing-style.md` typed clients/`load_components`) and Pass 2 (Subtractive / Anti-Fluff: delete dead wrappers, magic sentinels, and scope creep). Also check whether backend behavior changes require updating end-user docs or Web UI copy.
+  2. **Full lint & test verification**: Run `(./script/lint || ./script/lint) && ./script/test` (the first `./script/lint` run lets `biome check --write` / `ruff` auto-format modified files; the second confirms zero remaining issues across `supernote/`, `tests/`, and `script/`). When changes touch component defaults/dependencies or `/api/extended/system/*` auth, also run `uv run --no-sync pytest tests/integration/test_web_ui.py tests/integration/test_live_server.py -q`.
+  3. **Watch CI after push**: Run `sleep 3 && gh pr checks --watch <pr_number>` so new workflow runs register and any CI failure is caught proactively.
+- **Direct `uv run` & Worktree Notes**: Always include `--no-sync` on ad-hoc `uv run` commands so `requirements_dev.txt` packages remain installed; batch independent `read_file` calls in parallel; in secondary git worktrees where `main` is checked out elsewhere, `gh pr merge <pr_number> --squash` merges the PR on GitHub before exiting non-zero on local `git checkout main`—follow with `git fetch origin main` and switch off `origin/main`.
 
 ### Notes
 - All scripts are located in the `script/` directory at the project root.
