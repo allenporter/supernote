@@ -1,3 +1,9 @@
+---
+trigger: glob
+globs: "**/tests/**"
+description: Home Assistant-style component and SDK testing standards (prefer high-level clients, fakes, and shared fixtures).
+---
+
 # Testing Style & Component Testing Standards
 
 Tests in this repository follow Home Assistant–style component testing norms: test behavior through the highest-level public boundary available, prefer real in-process infrastructure and fakes over mocks, and reuse shared harness fixtures.

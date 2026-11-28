@@ -1,3 +1,9 @@
+---
+trigger: glob
+globs: "**/supernote/server/components/**"
+description: Vertical server component isolation, role-per-file layout, and lifecycle rules.
+---
+
 # Server Component Architecture Rules
 
 When creating or refactoring vertical components under `supernote/server/components/<domain>/`, follow these five rules (enforced by `tests/server/components/test_init.py`):
