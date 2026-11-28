@@ -462,6 +462,14 @@ METADATA_SEGMENTS = "segments"
     - page_refs: List[int]
 """
 
+METADATA_CHUNKS = "chunks"
+"""Per-chunk summary cache entries used for incremental re-summarization.
+
+Each entry is a dict with:
+    - chunk_hash: str
+    - segments: List[dict]
+"""
+
 
 @dataclass
 class AddSummaryDTO(DataClassJSONMixin):

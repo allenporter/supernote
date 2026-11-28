@@ -1,0 +1,1057 @@
+---
+name: supernote-summary-large-notebooks-v1
+description: >-
+  Large-notebook summarization evaluation corpus (3 notebooks, 76 pages)
+  stressing lost-in-the-middle recall, boundary-spanning undated continuation
+  pages, blank-page 1-indexed citation alignment, dense character-budget pages,
+  sparse-date technical notebooks, and incremental append/edit updates.
+notebooks:
+  - file_name: Daily_2026.note
+    custom_type: daily
+    description: >-
+      40-page Q1-Q2 Bullet Journal daily log (Jan 5 - Apr 20, 2026) with blank
+      pages (12, 28), undated multi-page continuations spanning common chunk
+      boundaries (8->9, 15->16, 24->25, 30->31), Rapid Logging signifiers, and
+      incremental append/edit fixtures.
+    pages:
+      - page_index: 0
+        page_id: P20260105081500DLY0001
+        text_content: |-
+          01.05 MON
+          • Kickoff Q1 goals: half marathon in April, finish kitchen backsplash, file taxes by March 15
+          X Renew gym membership ($58/mo)
+          o 10:00 Dentist cleaning w/ Dr. Patel — no cavities, schedule crown check in July
+          • Buy groceries: oats, bananas, Greek yogurt, coffee beans
+          - Cold morning, 38F, heater making slight rattle in hallway
+
+          01.06 TUE
+          o 06:30 Easy 4mi run around Lake Merritt (pace 9:15)
+          • Call plumber (Rico) about kitchen sink shutoff valve
+          > Order new furnace filters (16x25x1 MERV 11)
+      - page_index: 1
+        page_id: P20260108090000DLY0002
+        text_content: |-
+          01.08 THU
+          X Furnace filters arrived, replaced hallway return filter (rattle gone!)
+          • Rico quoted $280 to replace corroded kitchen shutoff valve next Tuesday
+          o 18:00 Book club kickoff: picked "The Left Hand of Darkness"
+          • Laundry + clean espresso machine
+
+          01.10 SAT
+          o 07:30 Trail run 6mi Redwood Regional w/ Elena
+            - Legs felt strong, muddy switchbacks near French Trail
+          • Measured kitchen backsplash: 36 sq ft total around stove and sink
+          • Email Carlos Tile Co for matte ceramic subway tile estimate
+      - page_index: 2
+        page_id: P20260113083000DLY0003
+        text_content: |-
+          01.13 TUE
+          X Rico replaced kitchen shutoff valve ($280 paid via Zelle)
+          • Carlos Tile Co replied: $2,950 labor + tile, earliest slot Feb 18
+          • Pick up prescription at Walgreens
+          o 19:00 Leo piano recital prep — practiced Moonlight Sonata mvt 1
+
+          01.15 THU
+          o 06:45 Tempo 5mi run (8:25 avg pace)
+          • Gather W-2 and 1099-INT forms into Tax_2025 folder
+          • Call Mom to confirm Easter flight dates (April 3-6)
+      - page_index: 3
+        page_id: P20260118090000DLY0004
+        text_content: |-
+          01.18 SUN
+          o 08:00 Long run 8mi Bay Trail — breezy, felt solid
+          X Booked Easter flights to Denver on Southwest ($412 RT)
+          • Weekly meal prep: roasted chickpeas, chicken thighs, broccoli
+          - Read 45 pages of Left Hand of Darkness; loving the winter crossing chapters
+
+          01.20 TUE
+          • Solar research: requested quotes from SunPeak Local and BayGrid Solar
+          > Schedule car 45k-mile service at Honda dealership
+          • Drop off winter coats at dry cleaner
+      - page_index: 4
+        page_id: P20260123080000DLY0005
+        text_content: |-
+          01.23 FRI
+          X Picked up dry cleaning
+          o 14:00 SunPeak Local site assessment (rep: Marcus)
+            - Proposed 7.2kW REC panels + 1 Tesla Powerwall 3 for $22,400 gross
+            - 25-year workmanship warranty, handles city electrical permit
+          • Pizza + board games (Wingspan) w/ Maya and Leo
+
+          01.25 SUN
+          o 07:45 Trail run 9mi Tilden Park w/ Elena
+          • Left ankle slightly tight on downhill — ice 15 min
+      - page_index: 5
+        page_id: P20260128084500DLY0006
+        text_content: |-
+          01.28 WED
+          X Honda 45k service done ($390: oil, brake fluid, cabin filter)
+          o 11:00 BayGrid Solar virtual consult
+            - Quoted $25,800 for 6.8kW + Enphase battery (more expensive, 6-month backlog)
+          • Leaning strongly toward SunPeak Local ($22,400)
+          • Buy dishwasher pods and paper towels
+
+          01.30 FRI
+          • Confirmed Carlos Tile Co start date: Feb 18, $500 deposit due Feb 10
+          o 18:30 Dinner w/ Sam & Priya at Burma Superstar
+      - page_index: 6
+        page_id: P20260202081500DLY0007
+        text_content: |-
+          02.02 MON
+          X Paid $2,240 deposit (10%) to SunPeak Local to lock Q1 install queue
+          • Download Vanguard 1099-B tax form (available Feb 15)
+          o 06:30 Easy 5mi recovery run — ankle feels 100% fine
+          • Water indoor plants, trim monstera
+
+          02.04 WED
+          • Book club discussion of Left Hand of Darkness at Elena's
+            - Next pick: "Project Hail Mary" for March
+          • Grocery run: salmon, rice, avocado, limes
+      - page_index: 7
+        page_id: P20260207090000DLY0008
+        text_content: |-
+          02.07 SAT
+          o 08:00 Half-marathon training block check-in & 10mi progression run
+            - Miles 1-5 at 9:05, miles 6-10 dropped to 8:15; strong finish
+          o 13:00 Kitchen backsplash tile showroom visit w/ Maya
+            - Compared matte ivory subway vs sage green handmade zellige
+            - Maya strongly preferred matte ivory subway with warm gray grout
+            - Confirmed we need 40 sq ft ordered (10% overage for cuts)
+          • Still need to finalize under-cabinet LED dimmer switch (continued on next page)
+      - page_index: 8
+        page_id: LEGACY_CONT_0009
+        text_content: |-
+          (continued)
+          • Decided on Lutron Caseta dimmer for under-cabinet LED strips ($64 at Home Depot)
+          X Sent $500 backsplash deposit to Carlos Tile Co via check #1042
+          • Ordered 4 boxes of matte ivory subway tile + warm gray sanded grout ($385)
+          - Note for Carlos: move outlet next to coffee bar 2 inches right before tiling
+          • Evening: cooked ramen from scratch w/ Leo
+      - page_index: 9
+        page_id: P20260211083000DLY0010
+        text_content: |-
+          02.11 WED
+          o 06:30 Hill repeats 6x400m on Spruce St
+          • SunPeak Local submitted city solar permit #EL-2026-8841
+          • Pick up birthday card for Dad (Feb 16)
+          > Schedule CPA tax review with Linda Cho
+
+          02.13 FRI
+          X Scheduled CPA review with Linda Cho for Feb 26 at 15:00
+          • Groceries + dog food for neighbor's retriever while they travel
+      - page_index: 10
+        page_id: P20260216090000DLY0011
+        text_content: |-
+          02.16 MON
+          o 12:00 Called Dad for his 70th birthday — planning family lake cabin trip in August
+          X Downloaded Vanguard 1099-B and mortgage 1098 forms
+          • Uploaded all tax docs to Linda Cho's secure portal
+          • Cleared kitchen counters to prep for Carlos on Wednesday
+
+          02.17 TUE
+          o 06:45 Easy 5mi run in light rain
+          • Bought painter's tape and drop cloths for kitchen prep
+      - page_index: 11
+        page_id: P20260218080000DLY0012
+        text_content: "   "
+      - page_index: 12
+        page_id: P20260218170000DLY0013
+        text_content: |-
+          02.18 WED
+          o 08:00 Carlos Tile Co started kitchen backsplash install
+            - Old drywall patched cleanly; coffee bar outlet shifted 2 inches right as planned
+            - Tile layout complete along main stove wall
+          • Cooked dinner on outdoor grill since stove is blocked
+          • Leo aced math quiz (96%)
+
+          02.19 THU
+          X Carlos finished grouting with warm gray grout and sealed edges
+          X Paid remaining $2,450 balance to Carlos Tile Co (kitchen looks amazing!)
+          • Wait 48 hours before wiping backsplash with wet sponge
+      - page_index: 13
+        page_id: P20260222080000DLY0014
+        text_content: |-
+          02.22 SUN
+          o 07:30 Long run 11mi Lake Chabot loop w/ Elena
+            - Tested Maurten gel at mile 6 — zero stomach issues
+          • Installed Lutron Caseta dimmer for under-cabinet LEDs
+          • Cleaned kitchen thoroughly and moved appliances back
+
+          02.24 TUE
+          • City approved solar permit #EL-2026-8841!
+          • Marcus (SunPeak) scheduled roof panel installation for March 9-10
+          • Laundry + groceries
+      - page_index: 14
+        page_id: P20260226150000DLY0015
+        text_content: |-
+          02.26 THU
+          o 15:00 Tax review meeting with CPA Linda Cho
+            - Federal refund estimated at $1,180; California owed $420
+            - Confirmed 30% residential clean energy tax credit applies to 2026 solar install (next year's return)
+            - Linda flagged missing charitable donation receipt from Red Cross ($350)
+          • Need to dig up Red Cross email receipt tonight
+      - page_index: 15
+        page_id: LEGACY_CONT_0016
+        text_content: |-
+          (tax follow-up notes)
+          X Found Red Cross $350 receipt from Nov 2025 and uploaded to Linda's portal
+          X Signed Form 8879 e-file authorization for both Federal and CA returns
+          • Paid Linda Cho's CPA fee ($475 via ACH)
+          - Reminder: set aside $1,200/quarter for estimated taxes if freelance consulting picks up
+      - page_index: 16
+        page_id: P20260301083000DLY0017
+        text_content: |-
+          03.01 SUN
+          o 08:00 Tune-up 10K race in Alameda — finished in 49:12 (new PR by 48 seconds!)
+          • Celebrated w/ pancakes and coffee at cafe w/ Maya and Leo
+          • Started reading "Project Hail Mary" (chapter 1-4)
+          • Trim backyard rosemary bush before solar crew arrives
+
+          03.03 TUE
+          • Confirmed Linda Cho e-filed Federal and CA returns — both accepted!
+          • Bought extra coffee + donuts for solar crew next Monday
+      - page_index: 17
+        page_id: P20260306080000DLY0018
+        text_content: |-
+          03.06 FRI
+          o 06:30 Easy 5mi run
+          • Cleared side yard gate and garage wall for Powerwall 3 mounting
+          • Email HOA board courtesy notice about March 9-10 roof work
+          • Pick up Leo's new soccer cleats (size 5)
+
+          03.08 SUN
+          o 07:30 Long run 12mi — peak mileage week before taper
+          • Meal prep: turkey chili and cornbread
+      - page_index: 18
+        page_id: P20260309080000DLY0019
+        text_content: |-
+          03.09 MON
+          o 07:45 SunPeak Local crew arrived (4 installers, lead: Javier)
+            - Mounted 18 REC 400W panels on south-facing roof pitch
+            - Conduit run cleanly through attic (no exterior conduit!)
+          • Working from coffee shop during roof drilling noise
+
+          03.10 TUE
+          o 08:00 Day 2 solar install: Powerwall 3 mounted in garage + main panel tie-in
+          • Power shut off 11:00-13:30 for breaker transfer
+          X System passed SunPeak internal commissioning test; awaiting city final inspection
+      - page_index: 19
+        page_id: P20260314090000DLY0020
+        text_content: |-
+          03.14 SAT
+          o 09:00 Leo spring soccer opener — won 3-1, Leo scored in 2nd half!
+          • Research Tahoe summer cabin rentals for Dad's 70th birthday (August 14-17)
+          • Compare North Shore vs Truckee listings (need 4 bedrooms, pet-friendly)
+          • Buy potting soil and tomato seedlings (Early Girl, Sungold)
+          - Still waiting on city final solar inspection date
+      - page_index: 20
+        page_id: P20260317083000DLY0021
+        text_content: |-
+          03.17 TUE
+          o 10:30 City electrical inspector signed off final solar permit #EL-2026-8841!
+          X Submitted PG&E PTO (Permission to Operate) interconnection packet via SunPeak
+          • Planted 4 tomato seedlings + basil in raised beds
+          • Groceries: pasta, marinara, spinach, parmesan
+
+          03.19 THU
+          o 06:30 Tempo 4mi run (8:10 pace)
+          • Book club meetup on Project Hail Mary — unanimous 5/5 favorite
+      - page_index: 21
+        page_id: P20260322080000DLY0022
+        text_content: |-
+          03.22 SUN
+          o 07:45 Long run 13mi dress rehearsal — 1:52:40 total, felt super steady
+          • Narrowed August family cabin to "Pinecone Lodge" in Truckee ($2,600 for 3 nights)
+          • Sent Pinecone Lodge link to siblings (Hannah & Matt) for approval
+
+          03.24 TUE
+          • Hannah and Matt both approved Pinecone Lodge!
+          X Paid $1,300 deposit for Pinecone Lodge (Aug 14-17, Truckee)
+          • Renewed car registration online ($248)
+      - page_index: 22
+        page_id: P20260327090000DLY0023
+        text_content: |-
+          03.27 FRI
+          o 13:00 Received PG&E PTO email! Solar + Powerwall 3 officially live!
+            - First afternoon generated 29.4 kWh, Powerwall hit 100% by 14:30
+          X Paid final solar milestone balance ($11,200) to SunPeak Local
+          • Celebration dinner w/ Maya at Wood Tavern
+
+          03.29 SUN
+          o 08:00 Taper run 8mi easy — legs feel fresh
+          • Packed suitcase checklist for Denver Easter trip
+      - page_index: 23
+        page_id: P20260401083000DLY0024
+        text_content: |-
+          04.01 WED
+          o 06:30 Shakeout 4mi run (easy 9:15 pace)
+          • Pre-race logistics for Marin Half Marathon (April 12):
+            - Bib pickup opens April 11 at Mill Valley Community Center (10:00-17:00)
+            - Carpooling w/ Elena — leaving Oakland at 06:15 sharp
+            - Goal A: sub-1:48, Goal B: sub-1:52
+          • Home check before Denver trip (continued next page)
+      - page_index: 24
+        page_id: LEGACY_CONT_0025
+        text_content: |-
+          (Denver trip prep cont.)
+          X Set irrigation timer to 10 min every other day for tomato beds
+          X Asked neighbor Greg to grab mail April 3-6
+          • Switched Powerwall to "Self-Powered" mode (20% backup reserve)
+          • Checked in for Southwest flight WN-1842 to Denver (boarding group A41)
+          • Refilled travel toiletries and packed running shoes for Denver shakeouts
+      - page_index: 25
+        page_id: P20260403070000DLY0026
+        text_content: |-
+          04.03 FRI
+          o 08:30 Flew Oakland -> Denver w/ Maya and Leo; smooth flight
+          o 14:00 Arrived at Mom & Dad's house in Littleton
+          • Walked 2mi around neighborhood park to loosen up from flight
+          • Helped Dad set up new iPad and Apple Photos shared album
+
+          04.04 SAT
+          o 09:00 Easy 3mi altitude shakeout run (5,400ft — definitely felt thinner air!)
+          o 17:00 Early Easter dinner w/ whole family; showed Dad the Truckee cabin photos
+      - page_index: 26
+        page_id: P20260406100000DLY0027
+        text_content: |-
+          04.06 MON
+          o 13:15 Return flight Denver -> Oakland (delayed 40 min, landed 15:20)
+          • Unpacked + ran 2 loads of laundry
+          • Checked tomatoes — thriving! Greg dropped off mail.
+
+          04.08 WED
+          o 06:30 Final pre-race strides: 3mi easy + 4x100m strides
+          • Hydrating with electrolytes all week
+          • Groceries: bagels, peanut butter, bananas, pasta
+      - page_index: 27
+        page_id: P20260409080000DLY0028
+        text_content: ""
+      - page_index: 28
+        page_id: P20260410090000DLY0029
+        text_content: |-
+          04.10 FRI
+          • Rest day — 20 min foam rolling and hip mobility
+          • Charged Garmin watch and laid out Brooks Cascadia 18 + race singlet
+          o 18:00 Leo robotics showcase at school — robot arm stacked 4 blocks reliably
+
+          04.11 SAT
+          o 11:00 Picked up Marin Half Marathon bib #2184 in Mill Valley
+          • Early pasta dinner at 17:30, lights out by 21:30
+      - page_index: 29
+        page_id: P20260412060000DLY0030
+        text_content: |-
+          04.12 SUN — MARIN HALF MARATHON RACE DAY!
+          o 06:15 Carpooled w/ Elena to Mill Valley start line (52F, overcast)
+          o 07:30 Race start!
+            - Miles 1-6: controlled 8:20/mi up gentle rolling hills
+            - Miles 7-10: held 8:05/mi on fire road descent, took Maurten gel at mile 6 & 10
+            - Miles 11-13.1: negative split 7:50/mi final push!
+          • Official finish time: 1:47:18 (beat Goal A sub-1:48!!)
+          - Post-race notes continued on next page
+      - page_index: 30
+        page_id: LEGACY_CONT_0031
+        text_content: |-
+          (race day wrap-up)
+          • Elena finished in 1:44:05 (3rd in age group!)
+          o 11:30 Post-race breakfast at Dipsea Cafe w/ Elena, Maya, and Leo
+          - Recovery plan: take 4 full rest days, book sports massage Thursday
+          - Next race idea: Dipsea Trail 10K in September
+          X Uploaded race photos and Garmin split chart to running log
+      - page_index: 31
+        page_id: P20260414090000DLY0032
+        text_content: |-
+          04.14 TUE
+          • Quads mildly sore, walked 2mi at lunch
+          X Booked 60-min sports massage w/ Tanya for April 16 at 16:00
+          • Reviewed first full PG&E bill with solar: net credit of -$42.15!
+          • Watered tomatoes and staked Sungold vines
+
+          04.15 WED
+          • Renewed library books + picked up "Thinking in Systems"
+          • Cleared garage storage shelves for spring donation run
+      - page_index: 32
+        page_id: P20260416160000DLY0033
+        text_content: |-
+          04.16 THU
+          o 16:00 Sports massage w/ Tanya ($110) — calves and IT bands much looser
+          • Dropped off 3 boxes of clothes/books at Goodwill
+          • Scheduled Leo's summer swim lessons (June 15 - July 24, Mon/Wed 10:00)
+
+          04.17 FRI
+          o 06:45 First easy post-race jog: 3mi at 9:30 pace, zero pain
+          • Maya and I planned summer garden drip line upgrade
+      - page_index: 33
+        page_id: P20260418090000DLY0034
+        text_content: |-
+          04.18 SAT
+          • Bought 1/4-inch drip irrigation tubing and emitters ($48 at Ace Hardware)
+          X Installed automated drip lines for all 4 raised garden beds
+          o 15:00 Neighbor block potluck — brought smoked paprika hummus & pita
+          • Met new neighbors down the street (Chris & Nina)
+
+          04.19 SUN
+          o 08:00 Easy 5mi trail jog at Redwood Regional
+          • Read first 3 chapters of "Thinking in Systems"
+      - page_index: 34
+        page_id: P20260420083000DLY0035
+        text_content: |-
+          04.20 MON
+          • Q2 check-in reflection:
+            - Big Q1/Q2 wins: kitchen backsplash done, solar + Powerwall live (-$42 bill!), taxes filed, Marin Half PR 1:47:18
+            - Next focus: plan Dad's 70th Truckee menu, finish garage workbench organizer, start strength training 2x/wk
+          • Ordered adjustable kettlebell (12-32kg) for garage workouts
+          • Buy groceries: eggs, sourdough, spinach, berries
+      - page_index: 35
+        page_id: P20260422090000DLY0036
+        text_content: |-
+          04.22 WED
+          X Adjustable kettlebell delivered ($189)
+          o 07:00 First garage kettlebell session: 3x10 goblet squats, swings, presses
+          • Called auto insurance to add new solar umbrella rider — no extra charge
+          • Paid quarterly trash & recycling bill ($142)
+
+          04.24 FRI
+          • Leo's soccer team won 2-2 tiebreaker shootout
+          • Picked up fresh compost bags for backyard herb bed
+      - page_index: 36
+        page_id: P20260426080000DLY0037
+        text_content: |-
+          04.26 SUN
+          o 08:00 Easy 6mi run along Bay Trail
+          • Drafted August Truckee cabin dinner rotation w/ Hannah & Matt
+            - Friday: tacos (Matt), Saturday: grilled tri-tip + birthday cake (us), Sunday: pancakes (Hannah)
+          • Cleaned solar panel monitoring dashboard alerts — 100% uptime in April
+
+          04.28 TUE
+          • Dentist office sent reminder for July 14 crown check w/ Dr. Patel
+          • Oil squeaky garage door rollers
+      - page_index: 37
+        page_id: P20260430083000DLY0038
+        text_content: |-
+          04.30 THU
+          • April monthly wrap-up:
+            - Total running mileage: 118 miles (including 1:47:18 half marathon PR)
+            - Solar generation: 892 kWh total, exported 340 kWh back to grid
+            - Books finished: Project Hail Mary; in progress: Thinking in Systems
+          > May goal: run 3x/wk + kettlebell 2x/wk, build French cleat tool wall in garage
+      - page_index: 38
+        page_id: P20260502090000DLY0039
+        text_content: |-
+          05.02 SAT
+          • Bought 3/4-inch Baltic birch plywood sheet ($92) for French cleat tool wall
+          o 10:00 Ripped 45-degree cleat strips on table saw in garage
+          • Hung drill rack, hand planes, and level organizer
+          • First Sungold cherry tomatoes blooming!
+
+          05.03 SUN
+          o 07:30 Easy 6mi trail run w/ Elena — talked about Dipsea 10K training plan
+      - page_index: 39
+        page_id: P20260505083000DLY0040
+        text_content: |-
+          05.05 TUE
+          X Finished mounting French cleat wall and charging station in garage
+          • Ordered 60th/70th photo book print of Dad's old slides for August cabin surprise ($78)
+          o 18:00 Taco Tuesday w/ Maya & Leo
+          • Picked up sunscreen and goggles for Leo's June swim lessons
+    expected_facts:
+      - id: daily_early_dentist
+        region: early
+        expected_date: "2026-01-05"
+        expected_page: 1
+        keywords:
+          - ["dentist", "cleaning"]
+          - ["patel"]
+      - id: daily_early_shutoff_valve
+        region: early
+        expected_date: "2026-01-13"
+        expected_page: 3
+        keywords:
+          - ["rico", "plumber", "shutoff"]
+          - ["280"]
+      - id: daily_early_solar_quote
+        region: early
+        expected_date: "2026-01-23"
+        expected_page: 5
+        keywords:
+          - ["sunpeak"]
+          - ["22,400", "22400"]
+      - id: daily_boundary_p9_lutron_deposit
+        region: boundary_continuation
+        expected_date: "2026-02-07"
+        expected_page: 9
+        keywords:
+          - ["lutron", "dimmer"]
+          - ["carlos", "500"]
+      - id: daily_middle_backsplash_complete
+        region: middle
+        expected_date: "2026-02-19"
+        expected_page: 13
+        keywords:
+          - ["carlos", "backsplash", "grout"]
+          - ["2,450", "2450"]
+      - id: daily_boundary_p16_tax_red_cross
+        region: boundary_continuation
+        expected_date: "2026-02-26"
+        expected_page: 16
+        keywords:
+          - ["red cross", "350"]
+          - ["8879", "475", "linda"]
+      - id: daily_middle_10k_pr
+        region: middle
+        expected_date: "2026-03-01"
+        expected_page: 17
+        keywords:
+          - ["10k", "alameda"]
+          - ["49:12"]
+      - id: daily_middle_solar_install
+        region: middle
+        expected_date: "2026-03-10"
+        expected_page: 19
+        keywords:
+          - ["powerwall"]
+          - ["sunpeak", "solar", "18"]
+      - id: daily_middle_cabin_deposit
+        region: middle
+        expected_date: "2026-03-24"
+        expected_page: 22
+        keywords:
+          - ["pinecone lodge", "truckee"]
+          - ["1,300", "1300"]
+      - id: daily_middle_pge_pto
+        region: middle
+        expected_date: "2026-03-27"
+        expected_page: 23
+        keywords:
+          - ["pto", "permission to operate", "pg&e"]
+          - ["11,200", "11200"]
+      - id: daily_boundary_p25_denver_prep
+        region: boundary_continuation
+        expected_date: "2026-04-01"
+        expected_page: 25
+        keywords:
+          - ["greg", "mail", "irrigation"]
+          - ["wn-1842", "southwest", "denver"]
+      - id: daily_late_half_marathon_pr
+        region: late
+        expected_date: "2026-04-12"
+        expected_page: 30
+        keywords:
+          - ["marin half", "half marathon"]
+          - ["1:47:18"]
+      - id: daily_boundary_p31_dipsea_breakfast
+        region: boundary_continuation
+        expected_date: "2026-04-12"
+        expected_page: 31
+        keywords:
+          - ["dipsea cafe", "breakfast"]
+          - ["elena", "1:44:05"]
+      - id: daily_late_solar_bill_credit
+        region: late
+        expected_date: "2026-04-14"
+        expected_page: 32
+        keywords:
+          - ["pg&e", "bill", "solar"]
+          - ["42.15", "-$42.15"]
+      - id: daily_late_french_cleat
+        region: late
+        expected_date: "2026-05-05"
+        expected_page: 40
+        keywords:
+          - ["french cleat"]
+          - ["photo book", "78"]
+    incremental_updates:
+      append:
+        description: Append 2 new pages (May 7-10) to test O(1) trailing-chunk cache reuse.
+        pages:
+          - page_index: 40
+            page_id: P20260507083000DLY0041
+            text_content: |-
+              05.07 THU
+              o 07:00 Garage kettlebell workout #4 — moved up to 20kg swings
+              X Dad's photo book proof approved and shipped from Artifact Uprising
+              • Registered for Dipsea Trail 10K (September 19, $65 entry)
+          - page_index: 41
+            page_id: P20260510090000DLY0042
+            text_content: |-
+              05.10 SUN
+              o 09:00 Mother's Day breakfast at Home Kitchen w/ Maya and Leo
+              • Harvested first handful of Sungold cherry tomatoes!
+              • Booked August rental minivan for Truckee trip ($310 via Costco Travel)
+        expected_facts:
+          - id: daily_append_dipsea_reg
+            region: late
+            expected_date: "2026-05-07"
+            expected_page: 41
+            keywords:
+              - ["dipsea"]
+              - ["september 19", "65"]
+          - id: daily_append_minivan
+            region: late
+            expected_date: "2026-05-10"
+            expected_page: 42
+            keywords:
+              - ["minivan", "costco"]
+              - ["310"]
+      mid_edit:
+        description: Edit page 20 (index 19) to add a new decision and verify targeted chunk invalidation.
+        page_index: 19
+        page_id: P20260314090000DLY0020
+        text_content: |-
+          03.14 SAT
+          o 09:00 Leo spring soccer opener — won 3-1, Leo scored in 2nd half!
+          X Ruled out North Shore cabins due to steep driveway; focusing on Truckee flat lots
+          • Buy potting soil and tomato seedlings (Early Girl, Sungold)
+          X City confirmed solar final inspection slot for Tuesday March 17 at 10:30
+        expected_facts:
+          - id: daily_mid_edit_truckee_ruleout
+            region: middle
+            expected_date: "2026-03-14"
+            expected_page: 20
+            keywords:
+              - ["north shore", "steep driveway"]
+              - ["march 17", "inspection"]
+  - file_name: Weekly_Work_Log.note
+    custom_type: weekly
+    description: >-
+      20-page engineering sprint log, architecture reviews, and incident
+      postmortems (Feb-May 2026). Includes dense 2,000+ char pages that trigger
+      character-budget chunking and legacy undated continuation page_ids.
+    pages:
+      - page_index: 0
+        page_id: P20260202090000WRK0001
+        text_content: |-
+          Week of 2026-02-02 — Sprint 14 Kickoff (Search & Sync Team)
+          • Goal: reduce hybrid search p95 latency from 310ms to <150ms
+          • Priya owns BM25 tokenization cache; Devon owns SQLite WAL tuning
+          • Marcus reviewing OAuth PKCE refresh token rotation PR #418
+          - Risk: Q1 enterprise pilot (Northstar Logistics, 400 seats) starts March 2
+      - page_index: 1
+        page_id: P20260205140000WRK0002
+        text_content: |-
+          2026-02-05 — Architecture Review: Hybrid Search Index & Caching
+          Attendees: Priya, Devon, Sam, VP Eng (Claire)
+
+          Context: Current hybrid search runs a full-table scan over 45k embedded chunks in Python using NumPy cosine similarity combined with unindexed LIKE queries. On multi-tenant nodes with >120k chunks, p95 latency spiked to 310ms and memory spiked by 480MB during concurrent query bursts.
+
+          Options Evaluated:
+          1. Move embeddings to pgvector on managed Postgres ($650/mo infra overhead, breaks single-binary SQLite self-hosting promise).
+          2. Keep SQLite and pre-load float16 normalized embedding matrices per active tenant with an LRU cap of 64MB, paired with an in-memory inverted trigram index refreshed incrementally on DocumentIndexed events.
+          3. Offload to Qdrant sidecar container (adds operational complexity for home-lab users).
+
+          Decision: Approved Option 2 (SQLite + float16 tenant LRU + incremental lexical index).
+          Action Items:
+          • Priya: benchmark float16 vs float32 recall@10 on internal 10k query set by Feb 10 (target <0.5% NDCG drop).
+          • Devon: add Prometheus histogram `search_query_duration_seconds` split by `lexical` vs `vector` stage.
+          • Sam: document memory ceiling knobs (`MAX_EMBEDDING_CACHE_MB=256`) in operator guide.
+
+          Follow-up Notes:
+          - Claire emphasized zero regression for single-user Raspberry Pi 5 deployments (must stay under 180MB RSS).
+          - Verified float16 quantization cuts matrix RAM exactly in half (24MB -> 12MB for 10k 768-dim chunks).
+          - Next review checkpoint scheduled for Feb 19 after load testing with 200 concurrent simulated users.
+          - Also flagged: stale tombstones in `f_chunk_index` are not pruned until nightly vacuum; add inline prune on file delete.
+          - Confirmed backward compatibility: existing float32 JSON blobs decode seamlessly into float16 arrays at load time with zero migration required.
+      - page_index: 2
+        page_id: P20260209093000WRK0003
+        text_content: |-
+          Week of 2026-02-09 — Sprint 14 Midpoint
+          X Priya completed float16 recall benchmark: NDCG@10 dropped only 0.12%, p95 fell to 112ms!
+          X Devon merged `search_query_duration_seconds` metrics PR #429
+          • Marcus fixed race condition in OAuth PKCE code verifier expiry
+          > Prep staging environment for Northstar Logistics SSO test
+      - page_index: 3
+        page_id: P20260213160000WRK0004
+        text_content: |-
+          2026-02-13 — Sprint 14 Demo & Retro
+          o 15:00 Live demo to Claire: hybrid search p95 at 112ms under 150 concurrent queries
+          - What went well: float16 cache shipped in 1 week with zero schema changes
+          - What to improve: staging seed script took 25 min to generate synthetic embeddings; cache fixtures in S3
+          • Next sprint focus: webhook delivery reliability + Northstar SSO onboarding
+      - page_index: 4
+        page_id: P20260216090000WRK0005
+        text_content: |-
+          Week of 2026-02-16 — Sprint 15 Kickoff
+          • Webhook dead-letter queue & exponential backoff (10s, 60s, 5m, 30m) — owner: Sam
+          • Northstar Okta SAML -> OIDC bridge testing — owner: Marcus
+          • Upgrade aiohttp to 3.14 and audit connection pool timeouts — owner: Devon
+      - page_index: 5
+        page_id: P20260219110000WRK0006
+        text_content: |-
+          2026-02-19 — Incident #408 Postmortem: SQLite Write Lock Contention
+          Severity: SEV-2 | Duration: 22 minutes (Feb 18 14:12 - 14:34 UTC) | Incident Commander: Devon
+
+          Summary: During a bulk import of 1,200 PDFs by beta tenant #44, background OCR workers held write transactions open while awaiting external Gemini HTTP responses. This caused `SQLITE_BUSY` timeouts on interactive login and file-list API requests (error rate peaked at 18.4%).
+
+          Timeline:
+          - 14:12 UTC: Alert `Http5xxRateHigh` fired; p99 DB lock wait exceeded 5,000ms.
+          - 14:17 UTC: Devon identified 8 concurrent OCR workers holding open `AsyncSession` contexts during outbound API calls.
+          - 14:24 UTC: Paused background processor queue via `/api/extended/system/processor/pause`; interactive 5xx dropped to 0% within 40 seconds.
+          - 14:34 UTC: Resumed queue at `concurrency=2` after verifying WAL checkpoint caught up.
+
+          Root Causes:
+          1. `OcrModule` opened a session before calling `ocr_model.extract_text()` in a legacy retry branch.
+          2. `busy_timeout` was 5,000ms while WAL autocheckpoint triggered synchronous frames on the main writer thread.
+          3. No automated lint/test guard asserting zero open SQLite sessions across `await` network calls.
+
+          Corrective Actions (Committed for Sprint 15):
+          • Devon: split DB read -> release session -> HTTP LLM call -> open short DB write session in all processor modules (PR #441, due Feb 21).
+          • Priya: add pytest fixture `assert_no_session_during_ai_call` to CI suite.
+          • Sam: raise `PRAGMA busy_timeout = 15000` and add Grafana panel for `sqlite_lock_wait_ms`.
+          • Marcus: rate-limit bulk upload bursts to 50 files/min per tenant with HTTP 429 + `Retry-After`.
+      - page_index: 6
+        page_id: P20260223090000WRK0007
+        text_content: |-
+          Week of 2026-02-23 — Sprint 15 Wrap & Northstar Readiness
+          X Devon landed PR #441 fixing session-outside-LLM invariant
+          X Priya added `assert_no_session_during_ai_call` CI guard
+          X Marcus verified Northstar Okta OIDC login + group role mapping
+          • Sam shipped webhook HMAC-SHA256 signing + 4-step backoff
+      - page_index: 7
+        page_id: P20260302090000WRK0008
+        text_content: |-
+          Week of 2026-03-02 — Northstar Enterprise Pilot Launch
+          o 09:00 Northstar Logistics went live with first 120 warehouse supervisors
+          • Day 1 telemetry: 1,450 synced notebooks, 0 5xx errors, search p95 = 98ms
+          • Customer feedback #1: supervisors want PDF export to preserve custom page templates
+          • Customer feedback #2: bulk folder zip download timing out on >2GB folders (continued next page)
+      - page_index: 8
+        page_id: LEGACY_WRK_0009
+        text_content: |-
+          (Northstar pilot feedback continued)
+          • Root cause of >2GB zip timeout: buffering entire archive in RAM before sending headers
+          • Decision: switch folder download to streaming `zipstream` generator with chunked transfer encoding
+          • Owner: Sam — target hotfix v0.27.4 by Thursday March 5
+          - Northstar IT lead (Jorge) confirmed remaining 280 seats will onboard March 16 once streaming zip lands
+      - page_index: 9
+        page_id: P20260309090000WRK0010
+        text_content: |-
+          Week of 2026-03-09 — Sprint 16 Kickoff
+          X Shipped v0.27.4 with streaming zip export — 3.4GB folder downloads in 14s using <25MB RAM
+          • Jorge (Northstar) confirmed streaming zip passed QA; green light for 280 more seats next week
+          • Started Q2 roadmap planning: LLM Wiki beta, iterative notebook chunking, Apple Silicon OCR backend
+      - page_index: 10
+        page_id: P20260316090000WRK0011
+        text_content: |-
+          Week of 2026-03-16 — Full 400-Seat Northstar Rollout
+          o 10:00 All 400 Northstar users active; daily OCR volume hit 4,800 pages/day
+          • Gemini API spend jumped to $38/day — investigate blank-page skipping & title crop caching
+          • Priya proposed checking `has_drawables` before calling OCR (estimated 22% blank pages in field notebooks)
+      - page_index: 11
+        page_id: P20260319150000WRK0012
+        text_content: |-
+          2026-03-19 — Design Review: Blank-Page Skip & Cost Telemetry
+          Attendees: Priya, Devon, Sam, Marcus
+
+          Problem Statement: Northstar field notebooks average 24% completely blank template pages (grid/lined pages with zero ink strokes). Running multimodal vision OCR on blank pages costs ~$9.50/day per 400-seat tenant and adds 14 minutes of unnecessary queue latency during end-of-shift sync storms.
+
+          Proposed Architecture:
+          - Stage 1 (`NoteMetadataModule`): decode binary layer bitmaps once during metadata extraction and persist `has_ink` and `has_drawables` booleans in `f_note_page_metadata` keyed by `content_hash`.
+          - Stage 2 (`OcrModule`): verify `page_meta.content_hash == page_content.content_hash`; if `has_drawables` is False, write `text_content = ""` directly and skip PNG fetch + LLM call entirely.
+          - Telemetry: emit `ocr_pages_skipped_blank_total` counter and expose daily token/cost breakdown in Prometheus + Grafana dashboard.
+
+          Edge Cases Discussed:
+          1. Pages with typed text boxes or pasted stickers but zero pen ink -> must check `has_drawables` (all foreground layers + text boxes), NOT just `has_ink`.
+          2. Legacy firmware `.note` files without `<PAGEID>` -> fallback cleanly to running OCR rather than falsely skipping.
+          3. Re-syncing a previously blank page after the user writes on it -> `content_hash` changes, `NoteMetadataModule` flips `has_drawables = True`, `OcrModule` runs normally.
+
+          Decision: Approved unanimously. Priya to implement `NoteMetadataModule` flag (PR #472), Devon to wire `OcrModule` fast path (PR #475). Target release: v0.28.0 on March 30.
+      - page_index: 12
+        page_id: P20260323090000WRK0013
+        text_content: |-
+          Week of 2026-03-23 — Sprint 17 Execution
+          X Priya merged PR #472 (`has_drawables` metadata extraction)
+          X Devon merged PR #475 (`OcrModule` blank-page skip) — staging savings verified at 26% fewer OCR calls!
+          • Sam built Prometheus alert rule for queue depth > 500 pages
+          • Marcus drafting SOC-2 audit evidence checklist for Q3
+      - page_index: 13
+        page_id: P20260330090000WRK0014
+        text_content: |-
+          Week of 2026-03-30 — v0.28.0 Release Week
+          X Tagged and shipped v0.28.0 (blank-page skip + Prometheus cost telemetry)
+          • Northstar daily Gemini OCR spend dropped from $38/day to $27.40/day (-28%)
+          • End-of-shift sync queue drain time fell from 19 min to 11 min
+          o 14:00 Q1 Engineering All-Hands — team recognized for zero-downtime 400-seat rollout
+      - page_index: 14
+        page_id: P20260406090000WRK0015
+        text_content: |-
+          Week of 2026-04-06 — Q2 Kickoff: Large Notebook Summarization
+          • Users with 60-120 page notebooks reported truncated AI summaries and high token costs
+          • Current `SummaryModule` concatenates all pages into one prompt and re-runs from scratch on every edit
+          • Proposed iterative chunking with per-chunk cache in `SummaryDO.extra_metadata` (no DB migration)
+          • Action: build realistic large-notebook eval dataset before tuning `max_pages_per_chunk` (continued next page)
+      - page_index: 15
+        page_id: LEGACY_WRK_0016
+        text_content: |-
+          (Large notebook summarization eval plan cont.)
+          • Arms to compare head-to-head: single-shot baseline vs independent chunks (8/15 pages) vs rolling carry-over context
+          • Metrics: early/middle/late/boundary fact recall, date accuracy, page_refs citation precision, duplicate date_range count, LLM call count on 1-page append
+          • Owner: Priya & Sam to run Gemini Flash and GPT-4o-mini sweeps before picking default chunk size
+      - page_index: 16
+        page_id: P20260413090000WRK0017
+        text_content: |-
+          Week of 2026-04-13 — Sprint 18
+          • Northstar signed annual renewal contract ($48,000 ARR, expanding to 650 seats in June)
+          • Devon prototyping `WikiCompilerWorker` chronological backfill cursor
+          • Marcus completed OAuth 2.1 Dynamic Client Registration for MCP clients
+      - page_index: 17
+        page_id: P20260420090000WRK0018
+        text_content: |-
+          Week of 2026-04-20 — Sprint 18 Wrap
+          X Merged MCP Streamable HTTP + OAuth 2.1 DCR (PR #512)
+          • Tested Claude Desktop and Cursor MCP integrations end-to-end
+          • Bug fix: `exclude_actors=["self"]` echo suppression on `list_events`
+      - page_index: 18
+        page_id: P20260427090000WRK0019
+        text_content: |-
+          Week of 2026-04-27 — Security & Reliability Audit
+          • External pen-test by Cobalt Labs completed: 0 Critical, 0 High, 2 Low findings
+          • Low #1: add strict `Content-Security-Policy` header on Web UI static assets
+          • Low #2: cap SVG/PNG thumbnail decode dimensions to prevent decompression bombs
+          X Fixed both Low findings in PR #528
+      - page_index: 19
+        page_id: P20260504090000WRK0020
+        text_content: |-
+          Week of 2026-05-04 — Q2 Midpoint Check-in
+          • 99.98% API uptime across April (1.4M requests)
+          • Preparing v0.29.0 release candidate: LLM Wiki opt-in beta + iterative summary chunking
+          • Hired new backend engineer (Tessa) starting May 18 — prep onboarding laptop & starter issues
+    expected_facts:
+      - id: work_early_float16_decision
+        region: early
+        expected_date: "2026-02-05"
+        expected_page: 2
+        keywords:
+          - ["float16", "lru"]
+          - ["180mb", "sqlite", "option 2"]
+      - id: work_early_sev2_postmortem
+        region: early
+        expected_date: "2026-02-19"
+        expected_page: 6
+        keywords:
+          - ["408", "sqlite_busy", "lock"]
+          - ["441", "15000", "session"]
+      - id: work_boundary_p9_streaming_zip
+        region: boundary_continuation
+        expected_date: "2026-03-02"
+        expected_page: 9
+        keywords:
+          - ["zipstream", "streaming"]
+          - ["v0.27.4", "jorge", "280"]
+      - id: work_middle_blank_page_design
+        region: middle
+        expected_date: "2026-03-19"
+        expected_page: 12
+        keywords:
+          - ["has_drawables", "blank"]
+          - ["472", "475", "v0.28.0"]
+      - id: work_middle_cost_drop
+        region: middle
+        expected_date: "2026-03-30"
+        expected_page: 14
+        keywords:
+          - ["27.40", "28%"]
+          - ["v0.28.0"]
+      - id: work_boundary_p16_eval_arms
+        region: boundary_continuation
+        expected_date: "2026-04-06"
+        expected_page: 16
+        keywords:
+          - ["single-shot", "carry-over", "rolling"]
+          - ["priya", "sam", "recall"]
+      - id: work_late_northstar_renewal
+        region: late
+        expected_date: "2026-04-13"
+        expected_page: 17
+        keywords:
+          - ["northstar", "48,000", "48000"]
+          - ["650"]
+      - id: work_late_pentest
+        region: late
+        expected_date: "2026-04-27"
+        expected_page: 19
+        keywords:
+          - ["cobalt"]
+          - ["528", "csp", "content-security-policy"]
+  - file_name: Project_Helios_Design.note
+    custom_type: default
+    description: >-
+      16-page technical hardware/firmware notebook for a solar-powered LoRa
+      weather station (Project Helios). Sparse dates, topical sections, and
+      evolving specs across pages.
+    pages:
+      - page_index: 0
+        page_id: P20260112100000HEL0001
+        text_content: |-
+          Project Helios — Off-Grid Solar LoRa Weather Station (2026-01-12)
+          Goals:
+          - Autonomous outdoor weather node lasting 14 days without sunlight
+          - Telemetry every 5 minutes over 915MHz LoRaWAN to home gateway
+          - Sensors: temp, humidity, barometric pressure, wind speed, rain gauge
+          - Target BOM cost under $135 per node
+      - page_index: 1
+        page_id: P20260112113000HEL0002
+        text_content: |-
+          Initial Microcontroller & Radio Selection
+          - MCU candidate A: ESP32-S3 (deep sleep ~18uA, easy Wi-Fi debug, cheap)
+          - MCU candidate B: nRF52840 (deep sleep ~2.5uA, superior battery life)
+          - Radio: Semtech SX1262 LoRa transceiver (+22dBm TX)
+          - Initial pick: ESP32-S3 + SX1262 breakout for rapid prototyping
+      - page_index: 2
+        page_id: P20260118140000HEL0003
+        text_content: |-
+          Power Budget v1 (ESP32-S3)
+          - Deep sleep: 22uA (MCU + regulator quiescent)
+          - Wake + sensor read (1.2s): 45mA
+          - LoRa TX SF9 (0.4s): 125mA
+          - Average current @ 5-min interval: ~420uA (10.1 mAh/day)
+          - Battery: single 18650 LiFePO4 (1500mAh) -> ~148 days theoretical, ~18 days realistic winter
+      - page_index: 3
+        page_id: P20260125090000HEL0004
+        text_content: |-
+          Sensor Suite BOM v1 (2026-01-25)
+          - Temp/Humidity/Pressure: Bosch BME280 ($7.50)
+          - Anemometer: Davis 6410 3-cup sensor ($48)
+          - Rain gauge: Misol tipping bucket, 0.2794mm per tip ($18)
+          - Solar panel: 6V 2W monocrystalline epoxy-coated ($11)
+          - Charger IC: CN3791 MPPT LiFePO4 board ($6.50)
+          - Enclosure: IP65 polycarbonate junction box + Stevenson radiation shield ($24)
+          - Subtotal: $115 + $18 MCU/LoRa = $133 total
+      - page_index: 4
+        page_id: P20260204150000HEL0005
+        text_content: |-
+          Bench Prototype Assembly Notes
+          - Wired BME280 over I2C (4.7k pullups), SX1262 over SPI
+          - Tipping bucket reed switch debounced with 100nF cap + hardware interrupt
+          - Discovered CN3791 charger draws 1.8mA reverse leakage at night! Must add Schottky blocking diode (SS14) or switch charger IC.
+      - page_index: 5
+        page_id: P20260211160000HEL0006
+        text_content: |-
+          Sensor Calibration & Drift Test (2026-02-11)
+          - Tested BME280 against reference Kestrel 5500 over 72 hours
+          - BME280 humidity read 4.5% high in fog (known condensation saturation issue)
+          - Decision: replace BME280 with Sensirion SHT45 (built-in heater for anti-condensation, $9.20) + separate BMP390 barometer ($5.40)
+      - page_index: 6
+        page_id: P20260219100000HEL0007
+        text_content: |-
+          Firmware State Machine v1
+          1. BOOT -> load calibration constants from NVS
+          2. SAMPLE -> pulse SHT45 heater if RH > 85%, read wind pulses (3s window), read battery ADC
+          3. PACK -> CBOR binary payload (18 bytes total, saves 60% airtime vs JSON)
+          4. TX -> LoRaWAN OTAA unconfirmed uplink on SF7-SF9 ADR
+          5. SLEEP -> RTC alarm 300s, rain gauge interrupt wakes counter only (no radio TX)
+      - page_index: 7
+        page_id: P20260226140000HEL0008
+        text_content: |-
+          Cold-Weather Chamber Test (2026-02-26)
+          - Placed prototype in chest freezer at -12C for 24 hours
+          - Finding #1: LiFePO4 battery cannot be charged below 0C (risk of lithium plating!)
+          - Finding #2: ESP32-S3 brownout detector tripped during -12C LoRa TX spike
+          - Mitigation plan (continued next page)
+      - page_index: 8
+        page_id: LEGACY_HEL_0009
+        text_content: |-
+          (Cold-weather mitigation plan cont.)
+          - Add NTC thermistor cut-off circuit (10k NTC + comparator) to disable solar charging below +2C
+          - Add 470uF low-ESR tantalum bulk capacitor across SX1262 VCC rail to absorb TX current spikes
+          - Evaluate switching MCU to nRF52840 (RAK4631 WisBlock module) for lower cold-boot inrush and 1/5th sleep current
+      - page_index: 9
+        page_id: P20260307110000HEL0010
+        text_content: |-
+          MCU Migration: ESP32-S3 -> RAK4631 (nRF52840 + SX1262) (2026-03-07)
+          - Switched primary board to RAK4631 ($29 integrated nRF52840 + SX1262)
+          - Measured real deep sleep current: 4.1uA (down from 22uA on ESP32-S3!)
+          - Replaced leaky CN3791 with TI BQ25570 energy harvester (488nA quiescent, built-in buck)
+          - Re-ran -12C freezer test: zero brownouts across 200 consecutive TX cycles
+      - page_index: 10
+        page_id: P20260315130000HEL0011
+        text_content: |-
+          Roof Field Test #1 — 14-Day Soak (2026-03-15)
+          - Mounted Helios v2 on south garage mast (3.5m height)
+          - Gateway RSSI: -89 dBm, SNR: +8.5 dB at 1.4km suburban range
+          - Battery voltage stayed between 3.31V and 3.36V even through 4 consecutive rainy days
+          - Rain gauge recorded 41.2mm vs airport NWS station 40.8mm (within 1%!)
+      - page_index: 11
+        page_id: P20260324100000HEL0012
+        text_content: |-
+          Enclosure & Thermal Redesign
+          - Noticed +1.8C daytime solar radiation bias on SHT45 inside 5-plate radiation shield
+          - Added 2 extra matte-white UV-stabilized ASA plates (7 plates total) + black inner undersides
+          - Daytime temp bias dropped from +1.8C to +0.25C
+          - Switched cable glands to PG7 silicone-gasketed nylon to stop spider ingress
+      - page_index: 12
+        page_id: P20260402150000HEL0013
+        text_content: |-
+          LoRaWAN Gateway & Home Assistant Integration (2026-04-02)
+          - ChirpStack v4 decoder parses 18-byte CBOR payload into MQTT discovery topics
+          - Home Assistant dashboard tracks temp, dew point, wind gust, 24h rain, battery SoC, and RSSI
+          - Added alert if no packet received for >30 minutes or battery < 3.15V
+      - page_index: 13
+        page_id: P20260410110000HEL0014
+        text_content: |-
+          Custom 2-Layer PCB Layout (Rev A)
+          - Designed carrier PCB in KiCad 8 (68mm x 52mm) integrating RAK4631 socket, BQ25570, NTC <2C charge cutoff, and screw terminals
+          - Ordered 5 bare PCBs + stencil from JLCPCB ($34 shipped)
+          - Included TVS ESD protection diodes (USBLC6) on anemometer and rain gauge external wires
+      - page_index: 14
+        page_id: P20260419160000HEL0015
+        text_content: |-
+          Rev A Board Bring-Up & Final BOM (2026-04-19)
+          - Soldered 2 Rev A boards on hotplate; both booted cleanly on first power-up
+          - Verified NTC charge cutoff tripped at +1.9C using cold spray
+          - Final unit BOM (qty 5): $141.80 (slightly over $135 target due to SHT45 + BQ25570, well worth reliability)
+      - page_index: 15
+        page_id: P20260425100000HEL0016
+        text_content: |-
+          Production Deployment & Next Ideas (2026-04-25)
+          - Deployed Node #1 on home roof and Node #2 at Elena's hillside vineyard (4.2km LoRa link, RSSI -104 dBm)
+          - 30-day packet delivery ratio: 99.6%
+          - Future v3 ideas: ultrasonic wind sensor (no moving parts), lightning detector (AS3935)
+    expected_facts:
+      - id: helios_early_initial_spec
+        region: early
+        expected_date: "2026-01-12"
+        expected_page: 1
+        keywords:
+          - ["lorawan", "lora"]
+          - ["135", "14 days"]
+      - id: helios_early_sensor_swap
+        region: early
+        expected_date: "2026-02-11"
+        expected_page: 6
+        keywords:
+          - ["sht45"]
+          - ["bmp390", "bme280"]
+      - id: helios_boundary_p9_ntc_cutoff
+        region: boundary_continuation
+        expected_date: "2026-02-26"
+        expected_page: 9
+        keywords:
+          - ["ntc", "thermistor", "+2c"]
+          - ["470uf", "rak4631", "nrf52840"]
+      - id: helios_middle_rak4631_migration
+        region: middle
+        expected_date: "2026-03-07"
+        expected_page: 10
+        keywords:
+          - ["rak4631", "nrf52840"]
+          - ["bq25570", "4.1ua"]
+      - id: helios_middle_roof_soak
+        region: middle
+        expected_date: "2026-03-15"
+        expected_page: 11
+        keywords:
+          - ["41.2", "rain"]
+          - ["-89", "1.4km", "soak"]
+      - id: helios_late_rev_a_bom
+        region: late
+        expected_date: "2026-04-19"
+        expected_page: 15
+        keywords:
+          - ["141.80", "rev a"]
+          - ["1.9c", "hotplate", "ntc"]
+      - id: helios_late_production_deploy
+        region: late
+        expected_date: "2026-04-25"
+        expected_page: 16
+        keywords:
+          - ["99.6%", "vineyard"]
+          - ["4.2km", "-104"]

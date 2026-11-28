@@ -165,12 +165,22 @@ def format_summary_prompt(
     transcript: str,
     *,
     custom_type: str | None = None,
+    prior_context: str | None = None,
     prompt_loader: PromptLoader = PROMPT_LOADER,
 ) -> str:
     """Format the full summarization prompt for an aggregated notebook transcript."""
     prompt_template = prompt_loader.get_prompt(
         PromptId.SUMMARY_GENERATION, custom_type=custom_type
     )
+    if prior_context and prior_context.strip():
+        return (
+            f"{prompt_template}\n\n"
+            "PRIOR CONTEXT (read-only summary of the immediately preceding pages; "
+            "use only to infer continuing dates or topics and do NOT repeat these "
+            "earlier items unless new details appear in the transcript below):\n"
+            f"{prior_context.strip()}\n\n"
+            f"TRANSCRIPT:\n{transcript}"
+        )
     return f"{prompt_template}\n\nTRANSCRIPT:\n{transcript}"
 
 

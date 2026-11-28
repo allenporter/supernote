@@ -148,6 +148,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="summary",
         import_path="supernote.server.components.summary:SummaryComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.summary.config:SummaryConfig",
     ),
     BuiltinComponentSpec(
         domain="transcript",
