@@ -39,7 +39,7 @@ from supernote.server.config import (  # noqa: E402
 )
 
 DEFAULT_DATASET = REPO_ROOT / "evals/wiki/dataset.yaml"
-DEFAULT_TARGET = "gemini:gemini-2.5-flash"
+DEFAULT_TARGET = "gemini:gemini-3.5-flash-lite"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -136,7 +136,7 @@ def _build_text_model(args: argparse.Namespace) -> TextGenerationModel:
     if ":" not in args.target:
         raise SystemExit(
             f"Invalid --target {args.target!r}; expected '<provider>:<model>' "
-            "(e.g. 'gemini:gemini-2.5-flash' or 'fake:deterministic')."
+            "(e.g. 'gemini:gemini-3.5-flash-lite' or 'fake:deterministic')."
         )
     provider, model_name = args.target.split(":", maxsplit=1)
     provider = provider.strip().lower()
