@@ -213,7 +213,7 @@ async def test_admin_reprocess(
     async with session_manager.session() as session:
         task = SystemTaskDO(
             user_id=1,
-            file_id=999,
+            entity_id=999,
             task_type=TaskType.SUMMARY_GENERATION.value,
             key="global",
             status=ProcessingStatus.COMPLETED,
@@ -234,7 +234,7 @@ async def test_admin_reprocess(
     # Verify task is deleted in DB and no stray HASHING task was created
     async with session_manager.session() as session:
         result = await session.execute(
-            select(SystemTaskDO).where(SystemTaskDO.file_id == 999)
+            select(SystemTaskDO).where(SystemTaskDO.entity_id == 999)
         )
         tasks = result.scalars().all()
         assert len(tasks) == 0
@@ -357,7 +357,7 @@ async def test_admin_list_tasks(
             [
                 SystemTaskDO(
                     user_id=1,
-                    file_id=101,
+                    entity_id=101,
                     task_type="OCR_EXTRACTION",
                     key="page_1",
                     status=ProcessingStatus.FAILED,
@@ -367,7 +367,7 @@ async def test_admin_list_tasks(
                 ),
                 SystemTaskDO(
                     user_id=1,
-                    file_id=102,
+                    entity_id=102,
                     task_type="SUMMARY_GENERATION",
                     key="global",
                     status=ProcessingStatus.COMPLETED,
@@ -546,7 +546,7 @@ async def test_admin_reprocess_cascade_and_custom_stage(
             [
                 SystemTaskDO(
                     user_id=1,
-                    file_id=7771,
+                    entity_id=7771,
                     task_type=t,
                     key="global",
                     status=ProcessingStatus.COMPLETED,
@@ -588,7 +588,7 @@ async def test_admin_reprocess_cascade_and_custom_stage(
             row.task_type
             for row in (
                 await session.execute(
-                    select(SystemTaskDO).where(SystemTaskDO.file_id == 7771)
+                    select(SystemTaskDO).where(SystemTaskDO.entity_id == 7771)
                 )
             )
             .scalars()
@@ -601,7 +601,7 @@ async def test_admin_reprocess_cascade_and_custom_stage(
         session.add(
             SystemTaskDO(
                 user_id=1,
-                file_id=7771,
+                entity_id=7771,
                 task_type="CUSTOM_TAGGING",
                 key="global",
                 status=ProcessingStatus.COMPLETED,
@@ -616,7 +616,7 @@ async def test_admin_reprocess_cascade_and_custom_stage(
             (
                 await session.execute(
                     select(SystemTaskDO).where(
-                        SystemTaskDO.file_id == 7771,
+                        SystemTaskDO.entity_id == 7771,
                         SystemTaskDO.task_type == "CUSTOM_TAGGING",
                     )
                 )

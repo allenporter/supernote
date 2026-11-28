@@ -15,7 +15,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.models.system import (
     IntegrityIssueType,
     IntegrityIssueVO,
@@ -341,12 +341,12 @@ class IntegrityService:
             report.scanned += 1
             detail = (
                 f"SystemTask {task.id} ({task.task_type}, {task.key}) "
-                f"references missing or inactive file_id={task.file_id}"
+                f"references missing or inactive file_id={task.entity_id}"
             )
             logger.error(f"Integrity Fail: {detail}")
             report.issues.append(
                 IntegrityIssueVO(
-                    file_id=task.file_id,
+                    file_id=task.entity_id,
                     file_name=f"{task.task_type}:{task.key}",
                     issue_type=IntegrityIssueType.ORPHAN,
                     detail=detail,
@@ -572,7 +572,7 @@ class IntegrityService:
 
         stmt = (
             select(
-                SystemTaskDO.file_id,
+                SystemTaskDO.entity_id,
                 SystemTaskDO.task_type,
                 SystemTaskDO.key,
                 SystemTaskDO.status,
@@ -581,7 +581,7 @@ class IntegrityService:
             .join(
                 UserFileDO,
                 and_(
-                    UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.id == SystemTaskDO.entity_id,
                     UserFileDO.user_id == SystemTaskDO.user_id,
                 ),
             )
@@ -589,13 +589,14 @@ class IntegrityService:
                 NotePageContentDO,
                 # SystemTaskDO.key uses 'page_{page_id}' whereas NotePageContentDO stores raw 'page_id'
                 and_(
-                    NotePageContentDO.file_id == SystemTaskDO.file_id,
+                    NotePageContentDO.file_id == SystemTaskDO.entity_id,
                     "page_" + NotePageContentDO.page_id == SystemTaskDO.key,
                 ),
             )
             .where(
                 *note_filters,
                 SystemTaskDO.user_id == user_id,
+                SystemTaskDO.entity_type == TaskEntityType.FILE.value,
                 or_(
                     # 1. Any processing task that ended in FAILED status
                     SystemTaskDO.status == ProcessingStatus.FAILED,
@@ -665,17 +666,18 @@ class IntegrityService:
             note_filters.append(UserFileDO.id == file_id)
 
         stmt = (
-            select(SystemTaskDO.file_id, SystemTaskDO.key)
+            select(SystemTaskDO.entity_id, SystemTaskDO.key)
             .join(
                 UserFileDO,
                 and_(
-                    UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.id == SystemTaskDO.entity_id,
                     UserFileDO.user_id == SystemTaskDO.user_id,
                 ),
             )
             .where(
                 *note_filters,
                 SystemTaskDO.user_id == user_id,
+                SystemTaskDO.entity_type == TaskEntityType.FILE.value,
                 # Completed PNG_CONVERSION tasks whose rendered PNG should exist in CACHE_BUCKET
                 SystemTaskDO.status == ProcessingStatus.COMPLETED,
                 SystemTaskDO.task_type == TaskType.PNG_CONVERSION.value,
@@ -935,19 +937,22 @@ class IntegrityService:
     async def _query_orphan_system_tasks(
         self, session: AsyncSession
     ) -> list[SystemTaskDO]:
-        """Query SystemTaskDO rows whose file_id does not reference an active non-folder UserFileDO."""
+        """Query file-scoped SystemTaskDO rows whose entity_id does not reference an active non-folder UserFileDO."""
         stmt = (
             select(SystemTaskDO)
             .outerjoin(
                 UserFileDO,
                 and_(
-                    UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.id == SystemTaskDO.entity_id,
                     UserFileDO.user_id == SystemTaskDO.user_id,
                     UserFileDO.is_active == "Y",
                     UserFileDO.is_folder == "N",
                 ),
             )
-            .where(UserFileDO.id.is_(None))
+            .where(
+                SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                UserFileDO.id.is_(None),
+            )
             .order_by(SystemTaskDO.id.asc())
         )
         return list((await session.execute(stmt)).scalars().all())
@@ -985,17 +990,20 @@ class IntegrityService:
                 referenced.add(get_page_png_path(fid, page_id))
 
         png_task_stmt = (
-            select(SystemTaskDO.file_id, SystemTaskDO.key)
+            select(SystemTaskDO.entity_id, SystemTaskDO.key)
             .join(
                 UserFileDO,
                 and_(
-                    UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.id == SystemTaskDO.entity_id,
                     UserFileDO.user_id == SystemTaskDO.user_id,
                     UserFileDO.is_active == "Y",
                     UserFileDO.is_folder == "N",
                 ),
             )
-            .where(SystemTaskDO.task_type == TaskType.PNG_CONVERSION.value)
+            .where(
+                SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                SystemTaskDO.task_type == TaskType.PNG_CONVERSION.value,
+            )
         )
         for fid, task_key in (await session.execute(png_task_stmt)).all():
             page_id = task_key.removeprefix("page_")

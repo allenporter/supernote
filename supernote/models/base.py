@@ -78,15 +78,29 @@ class ProcessingStatus(str, BaseEnum):
     NONE = "NONE"  # Used in view aggregation
 
 
+class TaskEntityType(str, BaseEnum):
+    """Entity type targeted by a system processing task."""
+
+    FILE = "file"
+    SUMMARY = "summary"
+
+
 class TaskType(str, BaseEnum):
     """Processing task types."""
 
     friendly_name: str
+    entity_type: TaskEntityType
 
-    def __new__(cls, value: str, friendly_name: str) -> "TaskType":
+    def __new__(
+        cls,
+        value: str,
+        friendly_name: str,
+        entity_type: TaskEntityType = TaskEntityType.FILE,
+    ) -> "TaskType":
         obj = str.__new__(cls, value)
         obj._value_ = value
         obj.friendly_name = friendly_name
+        obj.entity_type = entity_type
         return obj
 
     PAGE_HASHING = ("HASHING", "hashing")
@@ -95,6 +109,14 @@ class TaskType(str, BaseEnum):
     OCR_EXTRACTION = ("OCR_EXTRACTION", "ocr")
     EMBEDDING_GENERATION = ("EMBEDDING_GENERATION", "embedding")
     SUMMARY_GENERATION = ("SUMMARY_GENERATION", "summary")
+
+    @classmethod
+    def entity_type_for(cls, task_type: str) -> TaskEntityType:
+        """Return the implied `TaskEntityType` for a known `TaskType`, defaulting to `FILE`."""
+        try:
+            return cls(task_type).entity_type
+        except ValueError:
+            return TaskEntityType.FILE
 
     @classmethod
     def from_friendly(cls, friendly: str) -> "TaskType":

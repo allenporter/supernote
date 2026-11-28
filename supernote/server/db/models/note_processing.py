@@ -32,7 +32,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import ProcessingStatus, TaskEntityType
 from supernote.notebook.exceptions import ParserException
 from supernote.notebook.schema import KeywordMetadata
 from supernote.server.db.base import Base
@@ -375,8 +375,17 @@ class SystemTaskDO(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
     """Internal database ID."""
 
-    file_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
-    """The numeric ID of the source file."""
+    entity_type: Mapped[str] = mapped_column(
+        String,
+        default=TaskEntityType.FILE.value,
+        server_default=TaskEntityType.FILE.value,
+        index=True,
+        nullable=False,
+    )
+    """Entity kind targeted by this task (e.g., 'file', 'summary')."""
+
+    entity_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    """Numeric ID of the target entity (e.g., `UserFileDO.id` or `SummaryDO.id`)."""
 
     task_type: Mapped[str] = mapped_column(String, index=True, nullable=False)
     """Type of task (e.g., 'PNG', 'OCR', 'EMBED', 'SUMMARY')."""
@@ -412,6 +421,11 @@ class SystemTaskDO(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "file_id", "task_type", "key", name="uq_system_task"
+            "user_id",
+            "entity_type",
+            "entity_id",
+            "task_type",
+            "key",
+            name="uq_system_task",
         ),
     )

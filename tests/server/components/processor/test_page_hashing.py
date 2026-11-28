@@ -93,7 +93,7 @@ async def test_process_with_real_file(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "HASHING")
                 )
             )
@@ -133,21 +133,21 @@ async def test_process_with_real_file(
         # Add mock downstream tasks that should be invalidated (deleted)
         ocr_task = SystemTaskDO(
             user_id=user_id,
-            file_id=file_id,
+            entity_id=file_id,
             task_type="OCR_EXTRACTION",
             key=f"page_{page.page_id}",
             status="COMPLETED",
         )
         summary_task = SystemTaskDO(
             user_id=user_id,
-            file_id=file_id,
+            entity_id=file_id,
             task_type="SUMMARY_GENERATION",
             key="global",
             status="COMPLETED",
         )
         downstream_global_task = SystemTaskDO(
             user_id=user_id,
-            file_id=file_id,
+            entity_id=file_id,
             task_type="DOWNSTREAM_GLOBAL_TASK",
             key="global",
             status="COMPLETED",
@@ -186,7 +186,7 @@ async def test_process_with_real_file(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
                     .where(SystemTaskDO.key == f"page_{page.page_id}")
                 )
@@ -200,7 +200,7 @@ async def test_process_with_real_file(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "SUMMARY_GENERATION")
                     .where(SystemTaskDO.key == "global")
                 )
@@ -214,7 +214,7 @@ async def test_process_with_real_file(
             (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.task_type == "DOWNSTREAM_GLOBAL_TASK")
                     .where(SystemTaskDO.key == "global")
                 )
@@ -410,7 +410,7 @@ async def test_page_hashing_marks_task_failed_on_missing_or_corrupt_file(
             task = (
                 await session.execute(
                     select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == fid)
+                    .where(SystemTaskDO.entity_id == fid)
                     .where(SystemTaskDO.task_type == "HASHING")
                 )
             ).scalar_one()
@@ -456,7 +456,7 @@ async def test_page_hashing_skips_missing_or_inactive_file_without_task_row(
             tasks = (
                 (
                     await session.execute(
-                        select(SystemTaskDO).where(SystemTaskDO.file_id == fid)
+                        select(SystemTaskDO).where(SystemTaskDO.entity_id == fid)
                     )
                 )
                 .scalars()

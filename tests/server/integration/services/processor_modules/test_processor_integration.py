@@ -116,7 +116,7 @@ async def test_full_processing_pipeline_with_real_file(
         tasks = (
             (
                 await session.execute(
-                    select(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
+                    select(SystemTaskDO).where(SystemTaskDO.entity_id == file_id)
                 )
             )
             .scalars()
@@ -258,7 +258,7 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
             (
                 await session.execute(
                     select(SystemTaskDO).where(
-                        SystemTaskDO.file_id == file_id,
+                        SystemTaskDO.entity_id == file_id,
                         SystemTaskDO.status == "COMPLETED",
                     )
                 )

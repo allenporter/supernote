@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import and_, case, delete, or_, select
 
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus, TaskEntityType, TaskType
 from supernote.models.extended import (
     SystemTaskVO,
 )
@@ -309,7 +309,8 @@ class ProcessorService:
                 await session.execute(
                     delete(SystemTaskDO).where(
                         SystemTaskDO.user_id == event.user_id,
-                        SystemTaskDO.file_id == event.file_id,
+                        SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                        SystemTaskDO.entity_id == event.file_id,
                         SystemTaskDO.task_type == TaskType.PAGE_HASHING,
                     )
                 )
@@ -350,7 +351,8 @@ class ProcessorService:
                 await session.execute(
                     delete(SystemTaskDO).where(
                         SystemTaskDO.user_id == event.user_id,
-                        SystemTaskDO.file_id == file_id,
+                        SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                        SystemTaskDO.entity_id == file_id,
                     )
                 )
                 await session.commit()
@@ -361,10 +363,13 @@ class ProcessorService:
         """Check DB for incomplete tasks on startup."""
         logger.info("Recovering pending processing tasks...")
         async with self.session_manager.session() as session:
-            # Find all (user_id, file_id) pairs that have any task NOT in COMPLETED status
+            # Find all (user_id, entity_id) pairs that have any file task NOT in COMPLETED status
             stmt = (
-                select(SystemTaskDO.user_id, SystemTaskDO.file_id)
-                .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
+                select(SystemTaskDO.user_id, SystemTaskDO.entity_id)
+                .where(
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                    SystemTaskDO.status != ProcessingStatus.COMPLETED,
+                )
                 .distinct()
             )
             result = await session.execute(stmt)
@@ -402,7 +407,8 @@ class ProcessorService:
 
         async with self.session_manager.session() as session:
             stmt = (
-                select(SystemTaskDO.user_id, SystemTaskDO.file_id)
+                select(SystemTaskDO.user_id, SystemTaskDO.entity_id)
+                .where(SystemTaskDO.entity_type == TaskEntityType.FILE.value)
                 .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
                 .where(SystemTaskDO.update_time < stale_threshold_ms)
                 .distinct()
@@ -430,7 +436,8 @@ class ProcessorService:
             select(SystemTaskDO.id)
             .where(
                 SystemTaskDO.user_id == UserFileDO.user_id,
-                SystemTaskDO.file_id == UserFileDO.id,
+                SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                SystemTaskDO.entity_id == UserFileDO.id,
             )
             .correlate(UserFileDO)
             .exists()
@@ -443,7 +450,8 @@ class ProcessorService:
             if module.scope == TaskScope.FILE:
                 task_exists = select(SystemTaskDO.id).where(
                     SystemTaskDO.user_id == UserFileDO.user_id,
-                    SystemTaskDO.file_id == UserFileDO.id,
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                    SystemTaskDO.entity_id == UserFileDO.id,
                     SystemTaskDO.task_type == module.task_type,
                     SystemTaskDO.key == "global",
                 )
@@ -459,7 +467,8 @@ class ProcessorService:
             else:
                 page_task_exists = select(SystemTaskDO.id).where(
                     SystemTaskDO.user_id == UserFileDO.user_id,
-                    SystemTaskDO.file_id == NotePageContentDO.file_id,
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                    SystemTaskDO.entity_id == NotePageContentDO.file_id,
                     SystemTaskDO.task_type == module.task_type,
                     SystemTaskDO.key == "page_" + NotePageContentDO.page_id,
                 )
@@ -810,7 +819,8 @@ class ProcessorService:
                 select(SystemTaskDO.last_error)
                 .where(
                     SystemTaskDO.user_id == user_id,
-                    SystemTaskDO.file_id == file_id,
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                    SystemTaskDO.entity_id == file_id,
                     SystemTaskDO.key == key,
                 )
                 .order_by(SystemTaskDO.update_time.desc())
@@ -946,8 +956,9 @@ class ProcessorService:
                 targets.append((fid, uid, fname))
 
         async with self.session_manager.session() as session:
+            stmt = stmt.where(SystemTaskDO.entity_type == TaskEntityType.FILE.value)
             if file_id is not None:
-                stmt = stmt.where(SystemTaskDO.file_id == file_id)
+                stmt = stmt.where(SystemTaskDO.entity_id == file_id)
                 if targets:
                     stmt = stmt.where(SystemTaskDO.user_id == targets[0][1])
             await session.execute(stmt)
@@ -966,6 +977,8 @@ class ProcessorService:
         status: str | None = None,
         file_id: int | None = None,
         task_type: str | None = None,
+        *,
+        entity_type: TaskEntityType | None = None,
     ) -> list[SystemTaskDO]:
         """List recent system tasks with optional filtering, prioritizing failed and active tasks."""
         status_priority = case(
@@ -978,10 +991,15 @@ class ProcessorService:
             stmt = select(SystemTaskDO)
             if user_id is not None:
                 stmt = stmt.where(SystemTaskDO.user_id == user_id)
+            if entity_type is not None:
+                stmt = stmt.where(SystemTaskDO.entity_type == entity_type.value)
             if status:
                 stmt = stmt.where(SystemTaskDO.status == status.upper())
             if file_id is not None:
-                stmt = stmt.where(SystemTaskDO.file_id == file_id)
+                stmt = stmt.where(
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                    SystemTaskDO.entity_id == file_id,
+                )
             if task_type:
                 stmt = stmt.where(SystemTaskDO.task_type == task_type)
             stmt = stmt.order_by(
@@ -1015,19 +1033,20 @@ class ProcessorService:
                 .join(
                     UserFileDO,
                     and_(
-                        SystemTaskDO.file_id == UserFileDO.id,
+                        SystemTaskDO.entity_id == UserFileDO.id,
                         SystemTaskDO.user_id == UserFileDO.user_id,
                     ),
                 )
                 .outerjoin(
                     NotePageContentDO,
                     and_(
-                        NotePageContentDO.file_id == SystemTaskDO.file_id,
+                        NotePageContentDO.file_id == SystemTaskDO.entity_id,
                         "page_" + NotePageContentDO.page_id == SystemTaskDO.key,
                     ),
                 )
                 .where(
                     SystemTaskDO.user_id == user_id,
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
                     UserFileDO.is_active == "Y",
                 )
                 .order_by(status_priority.asc(), SystemTaskDO.update_time.desc())
@@ -1049,7 +1068,7 @@ class ProcessorService:
         vos = [
             SystemTaskVO(
                 id=task.id,
-                file_id=task.file_id,
+                file_id=task.entity_id,
                 task_type=task.task_type,
                 key=task.key,
                 status=ProcessingStatus(task.status),
@@ -1075,12 +1094,13 @@ class ProcessorService:
                 .join(
                     SystemTaskDO,
                     and_(
-                        SystemTaskDO.file_id == UserFileDO.id,
+                        SystemTaskDO.entity_id == UserFileDO.id,
                         SystemTaskDO.user_id == UserFileDO.user_id,
                     ),
                 )
                 .where(
                     SystemTaskDO.user_id == user_id,
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
                     UserFileDO.is_active == "Y",
                     SystemTaskDO.status == ProcessingStatus.FAILED,
                 )
@@ -1098,7 +1118,8 @@ class ProcessorService:
             await session.execute(
                 delete(SystemTaskDO).where(
                     SystemTaskDO.user_id == user_id,
-                    SystemTaskDO.file_id.in_(target_file_ids),
+                    SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                    SystemTaskDO.entity_id.in_(target_file_ids),
                     or_(
                         SystemTaskDO.status == ProcessingStatus.FAILED,
                         and_(
@@ -1159,11 +1180,12 @@ class ProcessorService:
                 task_rows = await session.execute(
                     select(SystemTaskDO).where(
                         SystemTaskDO.user_id == user_id,
-                        SystemTaskDO.file_id.in_(owned_file_ids),
+                        SystemTaskDO.entity_type == TaskEntityType.FILE.value,
+                        SystemTaskDO.entity_id.in_(owned_file_ids),
                     )
                 )
                 for task in task_rows.scalars().all():
-                    tasks_by_file[task.file_id].append(task)
+                    tasks_by_file[task.entity_id].append(task)
 
         return {
             file_id: (

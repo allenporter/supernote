@@ -19,7 +19,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
-from supernote.models.base import TaskType
+from supernote.models.base import TaskEntityType, TaskType
 from supernote.notebook import parse_metadata
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -303,7 +303,8 @@ class PageHashingModule(ProcessorModule):
                     await session.execute(
                         delete(SystemTaskDO)
                         .where(SystemTaskDO.user_id == user_id)
-                        .where(SystemTaskDO.file_id == file_id)
+                        .where(SystemTaskDO.entity_type == TaskEntityType.FILE.value)
+                        .where(SystemTaskDO.entity_id == file_id)
                         .where(SystemTaskDO.key == page_task_key)
                     )
                 elif index_changed:
@@ -348,7 +349,8 @@ class PageHashingModule(ProcessorModule):
                 await session.execute(
                     delete(SystemTaskDO)
                     .where(SystemTaskDO.user_id == user_id)
-                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.entity_type == TaskEntityType.FILE.value)
+                    .where(SystemTaskDO.entity_id == file_id)
                     .where(SystemTaskDO.key == f"page_{pid}")
                 )
 
@@ -356,7 +358,8 @@ class PageHashingModule(ProcessorModule):
             await session.execute(
                 delete(SystemTaskDO)
                 .where(SystemTaskDO.user_id == user_id)
-                .where(SystemTaskDO.file_id == file_id)
+                .where(SystemTaskDO.entity_type == TaskEntityType.FILE.value)
+                .where(SystemTaskDO.entity_id == file_id)
                 .where(SystemTaskDO.key == "global")
                 .where(SystemTaskDO.task_type != TaskType.PAGE_HASHING.value)
             )

@@ -17,6 +17,7 @@ from aiohttp import web
 from supernote.models.base import (
     BaseResponse,
     ProcessingStatus,
+    TaskEntityType,
     create_error_response,
 )
 from supernote.models.extended import (
@@ -261,11 +262,12 @@ async def handle_admin_list_tasks(request: web.Request) -> web.Response:
         status=status_filter,
         file_id=file_id,
         task_type=task_type_filter,
+        entity_type=TaskEntityType.FILE,
     )
     task_vos = [
         SystemTaskVO(
             id=t.id,
-            file_id=t.file_id,
+            file_id=t.entity_id,
             task_type=t.task_type,
             key=t.key,
             status=ProcessingStatus(t.status),
