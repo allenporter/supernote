@@ -488,7 +488,6 @@ def _pdf_styles() -> dict[str, ParagraphStyle]:
             leftIndent=8,
             spaceBefore=4,
             spaceAfter=6,
-            backColor=colors.HexColor("#F2F2F2"),
             textColor=colors.black,
         ),
     }
@@ -575,7 +574,12 @@ def _append_pdf_flowables(
             rows: list[list[Paragraph]] = []
             for tr in elem.iter("tr"):
                 row = [
-                    Paragraph(_inline_to_rml(cell), styles["body"])
+                    Paragraph(
+                        f"<b>{_inline_to_rml(cell)}</b>"
+                        if cell.tag == "th"
+                        else _inline_to_rml(cell),
+                        styles["body"],
+                    )
                     for cell in tr
                     if cell.tag in ("th", "td")
                 ]

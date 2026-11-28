@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
   # Core notebook dependencies (always installed)
   "colour>=0.1.5",
+  "markdown2>=2.5.0",
   "numpy>=1.19.0",
   "Pillow>=7.2.0",
   "potracer>=0.0.1",
@@ -58,7 +59,6 @@ server = [
   "prometheus-client>=0.20.0",
   "python-socketio>=5.11.0",
   "ical>=8.0.0",
-  "markdown2>=2.5.0",
 ]
 apple = [
   "pyobjc-framework-Vision>=10.0; sys_platform == 'darwin'",

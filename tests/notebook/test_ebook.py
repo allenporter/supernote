@@ -1,4 +1,4 @@
-"""Unit tests for `supernote.server.components.inbox.builder`."""
+"""Unit tests for `supernote.notebook.ebook`."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import zipfile
 
 import pytest
 
-from supernote.server.components.inbox.builder import (
+from supernote.notebook.ebook import (
     DocumentFormat,
     build_document,
     build_epub,
