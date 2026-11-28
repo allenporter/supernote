@@ -853,11 +853,12 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
     processor_service = component_core.app[PROCESSOR_SERVICE_KEY]
 
     async with session_manager.session() as session:
-        # File 9101: All tasks completed with current model ("new-model") -> should NOT be enqueued
+        # File 9101: All tasks completed with current versions -> should NOT be enqueued
         # File 9102: Missing OCR_EXTRACTION task -> needs OCR backfill
         # File 9103: Has EMBEDDING_GENERATION with data="old-model" -> needs embedding backfill
         # File 9104: Missing SUMMARY_GENERATION task -> needs summary backfill
-        for fid in (9101, 9102, 9103, 9104):
+        # File 9105: Has legacy OCR_EXTRACTION (data=None) -> needs v2 title OCR backfill
+        for fid in (9101, 9102, 9103, 9104, 9105):
             session.add(
                 UserFileDO(
                     id=fid,
@@ -916,6 +917,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 SystemTaskDO(
                     user_id=1,
@@ -947,6 +949,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 SystemTaskDO(
                     user_id=1,
@@ -970,6 +973,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 SystemTaskDO(
                     user_id=1,
@@ -978,6 +982,30 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     key="page_p0",
                     status="COMPLETED",
                     data="new-model",
+                ),
+                # 9105: Legacy OCR_EXTRACTION (data=None) needs v2 title OCR backfill
+                SystemTaskDO(
+                    user_id=1,
+                    entity_id=9105,
+                    task_type="OCR_EXTRACTION",
+                    key="page_p0",
+                    status="COMPLETED",
+                    data=None,
+                ),
+                SystemTaskDO(
+                    user_id=1,
+                    entity_id=9105,
+                    task_type="EMBEDDING_GENERATION",
+                    key="page_p0",
+                    status="COMPLETED",
+                    data="new-model",
+                ),
+                SystemTaskDO(
+                    user_id=1,
+                    entity_id=9105,
+                    task_type="SUMMARY_GENERATION",
+                    key="global",
+                    status="COMPLETED",
                 ),
             ]
         )
@@ -990,6 +1018,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
         ProcessingFile(1, 9102),
         ProcessingFile(1, 9103),
         ProcessingFile(1, 9104),
+        ProcessingFile(1, 9105),
     }.issubset(processor_service.processing_files)
 
 
@@ -2489,6 +2518,7 @@ async def test_recover_missing_tasks_backfills_note_metadata_for_notes_only(
                         task_type="OCR_EXTRACTION",
                         key=f"page_{pid}",
                         status="COMPLETED",
+                        data="v2",
                     ),
                 ]
             )

@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 def _render_title_pngs(path: str) -> dict[str, bytes]:
-    """Render every title crop of a note in one parse, keyed by `<TITLEBITMAP>` MD5."""
+    """Render every decodable title crop of a note in one parse, keyed by `<TITLEBITMAP>` MD5."""
     with open(path, "rb") as stream:
         notebook = Notebook(parse_metadata(stream, policy="loose"))
         load_title_bitmaps(stream, notebook.titles)
@@ -60,9 +60,20 @@ def _render_title_pngs(path: str) -> dict[str, bytes]:
     for title in notebook.titles:
         if not title.content:
             continue
-        buf = io.BytesIO()
-        converter.convert_title(title).save(buf, format="PNG")
-        pngs[hashlib.md5(title.content).hexdigest()] = buf.getvalue()
+        md5 = hashlib.md5(title.content).hexdigest()
+        try:
+            buf = io.BytesIO()
+            converter.convert_title(title).save(buf, format="PNG")
+        except (
+            notebook_exceptions.SupernoteLibException,
+            IndexError,
+            ValueError,
+        ) as err:
+            logger.warning(
+                f"Failed to render title crop {md5} on page {title.page_number}: {err}"
+            )
+            continue
+        pngs[md5] = buf.getvalue()
     return pngs
 
 

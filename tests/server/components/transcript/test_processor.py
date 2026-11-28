@@ -1063,3 +1063,231 @@ async def test_ocr_module_cleanup_file_deletes_title_transcripts_for_owner_only(
         assert await session.get(NoteTitleTranscriptDO, (7, 2060, "md5_1")) is None
         assert await session.get(NoteTitleTranscriptDO, (8, 2060, "md5_1")) is not None
         assert await session.get(NoteTitleTranscriptDO, (7, 2061, "md5_1")) is not None
+
+
+async def test_ocr_module_backfills_titles_on_legacy_version_upgrade_without_re_ocring_pages(
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    blob_storage: BlobStorage,
+) -> None:
+    """Legacy COMPLETED OCR tasks (data=None) upgrade to v2 by transcribing only missing titles."""
+    user_id = 1
+    file_id = 2070
+    title_md5 = "11111111111111111111111111111111"
+    await blob_storage.put(
+        CACHE_BUCKET, f"{file_id}/titles/{title_md5}.png", b"title-png"
+    )
+    # Deliberately omit page PNGs from CACHE_BUCKET to prove full-page OCR is skipped.
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=user_id,
+                    storage_key="k2070",
+                    file_name="Legacy.note",
+                    directory_id=0,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    text_content="Existing page 0 text",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    content_hash="h1",
+                    text_content="Existing page 1 text",
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    level=1,
+                    bitmap_md5=title_md5,
+                ),
+                SystemTaskDO(
+                    user_id=user_id,
+                    entity_id=file_id,
+                    task_type=TaskType.OCR_EXTRACTION,
+                    key="page_p0",
+                    status="COMPLETED",
+                    data=None,
+                ),
+                SystemTaskDO(
+                    user_id=user_id,
+                    entity_id=file_id,
+                    task_type=TaskType.OCR_EXTRACTION,
+                    key="page_p1",
+                    status="COMPLETED",
+                    data=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    calls: list[bytes] = []
+
+    class RecordingOcrModel(FakeOcrModel):
+        async def extract_text(self, png_data: bytes, prompt: str) -> str:
+            calls.append(png_data)
+            return "Backfilled Heading"
+
+    note_metadata_service = NoteMetadataService(
+        session_manager=session_manager, blob_storage=blob_storage
+    )
+    ocr = OcrModule(
+        file_service=file_service,
+        ocr_model=RecordingOcrModel(),
+        note_metadata_service=note_metadata_service,
+    )
+    with patch.object(
+        note_metadata_service,
+        "get_title_png_key",
+        new=AsyncMock(return_value=f"{file_id}/titles/{title_md5}.png"),
+    ):
+        assert (
+            await ocr.run(
+                file_id, session_manager, page_index=0, page_id="p0", user_id=user_id
+            )
+            is True
+        )
+        assert (
+            await ocr.run(
+                file_id, session_manager, page_index=1, page_id="p1", user_id=user_id
+            )
+            is True
+        )
+
+    # Exactly 1 LLM call: the single title crop on p0. Zero full-page OCR calls.
+    assert calls == [b"title-png"]
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(
+                    NotePageContentDO.file_id == file_id,
+                    NotePageContentDO.page_id == "p0",
+                )
+            )
+        ).scalar_one()
+        p1 = (
+            await session.execute(
+                select(NotePageContentDO).where(
+                    NotePageContentDO.file_id == file_id,
+                    NotePageContentDO.page_id == "p1",
+                )
+            )
+        ).scalar_one()
+        title_row = await session.get(
+            NoteTitleTranscriptDO, (user_id, file_id, title_md5)
+        )
+        tasks = list(
+            (
+                await session.execute(
+                    select(SystemTaskDO).where(
+                        SystemTaskDO.entity_id == file_id,
+                        SystemTaskDO.task_type == TaskType.OCR_EXTRACTION,
+                    )
+                )
+            ).scalars()
+        )
+    assert p0.text_content == "Existing page 0 text"
+    assert p1.text_content == "Existing page 1 text"
+    assert title_row is not None and title_row.text_content == "Backfilled Heading"
+    assert {t.key: t.data for t in tasks} == {"page_p0": "v2", "page_p1": "v2"}
+    assert (
+        await ocr.run_if_needed(
+            file_id, session_manager, page_index=0, page_id="p0", user_id=user_id
+        )
+        is False
+    )
+
+
+async def test_ocr_module_explicit_reprocess_still_runs_full_page_ocr_with_titles(
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    blob_storage: BlobStorage,
+) -> None:
+    """When SystemTaskDO is cleared for reprocessing, full-page OCR still runs even if text_content exists."""
+    user_id = 1
+    file_id = 2071
+    title_md5 = "22222222222222222222222222222222"
+    await blob_storage.put(CACHE_BUCKET, f"{file_id}/pages/p0.png", b"page-png")
+    await blob_storage.put(
+        CACHE_BUCKET, f"{file_id}/titles/{title_md5}.png", b"title-png"
+    )
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=user_id,
+                    storage_key="k2071",
+                    file_name="Reprocess.note",
+                    directory_id=0,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    text_content="Old page text",
+                ),
+                NoteTitleDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    title_index=0,
+                    page_index=0,
+                    level=1,
+                    bitmap_md5=title_md5,
+                ),
+            ]
+        )
+        await session.commit()
+
+    calls: list[bytes] = []
+
+    class RecordingOcrModel(FakeOcrModel):
+        async def extract_text(self, png_data: bytes, prompt: str) -> str:
+            calls.append(png_data)
+            return "Fresh page text" if png_data == b"page-png" else "Fresh heading"
+
+    note_metadata_service = NoteMetadataService(
+        session_manager=session_manager, blob_storage=blob_storage
+    )
+    ocr = OcrModule(
+        file_service=file_service,
+        ocr_model=RecordingOcrModel(),
+        note_metadata_service=note_metadata_service,
+    )
+    with patch.object(
+        note_metadata_service,
+        "get_title_png_key",
+        new=AsyncMock(return_value=f"{file_id}/titles/{title_md5}.png"),
+    ):
+        assert (
+            await ocr.run(
+                file_id, session_manager, page_index=0, page_id="p0", user_id=user_id
+            )
+            is True
+        )
+
+    assert calls == [b"page-png", b"title-png"]
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(
+                    NotePageContentDO.file_id == file_id,
+                    NotePageContentDO.page_id == "p0",
+                )
+            )
+        ).scalar_one()
+        title_row = await session.get(
+            NoteTitleTranscriptDO, (user_id, file_id, title_md5)
+        )
+    assert p0.text_content == "Fresh page text"
+    assert title_row is not None and title_row.text_content == "Fresh heading"

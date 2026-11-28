@@ -120,6 +120,10 @@ class ImageConverter:
         if rect is None:
             raise exceptions.DecoderException("title has no TITLERECT")
 
+        if not (0 <= title.page_number < len(self.note.pages)):
+            raise exceptions.DecoderException(
+                f"title page_number {title.page_number} out of range (total pages: {len(self.note.pages)})"
+            )
         horizontal = self.note.pages[title.page_number].is_horizontal()
         page_width, page_height = self.note.width, self.note.height
         if horizontal:

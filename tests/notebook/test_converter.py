@@ -913,3 +913,17 @@ def test_convert_title_corrupt_crop_reports_crop_error() -> None:
 
     with pytest.raises(DecoderException, match="expected = 100$"):
         converter.convert_title(title)
+
+
+@pytest.mark.parametrize("page_number", [-1, 99])
+def test_convert_title_rejects_out_of_range_page_number(page_number: int) -> None:
+    notebook = get_cached_notebook(str(LEGACY_TITLE_NOTE_PATH))
+    converter = ImageConverter(notebook)
+    title = fileformat.Title(
+        {"TITLERECT": "0,0,10,10", "TITLEPROTOCOL": "RATTA_RLE"},
+        content=notebook.titles[0].content,
+        page_number=page_number,
+    )
+
+    with pytest.raises(DecoderException, match="out of range"):
+        converter.convert_title(title)
