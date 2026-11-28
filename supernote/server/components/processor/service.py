@@ -18,6 +18,7 @@ import logging
 import time
 from collections.abc import AsyncGenerator, Collection, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import and_, case, delete, or_, select
@@ -65,8 +66,31 @@ from .base import ProcessorModule, TaskGraph, TaskScope
 
 logger = logging.getLogger(__name__)
 
-ProcessorWorkItem = tuple[TaskEntityType, int, int]
-"""Queued work item `(entity_type, user_id, entity_id)` processed by `ProcessorService`."""
+
+@dataclass(frozen=True, slots=True)
+class ProcessorWorkItem:
+    """Queued work item processed by `ProcessorService`."""
+
+    entity_type: TaskEntityType
+    """Entity kind targeted by the work item."""
+
+    user_id: int
+    """Owner user ID."""
+
+    entity_id: int
+    """Numeric ID of the target entity."""
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessingFile:
+    """Queued or in-flight file reference."""
+
+    user_id: int
+    """Owner user ID."""
+
+    file_id: int
+    """VFS file ID."""
+
 
 _IMAGE_NAME_SUFFIX_PATTERNS: tuple[str, ...] = (
     "%.png",
@@ -129,12 +153,12 @@ class ProcessorService:
         self.task_graph: TaskGraph = TaskGraph.empty()
 
     @property
-    def processing_files(self) -> set[tuple[int, int]]:
-        """Currently queued or in-flight `(user_id, file_id)` pairs."""
+    def processing_files(self) -> set[ProcessingFile]:
+        """Currently queued or in-flight files."""
         return {
-            (uid, eid)
-            for etype, uid, eid in self.processing_entities
-            if etype == TaskEntityType.FILE
+            ProcessingFile(user_id=item.user_id, file_id=item.entity_id)
+            for item in self.processing_entities
+            if item.entity_type == TaskEntityType.FILE
         }
 
     @property
@@ -170,8 +194,10 @@ class ProcessorService:
     async def enqueue_entity(
         self, entity_type: TaskEntityType, user_id: int, entity_id: int
     ) -> None:
-        """Deduplicate and enqueue `(entity_type, user_id, entity_id)` for background processing."""
-        item: ProcessorWorkItem = (entity_type, user_id, entity_id)
+        """Deduplicate and enqueue a `ProcessorWorkItem` for background processing."""
+        item = ProcessorWorkItem(
+            entity_type=entity_type, user_id=user_id, entity_id=entity_id
+        )
         if item not in self.processing_entities:
             self.processing_entities.add(item)
             await self.queue.put(item)
@@ -181,8 +207,10 @@ class ProcessorService:
     async def _entity_lock(
         self, entity_type: TaskEntityType, user_id: int, entity_id: int
     ) -> AsyncGenerator[None]:
-        """Serialize processing and deletion per `(entity_type, user_id, entity_id)` without leaking idle locks."""
-        lock_key: ProcessorWorkItem = (entity_type, user_id, entity_id)
+        """Serialize processing and deletion per entity without leaking idle locks."""
+        lock_key = ProcessorWorkItem(
+            entity_type=entity_type, user_id=user_id, entity_id=entity_id
+        )
         lock = self._entity_locks.setdefault(lock_key, asyncio.Lock())
         self._entity_lock_refcounts[lock_key] = (
             self._entity_lock_refcounts.get(lock_key, 0) + 1
@@ -578,7 +606,6 @@ class ProcessorService:
                 await self._processing_enabled.wait()
 
                 item = await self.queue.get()
-                entity_type, user_id, entity_id = item
                 self._update_queue_metrics()
 
                 # Re-check processing enabled status in case it was paused while we were waiting on get()
@@ -589,10 +616,12 @@ class ProcessorService:
                     await asyncio.sleep(0.5)
                     continue
                 try:
-                    await self.process_entity(entity_type, entity_id, user_id=user_id)
+                    await self.process_entity(
+                        item.entity_type, item.entity_id, user_id=item.user_id
+                    )
                 except Exception as e:
                     logger.error(
-                        f"Error processing user {user_id} {entity_type.value} {entity_id}: {e}",
+                        f"Error processing user {item.user_id} {item.entity_type.value} {item.entity_id}: {e}",
                         exc_info=True,
                     )
                 finally:
@@ -1099,7 +1128,7 @@ class ProcessorService:
             else_=3,
         )
         in_flight_candidates = [
-            fid for uid, fid in self.processing_files if uid == user_id
+            item.file_id for item in self.processing_files if item.user_id == user_id
         ]
         async with self.session_manager.session() as session:
             stmt = (
@@ -1251,7 +1280,7 @@ class ProcessorService:
         self, user_id: int, file_id: int, tasks: list[SystemTaskDO]
     ) -> ProcessingStatus:
         """Aggregate task rows and active queue membership into a single file status."""
-        if (user_id, file_id) in self.processing_files:
+        if ProcessingFile(user_id=user_id, file_id=file_id) in self.processing_files:
             if any(t.status == ProcessingStatus.PROCESSING for t in tasks):
                 return ProcessingStatus.PROCESSING
             return ProcessingStatus.PENDING
