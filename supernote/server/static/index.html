@@ -160,10 +160,17 @@
                         :delete-items="deleteSelectedItems"
                         :move-items="moveSelectedItems"
                         :rename-item="handleRenameItem"
+                        :show-timeline-toggle="isComponentRunning('timeline')"
                         @open-item="openItem"
                         @navigate-to="navigateTo"
                         @open-recycle-bin="openRecycleBin"
+                        @open-timeline="openTimeline"
                         @update-selected-ids="selectedIds = $event"></file-browser-panel>
+
+                    <!-- Cross-Notebook Page Timeline View -->
+                    <timeline-panel v-else-if="view === 'timeline'"
+                        @close="closeTimeline"
+                        @open-page="openItem"></timeline-panel>
 
                     <!-- Recycle Bin View -->
                     <recycle-bin-panel v-else-if="view === 'recycle'"

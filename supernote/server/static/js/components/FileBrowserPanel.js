@@ -120,8 +120,12 @@ export default {
             type: Function,
             required: true,
         },
+        showTimelineToggle: {
+            type: Boolean,
+            default: false,
+        },
     },
-    emits: ['open-item', 'navigate-to', 'update-selected-ids', 'open-recycle-bin'],
+    emits: ['open-item', 'navigate-to', 'update-selected-ids', 'open-recycle-bin', 'open-timeline'],
     /**
      * @param {{
      *   files: FileItem[],
@@ -520,26 +524,47 @@ export default {
 
         <!-- Unified Directory Header Bar: Breadcrumbs + Controls -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 mb-6 border-b border-stone-200/80">
-            <!-- Breadcrumb Path -->
-            <nav class="flex items-center text-sm overflow-x-auto whitespace-nowrap min-w-0" aria-label="Breadcrumb">
-                <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
-                    <button @click="$emit('navigate-to', index)" type="button"
-                        :class="index === breadcrumbs.length - 1
-                            ? 'text-slate-900 font-bold bg-stone-200/60 px-2.5 py-1 rounded-lg'
-                            : 'text-stone-600 hover:text-slate-900 hover:bg-stone-200/40 px-2 py-1 rounded-lg font-medium transition-colors'"
-                        class="flex items-center gap-1.5 text-sm">
-                        <svg v-if="index === 0" class="w-4 h-4 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
-                            </path>
+            <div class="flex items-center gap-3 min-w-0 overflow-x-auto">
+                <!-- Folders / Timeline Switcher -->
+                <div v-if="showTimelineToggle"
+                    class="flex items-center bg-stone-200/70 p-0.5 rounded-lg border border-stone-300/40 shrink-0">
+                    <button type="button" aria-current="page"
+                        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-white text-slate-900 shadow-sm transition-all">
+                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
                         </svg>
-                        <span>{{ crumb.name }}</span>
+                        <span>Folders</span>
                     </button>
-                    <svg v-if="index < breadcrumbs.length - 1" class="w-4 h-4 mx-1 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                    </svg>
+                    <button @click="$emit('open-timeline')" type="button"
+                        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-stone-600 hover:text-slate-900 transition-all">
+                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                        <span>Timeline</span>
+                    </button>
                 </div>
-            </nav>
+
+                <!-- Breadcrumb Path -->
+                <nav class="flex items-center text-sm overflow-x-auto whitespace-nowrap min-w-0" aria-label="Breadcrumb">
+                    <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
+                        <button @click="$emit('navigate-to', index)" type="button"
+                            :class="index === breadcrumbs.length - 1
+                                ? 'text-slate-900 font-bold bg-stone-200/60 px-2.5 py-1 rounded-lg'
+                                : 'text-stone-600 hover:text-slate-900 hover:bg-stone-200/40 px-2 py-1 rounded-lg font-medium transition-colors'"
+                            class="flex items-center gap-1.5 text-sm">
+                            <svg v-if="index === 0" class="w-4 h-4 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                                </path>
+                            </svg>
+                            <span>{{ crumb.name }}</span>
+                        </button>
+                        <svg v-if="index < breadcrumbs.length - 1" class="w-4 h-4 mx-1 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </div>
+                </nav>
+            </div>
 
             <!-- Right Controls: Sort, View Mode, New Folder, Upload -->
             <div class="flex flex-wrap items-center gap-2 shrink-0">

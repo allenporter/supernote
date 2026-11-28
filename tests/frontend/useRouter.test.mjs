@@ -444,3 +444,34 @@ test('useRouter.js: routes unavailable tabs to Files for deep links and switchTa
         globalThis.fetch = origFetch;
     }
 });
+
+test('useRouter.js: openTimeline and closeTimeline sync #/timeline route', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        setToken('router-timeline-tok');
+        const { router } = createRouterHarness();
+
+        assert.deepEqual(parseUrlHash('#/timeline'), {
+            tab: 'files',
+            view: 'timeline',
+            dirId: '0',
+            showSystem: false,
+        });
+        assert.equal(buildUrlHash('files', '0', 'timeline', null), '#/timeline');
+
+        router.openTimeline();
+        assert.equal(router.activeTab.value, 'files');
+        assert.equal(router.view.value, 'timeline');
+        assert.equal(globalThis.window.location.hash, '#/timeline');
+
+        await router.closeTimeline();
+        assert.equal(router.view.value, 'grid');
+        assert.equal(globalThis.window.location.hash, '#/files');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});
