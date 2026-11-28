@@ -23,28 +23,87 @@ def _serialize_str_list(values: list[int]) -> list[str]:
 
 
 @dataclass
-class SummaryTranscriptVO(DataClassJSONMixin):
-    """Server-side OCR transcript for a Digest summary's handwritten `.mark` annotation.
+class DigestHandwritingVO(DataClassJSONMixin):
+    """Handwritten `.mark` annotation metadata and OCR transcript for a Digest."""
 
-    Unlike `SummaryItem` (which mirrors the Supernote device sync protocol and stores the
-    highlighted excerpt, typed comment, and raw `.mark` blob reference), this VO holds
-    server-generated handwriting OCR output (`f_summary_transcript`). Returning it in a
-    separate `WebSummaryListVO.transcripts` map keeps `SummaryItem` wire-compatible with
-    Supernote tablets while letting extended Web UI and automation clients read OCR text
-    keyed by string `summaryId`.
-    """
+    md5: str | None = None
+    """MD5 hash of the `.mark` handwriting blob."""
 
-    summary_id: int = field(metadata=field_options(alias="summaryId", serialize=str))
-    """Summary database ID."""
-
-    handwrite_md5: str = field(metadata=field_options(alias="handwriteMD5"))
-    """MD5 hash of the `.mark` handwriting blob that produced this transcript."""
-
-    text: str
-    """Extracted handwriting OCR text."""
+    transcript: str | None = None
+    """Current OCR transcript text for the handwriting, or `None` if not yet transcribed."""
 
     model_id: str | None = field(metadata=field_options(alias="modelId"), default=None)
-    """Identifier of the OCR model that produced this transcript."""
+    """Identifier of the OCR model that produced `transcript`."""
+
+    update_time: int | None = field(
+        metadata=field_options(alias="updateTime"), default=None
+    )
+    """Transcript last-updated timestamp in milliseconds."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+
+
+@dataclass
+class DigestVO(DataClassJSONMixin):
+    """Self-contained Digest entry shared by `GET /api/extended/digests` and MCP `list_digests`.
+
+    Represents any leaf entry in `f_summary`—PDF/EPUB highlights, typed notes,
+    handwritten `.mark` annotations, or AI notebook summaries—with handwriting OCR
+    transcripts attached inline rather than in a separate lookup map.
+    """
+
+    id: int = field(metadata=field_options(serialize=str))
+    """Summary database ID."""
+
+    unique_identifier: str | None = field(
+        metadata=field_options(alias="uniqueIdentifier"), default=None
+    )
+    """Stable UUID shared with Supernote device sync."""
+
+    category_id: str | None = field(
+        metadata=field_options(alias="categoryId"), default=None
+    )
+    """Optional parent category/group UUID (`parent_unique_identifier`)."""
+
+    file_id: int | None = field(
+        metadata=field_options(alias="fileId", serialize=str), default=None
+    )
+    """Linked VFS file ID, if associated with a document."""
+
+    name: str | None = None
+    """Display name of the Digest."""
+
+    source_path: str | None = field(
+        metadata=field_options(alias="sourcePath"), default=None
+    )
+    """Source document path on the Supernote device."""
+
+    author: str | None = None
+    """Source author metadata."""
+
+    tags: list[str] = field(default_factory=list)
+    """Parsed tag labels attached to the Digest."""
+
+    data_source: str | None = field(
+        metadata=field_options(alias="dataSource"), default=None
+    )
+    """Origin identifier (e.g. device source or AI model ID)."""
+
+    content: str | None = None
+    """Primary text body (highlighted excerpt or AI summary)."""
+
+    comment: str | None = None
+    """Typed user comment (`comment_str`)."""
+
+    handwriting: DigestHandwritingVO | None = None
+    """Handwritten `.mark` annotation and OCR transcript, or `None` if no handwriting is attached."""
+
+    creation_time: int | None = field(
+        metadata=field_options(alias="creationTime"), default=None
+    )
+    """Original creation timestamp in milliseconds."""
 
     update_time: int | None = field(
         metadata=field_options(alias="updateTime"), default=None
@@ -53,31 +112,63 @@ class SummaryTranscriptVO(DataClassJSONMixin):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+        omit_none = True
 
 
 @dataclass
-class WebSummaryListRequestDTO(DataClassJSONMixin):
-    """Request DTO for listing summaries with optional file, category, and pagination filters."""
+class DigestListRequestDTO(DataClassJSONMixin):
+    """Query DTO for `GET /api/extended/digests`."""
 
     file_id: int | None = field(
         metadata=field_options(alias="fileId", serialize=str), default=None
     )
-    """Optional ID of the file to filter summaries for; omit to list across all files."""
+    """Optional VFS file ID to filter Digests for one document."""
 
-    parent_unique_identifier: str | None = field(
-        metadata=field_options(alias="parentUniqueIdentifier"), default=None
+    category_id: str | None = field(
+        metadata=field_options(alias="categoryId"), default=None
     )
-    """Optional category/group UUID to filter summaries by."""
+    """Optional category/group UUID (`parent_unique_identifier`) to filter Digests."""
 
-    page: int | None = None
-    """Optional 1-indexed page number when paginating."""
+    limit: int = 50
+    """Maximum number of Digests to return (1-200, default 50)."""
 
-    size: int | None = None
-    """Optional page size when paginating."""
+    offset: int = 0
+    """Number of matching Digests to skip for pagination (default 0)."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
+
+
+@dataclass
+class DigestListVO(BaseResponse):
+    """Response VO shared by `GET /api/extended/digests` and MCP `list_digests`."""
+
+    digests: list[DigestVO] = field(default_factory=list)
+    """Matching Digest entries with inline handwriting transcripts."""
+
+    total: int = 0
+    """Total number of matching Digests across all pages."""
+
+    limit: int = 50
+    """Applied page size."""
+
+    offset: int = 0
+    """Applied pagination offset."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebSummaryListRequestDTO(DataClassJSONMixin):
+    """Request DTO for listing summaries by file ID (Web Extension)."""
+
+    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
+    """The ID of the file to list summaries for."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
 
 
 @dataclass
@@ -90,13 +181,10 @@ class WebSummaryListVO(BaseResponse):
     summary_do_list: list[SummaryItem] = field(
         metadata=field_options(alias="summaryDOList"), default_factory=list
     )
-    """List of summary items found."""
+    """List of summary items found for the file."""
 
     total_records: int = field(metadata=field_options(alias="totalRecords"), default=0)
     """Total count of summaries returned."""
-
-    transcripts: dict[str, SummaryTranscriptVO] = field(default_factory=dict)
-    """Map of string `summaryId` to its current handwritten annotation OCR transcript."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

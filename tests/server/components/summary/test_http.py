@@ -28,7 +28,7 @@ from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.components.summary.service import DEFAULT_SUMMARY_PAGE_SIZE
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
-from supernote.server.db.models.summary import SummaryTranscriptDO
+from supernote.server.db.models.summary import SummaryDO, SummaryTranscriptDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
@@ -616,7 +616,7 @@ async def test_extended_file_summary_list_invalid_dto(
 ) -> None:
     resp = await client.post(
         "/api/extended/file/summary/list",
-        json={"fileId": "not-an-int"},
+        json={},
         headers=auth_headers,
     )
     assert resp.status == 400
@@ -646,7 +646,7 @@ async def test_extended_file_summary_list_error(
     with (
         patch.object(
             client.app[SUMMARY_SERVICE_KEY],
-            "list_summaries",
+            "list_summaries_for_file_internal",
             side_effect=SupernoteError("Custom summary error", status_code=400),
         ),
         pytest.raises(ApiException),
@@ -656,7 +656,7 @@ async def test_extended_file_summary_list_error(
     with (
         patch.object(
             client.app[SUMMARY_SERVICE_KEY],
-            "list_summaries",
+            "list_summaries_for_file_internal",
             side_effect=ValueError("Uncaught error"),
         ),
         pytest.raises(ApiException),
@@ -994,64 +994,115 @@ async def test_summary_render_unsafe_handwrite_md5(
         await getattr(summary_client, method)(summary_id)
 
 
-async def test_extended_summary_list_returns_current_transcripts_and_all_files(
+async def test_extended_list_digests_returns_inline_transcripts_and_filters(
+    client: TestClient,
     extended_client: ExtendedClient,
-    summary_client: SummaryClient,
     session_manager: DatabaseSessionManager,
-    test_user_id: int,
 ) -> None:
-    """POST /api/extended/file/summary/list attaches current handwriting transcripts and supports omitting fileId."""
-    add_1 = await summary_client.add_summary(
-        AddSummaryDTO(
-            file_id=6101,
-            content="Digest excerpt 1",
-            handwrite_inner_name="hw_6101.mark",
-            handwrite_md5="md5_current_1",
-        )
-    )
-    add_2 = await summary_client.add_summary(
-        AddSummaryDTO(
-            file_id=6102,
-            content="Digest excerpt 2",
-            handwrite_inner_name="hw_6102.mark",
-            handwrite_md5="md5_v2",
-        )
-    )
-    assert add_1.id is not None
-    assert add_2.id is not None
+    user_id = await client.app[USER_SERVICE_KEY].get_user_id(TEST_USERNAME)
+    assert user_id is not None
 
     async with session_manager.session() as session:
+        d1 = SummaryDO(
+            user_id=user_id,
+            file_id=7001,
+            parent_unique_identifier="cat-books",
+            unique_identifier="http-digest-1",
+            name="Chapter 1",
+            source_path="/Document/Book.pdf",
+            content="Highlighted excerpt",
+            comment_str="Typed comment",
+            handwrite_inner_name="hw1.mark",
+            handwrite_md5="md5_current",
+            tags="reading, key",
+            is_summary_group=False,
+            is_deleted=False,
+        )
+        d2 = SummaryDO(
+            user_id=user_id,
+            file_id=7002,
+            parent_unique_identifier="cat-ai",
+            unique_identifier="http-digest-2",
+            name="AI Note Summary",
+            content="Generated summary body",
+            handwrite_inner_name="hw2.mark",
+            handwrite_md5="md5_v2",
+            is_summary_group=False,
+            is_deleted=False,
+        )
+        d3 = SummaryDO(
+            user_id=user_id,
+            file_id=None,
+            parent_unique_identifier="cat-books",
+            unique_identifier="http-digest-3",
+            name="Standalone Digest",
+            content="Text only digest",
+            is_summary_group=False,
+            is_deleted=False,
+        )
+        session.add_all([d1, d2, d3])
+        await session.flush()
+        d1_id = int(d1.id)
+        d2_id = int(d2.id)
+        d3_id = int(d3.id)
         session.add_all(
             [
                 SummaryTranscriptDO(
-                    user_id=test_user_id,
-                    summary_id=add_1.id,
-                    handwrite_md5="md5_current_1",
-                    text_content="Transcribed marginalia note",
-                    model_id="fake-ocr-v1",
+                    user_id=user_id,
+                    summary_id=d1_id,
+                    handwrite_md5="md5_current",
+                    text_content="Transcribed margin note",
+                    model_id="ocr-v1",
                 ),
                 SummaryTranscriptDO(
-                    user_id=test_user_id,
-                    summary_id=add_2.id,
-                    handwrite_md5="md5_stale_v1",
-                    text_content="Outdated text",
-                    model_id="fake-ocr-v1",
+                    user_id=user_id,
+                    summary_id=d2_id,
+                    handwrite_md5="md5_stale",
+                    text_content="Stale transcript",
+                    model_id="ocr-v1",
                 ),
             ]
         )
         await session.commit()
 
-    by_file = await extended_client.list_summaries(6101)
-    assert by_file.total_records == 1
-    assert str(add_1.id) in by_file.transcripts
-    assert by_file.transcripts[str(add_1.id)].text == "Transcribed marginalia note"
-    assert by_file.transcripts[str(add_1.id)].model_id == "fake-ocr-v1"
+    all_resp = await extended_client.list_digests()
+    assert all_resp.success
+    assert all_resp.total == 3
+    by_id = {d.id: d for d in all_resp.digests}
+    assert by_id[d1_id].category_id == "cat-books"
+    assert by_id[d1_id].tags == ["reading", "key"]
+    hw1 = by_id[d1_id].handwriting
+    assert hw1 is not None
+    assert hw1.md5 == "md5_current"
+    assert hw1.transcript == "Transcribed margin note"
+    assert hw1.model_id == "ocr-v1"
+    hw2 = by_id[d2_id].handwriting
+    assert hw2 is not None
+    assert hw2.md5 == "md5_v2"
+    assert hw2.transcript is None
+    assert by_id[d3_id].handwriting is None
 
-    all_digests = await extended_client.list_summaries()
-    assert all_digests.total_records == 2
-    assert str(add_1.id) in all_digests.transcripts
-    assert str(add_2.id) not in all_digests.transcripts
+    by_file = await extended_client.list_digests(file_id=7001)
+    assert by_file.total == 1
+    assert [d.id for d in by_file.digests] == [d1_id]
 
-    paged = await extended_client.list_summaries(page=1, size=1)
-    assert len(paged.summary_do_list) == 1
-    assert paged.total_records == 2
+    by_category = await extended_client.list_digests(category_id="cat-books")
+    assert by_category.total == 2
+    assert {d.id for d in by_category.digests} == {d1_id, d3_id}
+
+    paged = await extended_client.list_digests(limit=1, offset=1)
+    assert paged.total == 3
+    assert paged.limit == 1
+    assert paged.offset == 1
+    assert len(paged.digests) == 1
+
+
+async def test_extended_list_digests_invalid_file_id_returns_400(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    resp = await client.get(
+        "/api/extended/digests?fileId=not-a-number",
+        headers=auth_headers,
+    )
+    assert resp.status == 400

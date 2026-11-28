@@ -557,6 +557,7 @@ UI_GATED_COMPONENT_ROUTES: dict[str, set[str]] = {
     },
     "search": {"/api/extended/search"},
     "summary": {
+        "/api/extended/digests",
         "/api/extended/file/summary/list",
         "/api/file/query/summary",
         "/api/file/query/summary/group",

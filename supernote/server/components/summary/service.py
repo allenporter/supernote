@@ -23,6 +23,7 @@ from sqlalchemy import ColumnElement, Select, and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.base import BooleanEnum
+from supernote.models.extended import DigestHandwritingVO, DigestListVO, DigestVO
 from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
@@ -34,6 +35,7 @@ from supernote.models.summary import (
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
 )
+from supernote.server.components.transcript import TranscriptService
 from supernote.server.constants import RECYCLE_RETENTION_MS
 from supernote.server.db.models.summary import SummaryDO, SummaryTagDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -789,6 +791,87 @@ class SummaryService:
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
+
+    async def list_digests(
+        self,
+        user_id: int,
+        transcript_service: TranscriptService,
+        *,
+        file_id: int | None = None,
+        category_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> DigestListVO:
+        """List self-contained `DigestVO` items with inline handwriting OCR transcripts."""
+        clamped_limit = max(1, min(limit, 200))
+        clamped_offset = max(0, offset)
+        summaries = await self.list_summaries_for_user(
+            user_id,
+            file_id=file_id,
+            parent_uuid=category_id,
+            limit=clamped_limit,
+            offset=clamped_offset,
+        )
+        total = await self.count_summaries_for_user(
+            user_id,
+            file_id=file_id,
+            parent_uuid=category_id,
+        )
+        summary_ids = [s.id for s in summaries if s.id is not None]
+        transcripts = await transcript_service.get_summary_transcripts(
+            user_id, summary_ids
+        )
+
+        items: list[DigestVO] = []
+        for summary in summaries:
+            if summary.id is None:
+                continue
+            handwriting: DigestHandwritingVO | None = None
+            if summary.handwrite_inner_name:
+                transcript = transcripts.get(summary.id)
+                is_current = (
+                    transcript is not None
+                    and bool(summary.handwrite_md5)
+                    and transcript.handwrite_md5 == summary.handwrite_md5
+                )
+                handwriting = DigestHandwritingVO(
+                    md5=summary.handwrite_md5,
+                    transcript=transcript.text if is_current and transcript else None,
+                    model_id=transcript.model_id if is_current and transcript else None,
+                    update_time=(
+                        transcript.update_time if is_current and transcript else None
+                    ),
+                )
+            tags = (
+                [t.strip() for t in summary.tags.split(",") if t.strip()]
+                if summary.tags
+                else []
+            )
+            items.append(
+                DigestVO(
+                    id=summary.id,
+                    unique_identifier=summary.unique_identifier,
+                    category_id=summary.parent_unique_identifier,
+                    file_id=summary.file_id,
+                    name=summary.name,
+                    source_path=summary.source_path,
+                    author=summary.author,
+                    tags=tags,
+                    data_source=summary.data_source,
+                    content=summary.content,
+                    comment=summary.comment_str,
+                    handwriting=handwriting,
+                    creation_time=summary.creation_time,
+                    update_time=summary.update_time,
+                )
+            )
+
+        return DigestListVO(
+            digests=items,
+            total=total,
+            limit=clamped_limit,
+            offset=clamped_offset,
+        )
 
     @staticmethod
     async def get_referenced_blob_keys(

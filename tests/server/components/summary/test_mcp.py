@@ -15,17 +15,18 @@ def mcp_enabled() -> bool:
     return True
 
 
-async def test_mcp_list_digests_returns_handwrite_transcript_and_filters_by_file(
+async def test_mcp_list_digests_returns_handwriting_transcript_and_filters(
     mcp_url: str,
     auth_headers: dict[str, str],
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
-    """`list_digests` returns digests with current handwriting OCR transcripts and filters by file_id."""
+    """`list_digests` returns unified `DigestListVO` entries and filters by file and category."""
     async with session_manager.session() as session:
         d1 = SummaryDO(
             user_id=test_user_id,
             file_id=5001,
+            parent_unique_identifier="cat-books",
             name="Chapter 1",
             unique_identifier="mcp-digest-1",
             content="Highlighted passage from book",
@@ -33,13 +34,14 @@ async def test_mcp_list_digests_returns_handwrite_transcript_and_filters_by_file
             source_path="/Document/Book.pdf",
             handwrite_inner_name="hw1.mark",
             handwrite_md5="md5_current",
-            tags="reading,notes",
+            tags="reading, notes",
             is_summary_group=False,
             is_deleted=False,
         )
         d2 = SummaryDO(
             user_id=test_user_id,
             file_id=5002,
+            parent_unique_identifier="cat-ai",
             name="Chapter 2",
             unique_identifier="mcp-digest-2",
             content="Second passage",
@@ -69,7 +71,6 @@ async def test_mcp_list_digests_returns_handwrite_transcript_and_filters_by_file
                     text_content="Follow up on flux capacitor.",
                     model_id="fake-ocr-v1",
                 ),
-                # Stale transcript with outdated md5 must not be returned.
                 SummaryTranscriptDO(
                     user_id=test_user_id,
                     summary_id=d2_id,
@@ -85,23 +86,40 @@ async def test_mcp_list_digests_returns_handwrite_transcript_and_filters_by_file
         all_resp = await call_mcp_tool(session, "list_digests", {})
         assert all_resp["success"] is True
         assert all_resp["total"] == 2
+        assert all_resp["limit"] == 50
+        assert all_resp["offset"] == 0
         by_id = {d["id"]: d for d in all_resp["digests"]}
+        assert by_id[str(d1_id)]["categoryId"] == "cat-books"
         assert by_id[str(d1_id)]["content"] == "Highlighted passage from book"
         assert by_id[str(d1_id)]["comment"] == "Great point"
-        assert (
-            by_id[str(d1_id)]["handwriteTranscript"] == "Follow up on flux capacitor."
-        )
+        assert by_id[str(d1_id)]["tags"] == ["reading", "notes"]
         assert by_id[str(d1_id)]["sourcePath"] == "/Document/Book.pdf"
-        assert "handwriteTranscript" not in by_id[str(d2_id)]
+        assert by_id[str(d1_id)]["handwriting"]["md5"] == "md5_current"
+        assert (
+            by_id[str(d1_id)]["handwriting"]["transcript"]
+            == "Follow up on flux capacitor."
+        )
+        assert by_id[str(d1_id)]["handwriting"]["modelId"] == "fake-ocr-v1"
+        assert by_id[str(d2_id)]["handwriting"]["md5"] == "md5_v2"
+        assert "transcript" not in by_id[str(d2_id)]["handwriting"]
 
-        filtered = await call_mcp_tool(session, "list_digests", {"file_id": "5001"})
-        assert filtered["success"] is True
-        assert filtered["total"] == 1
-        assert filtered["digests"][0]["id"] == str(d1_id)
+        by_file = await call_mcp_tool(session, "list_digests", {"file_id": "5001"})
+        assert by_file["success"] is True
+        assert by_file["total"] == 1
+        assert by_file["digests"][0]["id"] == str(d1_id)
+
+        by_category = await call_mcp_tool(
+            session, "list_digests", {"category_id": "cat-ai"}
+        )
+        assert by_category["success"] is True
+        assert by_category["total"] == 1
+        assert by_category["digests"][0]["id"] == str(d2_id)
 
         paged = await call_mcp_tool(session, "list_digests", {"limit": 1, "offset": 1})
         assert paged["success"] is True
         assert paged["total"] == 2
+        assert paged["limit"] == 1
+        assert paged["offset"] == 1
         assert len(paged["digests"]) == 1
 
 

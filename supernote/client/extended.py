@@ -7,11 +7,14 @@ processing status (`get_processing_status`), and global task state (`list_system
 `supernote.models.extended`, `supernote.client`, and `supernote.guides.note_processing_design`.
 """
 
+from typing import Any
+
 from supernote.models.base import BaseResponse
 from supernote.models.extended import (
     ApiKeyListResponseVO,
     CreateApiKeyDTO,
     CreateApiKeyResponseVO,
+    DigestListVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     OAuthGrantListResponseVO,
@@ -39,23 +42,29 @@ class ExtendedClient:
         """Initialize the extended client."""
         self._client = client
 
-    async def list_summaries(
-        self,
-        file_id: int | None = None,
-        *,
-        parent_unique_identifier: str | None = None,
-        page: int | None = None,
-        size: int | None = None,
-    ) -> WebSummaryListVO:
-        """List summaries for a file, category, or across all files (Extension)."""
-        dto = WebSummaryListRequestDTO(
-            file_id=file_id,
-            parent_unique_identifier=parent_unique_identifier,
-            page=page,
-            size=size,
-        )
+    async def list_summaries(self, file_id: int) -> WebSummaryListVO:
+        """List summaries for a file (Extension)."""
+        dto = WebSummaryListRequestDTO(file_id=file_id)
         return await self._client.post_json(
             "/api/extended/file/summary/list", WebSummaryListVO, json=dto.to_dict()
+        )
+
+    async def list_digests(
+        self,
+        *,
+        file_id: int | None = None,
+        category_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> DigestListVO:
+        """List self-contained Digests with inline handwriting OCR transcripts."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if file_id is not None:
+            params["fileId"] = str(file_id)
+        if category_id is not None:
+            params["categoryId"] = category_id
+        return await self._client.get_json(
+            "/api/extended/digests", DigestListVO, params=params
         )
 
     async def search(

@@ -25,7 +25,7 @@ from aiohttp import web
 
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.extended import (
-    SummaryTranscriptVO,
+    DigestListRequestDTO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
 )
@@ -59,7 +59,11 @@ from supernote.server.components.conversion import (
     CONVERSION_SERVICE_KEY,
     ConversionService,
 )
-from supernote.server.components.http import HttpRegistrar, parse_json_dto
+from supernote.server.components.http import (
+    HttpRegistrar,
+    parse_json_dto,
+    parse_query_dto,
+)
 from supernote.server.components.transcript import (
     TRANSCRIPT_SERVICE_KEY,
     TranscriptService,
@@ -81,6 +85,7 @@ from supernote.server.metrics import OSSTransferKind
 from supernote.server.routes.decorators import public_route
 from supernote.server.routes.oss import stream_blob_response
 from supernote.server.services.blob import BlobStorage
+from supernote.server.services.user import UserService
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
@@ -540,68 +545,62 @@ async def handle_query_summary_id(request: web.Request) -> web.Response:
         return SupernoteError.uncaught(err).to_response()
 
 
+@routes.get("/api/extended/digests")
+async def handle_list_digests(request: web.Request) -> web.Response:
+    """List self-contained Digests with inline handwriting OCR transcripts."""
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        req_dto = parse_query_dto(request, DigestListRequestDTO)
+    except InvalidInputError as err:
+        return err.to_response()
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
+    transcript_service: TranscriptService = request.app[TRANSCRIPT_SERVICE_KEY]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response(
+            create_error_response("User not found").to_dict(),
+            status=HTTPStatus.NOT_FOUND,
+        )
+
+    try:
+        vo = await summary_service.list_digests(
+            user_id,
+            transcript_service,
+            file_id=req_dto.file_id,
+            category_id=req_dto.category_id,
+            limit=req_dto.limit,
+            offset=req_dto.offset,
+        )
+        return web.json_response(vo.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        logger.exception("Error listing digests")
+        return SupernoteError.uncaught(err).to_response()
+
+
 @routes.post("/api/extended/file/summary/list")
 async def handle_extended_file_summary_list(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/summary/list
-    # Purpose: Extended API to list summaries (optionally filtered by fileId) with handwriting OCR transcripts.
+    # Purpose: Extended API to list summaries for a file.
     user_email = request[REQUEST_USER_KEY]
     try:
-        req_dto = await parse_json_dto(
-            request, WebSummaryListRequestDTO, allow_empty=True
-        )
+        req_dto = await parse_json_dto(request, WebSummaryListRequestDTO)
     except InvalidInputError as err:
         return err.to_response()
 
     summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
-    transcript_service: TranscriptService = request.app[TRANSCRIPT_SERVICE_KEY]
-    user_service = request.app[USER_SERVICE_KEY]
 
     try:
-        summaries = await summary_service.list_summaries(
-            user_email,
-            parent_uuid=req_dto.parent_unique_identifier,
-            file_id=req_dto.file_id,
-            page=req_dto.page,
-            size=req_dto.size,
+        summaries = await summary_service.list_summaries_for_file_internal(
+            user_email, req_dto.file_id
         )
-        total_records = (
-            await summary_service.count_summaries(
-                user_email,
-                parent_uuid=req_dto.parent_unique_identifier,
-                file_id=req_dto.file_id,
-            )
-            if req_dto.size is not None and req_dto.size > 0
-            else len(summaries)
-        )
-
-        transcripts: dict[str, SummaryTranscriptVO] = {}
-        summary_ids = [s.id for s in summaries if s.id is not None]
-        if summary_ids:
-            user_id = await user_service.get_user_id(user_email)
-            stored = await transcript_service.get_summary_transcripts(
-                user_id, summary_ids
-            )
-            for summary in summaries:
-                if summary.id is None or not summary.handwrite_md5:
-                    continue
-                transcript = stored.get(summary.id)
-                if (
-                    transcript is not None
-                    and transcript.handwrite_md5 == summary.handwrite_md5
-                ):
-                    transcripts[str(summary.id)] = SummaryTranscriptVO(
-                        summary_id=transcript.summary_id,
-                        handwrite_md5=transcript.handwrite_md5,
-                        text=transcript.text,
-                        model_id=transcript.model_id,
-                        update_time=transcript.update_time,
-                    )
-
         return web.json_response(
             WebSummaryListVO(
-                summary_do_list=summaries,
-                total_records=total_records,
-                transcripts=transcripts,
+                summary_do_list=summaries, total_records=len(summaries)
             ).to_dict()
         )
     except SupernoteError as err:
