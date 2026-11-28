@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { normalizeTitleTranscripts } from '../../supernote/server/static/js/api/client.js';
 import { logout, setToken } from '../../supernote/server/static/js/api/http.js';
+import DigestCard from '../../supernote/server/static/js/components/digests/DigestCard.js';
 import { compareItems } from '../../supernote/server/static/js/components/FileBrowserPanel.js';
 import SearchModal from '../../supernote/server/static/js/components/SearchModal.js';
 import SystemPanel from '../../supernote/server/static/js/components/SystemPanel.js';
@@ -569,6 +570,81 @@ test('SearchModal.js: skips semantic and task requests when search and schedule 
         }
     } finally {
         resetServerFeatures();
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('DigestCard.js: handwriting preview handles load, error/retry, image error, and AI summary tooltip', async () => {
+    const origFetch = globalThis.fetch;
+    let shouldFail = true;
+    let fetchCount = 0;
+    try {
+        setToken('digest-card-tok');
+        globalThis.fetch = async () => {
+            fetchCount += 1;
+            if (shouldFail) {
+                return new Response(JSON.stringify({ errorMsg: 'Render failed' }), { status: 500 });
+            }
+            return new Response(
+                JSON.stringify({
+                    pngPageVOList: [{ pageNo: 0, url: 'https://example.test/hw/0?sig=fresh' }],
+                }),
+                { status: 200 },
+            );
+        };
+
+        const scope = await mountComposable(() =>
+            DigestCard.setup({
+                digest: {
+                    id: '901',
+                    uniqueIdentifier: 'u-901',
+                    content: 'Digest body',
+                    dataSource: 'USER',
+                    hasHandwriting: true,
+                    handwriting: { md5: 'm1', transcript: 'Note', modelId: null, updateTime: null },
+                    creationTime: 1000,
+                    lastModifiedTime: 2000,
+                },
+                categoryName: 'AI Summaries',
+                isResolvingSource: false,
+            }),
+        );
+        try {
+            // Category-based AI Summary does not show raw USER dataSource in tooltip
+            assert.equal(scope.result.isAiSummary.value, true);
+            assert.equal(scope.result.aiSummaryTitle.value, 'AI Notebook Summary');
+
+            // Initial expand fails and surfaces error for Retry
+            scope.result.toggleHandwritingPreview();
+            assert.equal(scope.result.showHandwritingPreview.value, true);
+            await new Promise((resolve) => setImmediate(resolve));
+            assert.equal(scope.result.handwritingError.value, 'Render failed');
+            assert.deepEqual(scope.result.handwritingPages.value, []);
+
+            // Retry succeeds
+            shouldFail = false;
+            await scope.result.loadHandwritingPreview();
+            assert.equal(scope.result.handwritingError.value, null);
+            assert.deepEqual(scope.result.handwritingPages.value, [
+                { pageNo: 0, url: 'https://example.test/hw/0?sig=fresh' },
+            ]);
+
+            // Broken/expired image surfaces error so Retry button appears
+            scope.result.handleHandwritingImageError();
+            assert.match(scope.result.handwritingError.value || '', /could not be loaded/i);
+
+            // Collapse and re-expand fetches fresh signed URLs
+            scope.result.toggleHandwritingPreview();
+            assert.equal(scope.result.showHandwritingPreview.value, false);
+            scope.result.toggleHandwritingPreview();
+            await new Promise((resolve) => setImmediate(resolve));
+            assert.equal(fetchCount, 3);
+            assert.equal(scope.result.handwritingError.value, null);
+        } finally {
+            scope.unmount();
+        }
+    } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
     }

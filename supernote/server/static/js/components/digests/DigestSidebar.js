@@ -19,7 +19,7 @@ export default {
         },
         categoryCounts: {
             type: Object,
-            default: () => ({ all: 0, uncategorized: 0 }),
+            default: () => ({ all: 0, digests: 0, 'ai-summaries': 0, uncategorized: 0 }),
         },
     },
     emits: [
@@ -48,25 +48,61 @@ export default {
             <!-- Views -->
             <div>
                 <h3 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider px-2.5 mb-2">Views</h3>
-                <nav class="space-y-1">
+                <nav aria-label="Digest views" class="space-y-1">
                     <button @click="$emit('select-category', 'all')" type="button"
+                        data-digest-view="all"
+                        :aria-current="selectedCategoryFilter === 'all' ? 'page' : undefined"
                         :class="selectedCategoryFilter === 'all' ? 'bg-slate-900 text-white font-semibold' : 'text-stone-600 hover:bg-stone-100/80 hover:text-slate-900'"
                         class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors">
                         <span class="flex items-center gap-2.5">
-                            <svg class="w-4 h-4 opacity-80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                            <svg aria-hidden="true" class="w-4 h-4 opacity-80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                             </svg>
-                            All Digests
+                            All
                         </span>
                         <span :class="selectedCategoryFilter === 'all' ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'"
                             class="text-[11px] font-mono px-2 py-0.5 rounded-md tabular-nums">{{ getCount('all') }}</span>
                     </button>
 
+                    <button @click="$emit('select-category', 'digests')" type="button"
+                        data-digest-view="digests"
+                        :aria-current="selectedCategoryFilter === 'digests' ? 'page' : undefined"
+                        :class="selectedCategoryFilter === 'digests' ? 'bg-slate-900 text-white font-semibold' : 'text-stone-600 hover:bg-stone-100/80 hover:text-slate-900'"
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors">
+                        <span class="flex items-center gap-2.5">
+                            <svg aria-hidden="true" class="w-4 h-4 opacity-80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                            </svg>
+                            Digests
+                        </span>
+                        <span :class="selectedCategoryFilter === 'digests' ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'"
+                            class="text-[11px] font-mono px-2 py-0.5 rounded-md tabular-nums">{{ getCount('digests') }}</span>
+                    </button>
+
+                    <button @click="$emit('select-category', 'ai-summaries')" type="button"
+                        data-digest-view="ai-summaries"
+                        :aria-current="selectedCategoryFilter === 'ai-summaries' ? 'page' : undefined"
+                        :class="selectedCategoryFilter === 'ai-summaries' ? 'bg-slate-900 text-white font-semibold' : 'text-stone-600 hover:bg-stone-100/80 hover:text-slate-900'"
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors">
+                        <span class="flex items-center gap-2.5">
+                            <svg aria-hidden="true" class="w-4 h-4 shrink-0"
+                                :class="selectedCategoryFilter === 'ai-summaries' ? 'text-indigo-200' : 'text-indigo-600'"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"></path>
+                            </svg>
+                            AI Summaries
+                        </span>
+                        <span :class="selectedCategoryFilter === 'ai-summaries' ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-700'"
+                            class="text-[11px] font-mono px-2 py-0.5 rounded-md tabular-nums">{{ getCount('ai-summaries') }}</span>
+                    </button>
+
                     <button @click="$emit('select-category', 'uncategorized')" type="button"
+                        data-digest-view="uncategorized"
+                        :aria-current="selectedCategoryFilter === 'uncategorized' ? 'page' : undefined"
                         :class="selectedCategoryFilter === 'uncategorized' ? 'bg-slate-900 text-white font-semibold' : 'text-stone-600 hover:bg-stone-100/80 hover:text-slate-900'"
                         class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors">
                         <span class="flex items-center gap-2.5">
-                            <svg class="w-4 h-4 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg aria-hidden="true" class="w-4 h-4 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
                             </svg>
                             Uncategorized
@@ -86,10 +122,11 @@ export default {
                         + New
                     </button>
                 </div>
-                <nav v-if="categories.length > 0" class="space-y-1">
+                <nav v-if="categories.length > 0" aria-label="Digest categories" class="space-y-1">
                     <div v-for="cat in categories" :key="cat.uniqueIdentifier || cat.id"
                         class="group flex items-center justify-between gap-0.5">
                         <button @click="$emit('select-category', cat.uniqueIdentifier)" type="button"
+                            :aria-current="selectedCategoryFilter === cat.uniqueIdentifier ? 'page' : undefined"
                             :class="selectedCategoryFilter === cat.uniqueIdentifier ? 'bg-stone-200/80 text-slate-900 font-semibold' : 'text-stone-600 hover:bg-stone-100/80 hover:text-slate-900'"
                             class="flex-grow min-w-0 flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors text-left">
                             <span class="truncate">{{ cat.name }}</span>
@@ -125,7 +162,7 @@ export default {
                         Clear
                     </button>
                 </div>
-                <nav class="space-y-1 max-h-56 overflow-y-auto pr-0.5">
+                <nav aria-label="Digest sources" class="space-y-1 max-h-56 overflow-y-auto pr-0.5">
                     <button v-for="src in availableSources" :key="src.path"
                         @click="$emit('select-source', selectedSourcePath === src.path ? null : src.path)"
                         type="button"

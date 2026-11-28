@@ -7,9 +7,11 @@ import {
     deleteDigest,
     deleteDigestCategory,
     fetchDigestCategories,
+    fetchDigestHandwritingPages,
     fetchDigests,
     formatDigestMarkdown,
     generateDigestUuid,
+    isAiSummaryDigest,
     normalizeDigestCategory,
     normalizeDigestItem,
     normalizeSourcePath,
@@ -412,6 +414,101 @@ test('digests.js: resolveSourceFileId handles files, rejects folders, and return
 
         nextResponse = new Response(JSON.stringify({ errorMsg: 'Server error' }), { status: 500 });
         assert.equal(await resolveSourceFileId('Document/Error.pdf'), null);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('digests.js: isAiSummaryDigest classifies model IDs and AI Summaries category accurately', () => {
+    // Model IDs & legacy AI provider names
+    assert.equal(isAiSummaryDigest({ dataSource: 'gemini-2.5-flash' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'gemini-3.5-flash-lite' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'gemma-3-4b' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'gpt-4o' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'o3-mini' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'claude-3-5-sonnet' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'fake-summary-v1' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'GEMINI' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'AI' }), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'AI Synthesis' }), true);
+
+    // Canonical category name match even with unknown/missing dataSource
+    assert.equal(isAiSummaryDigest({ dataSource: null }, 'AI Summaries'), true);
+    assert.equal(isAiSummaryDigest({ dataSource: 'USER' }, '  ai summaries  '), true);
+
+    // Regular user/device digests
+    assert.equal(isAiSummaryDigest({ dataSource: null }), false);
+    assert.equal(isAiSummaryDigest({ dataSource: '' }), false);
+    assert.equal(isAiSummaryDigest({ dataSource: 'USER' }), false);
+    assert.equal(isAiSummaryDigest({ dataSource: 'DEVICE' }), false);
+    assert.equal(isAiSummaryDigest({ dataSource: 'DIGEST' }), false);
+    assert.equal(isAiSummaryDigest({ dataSource: 'OCR' }), false);
+    assert.equal(isAiSummaryDigest({ dataSource: 'PDF' }, 'Reading'), false);
+});
+
+test('digests.js: fetchDigestHandwritingPages requests PNG render and sorts valid pages', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {Array<{ url: string, method: string, body: any }>} */
+    const calls = [];
+    try {
+        setToken('digest-hw-tok');
+        globalThis.fetch = async (url, init) => {
+            calls.push({
+                url: String(url),
+                method: init?.method || 'GET',
+                body: init?.body ? JSON.parse(String(init.body)) : null,
+            });
+            return new Response(
+                JSON.stringify({
+                    pngPageVOList: [
+                        { pageNo: 1, url: 'https://example.test/api/oss/summary/png/55/1?sig=b' },
+                        { pageNo: 0, url: 'https://example.test/api/oss/summary/png/55/0?sig=a' },
+                        { pageNo: 2, url: '   ' },
+                    ],
+                }),
+                { status: 200 },
+            );
+        };
+
+        const pages = await fetchDigestHandwritingPages(55);
+        assert.deepEqual(calls, [
+            {
+                url: '/api/extended/file/summary/to/png',
+                method: 'POST',
+                body: { id: '55' },
+            },
+        ]);
+        assert.deepEqual(pages, [
+            { pageNo: 0, url: 'https://example.test/api/oss/summary/png/55/0?sig=a' },
+            { pageNo: 1, url: 'https://example.test/api/oss/summary/png/55/1?sig=b' },
+        ]);
+
+        // Null/empty pageNo falls back to index instead of colliding at 0
+        globalThis.fetch = async () =>
+            new Response(
+                JSON.stringify({
+                    pngPageVOList: [
+                        { pageNo: null, url: 'https://example.test/p0' },
+                        { pageNo: '', url: 'https://example.test/p1' },
+                    ],
+                }),
+                { status: 200 },
+            );
+        assert.deepEqual(await fetchDigestHandwritingPages(56), [
+            { pageNo: 0, url: 'https://example.test/p0' },
+            { pageNo: 1, url: 'https://example.test/p1' },
+        ]);
+
+        // Missing pngPageVOList returns empty array; server error propagates
+        globalThis.fetch = async () => new Response(JSON.stringify({}), { status: 200 });
+        assert.deepEqual(await fetchDigestHandwritingPages(57), []);
+
+        globalThis.fetch = async () =>
+            new Response(JSON.stringify({ errorMsg: 'Handwriting data not found' }), {
+                status: 404,
+            });
+        await assert.rejects(() => fetchDigestHandwritingPages(58), /Handwriting data not found/);
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
