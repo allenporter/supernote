@@ -589,8 +589,14 @@ class FileService:
         file_name: str,
         md5: str,
         inner_name: str,
-    ) -> None:
-        """Finish upload (Web API)."""
+        *,
+        overwrite: bool = True,
+    ) -> FileEntity:
+        """Finish upload (Web API and MCP uploads).
+
+        TODO(#444): Add a dedicated upload-source metric label if MCP uploads
+        need separate tracking from Web.
+        """
         user_id, configured_limit = await self._resolve_user_quota(user)
 
         staging_lock = self._staging_locks.setdefault(inner_name, asyncio.Lock())
@@ -611,6 +617,7 @@ class FileService:
                 )
 
             blob_size = metadata.size
+            reject_error: Exception | None = None
 
             # Create VFS node
             async with self.session_manager.session() as session:
@@ -620,12 +627,17 @@ class FileService:
                 old_size = existing.size if existing else 0
                 net_change = blob_size - old_size
 
-                if self._is_commit_over_quota(
+                if existing is not None and not overwrite:
+                    reject_error = FileAlreadyExists(
+                        f"File already exists: {file_name}"
+                    )
+                elif self._is_commit_over_quota(
                     configured_limit, current_used, net_change
                 ):
-                    is_over_quota = True
+                    reject_error = QuotaExceeded(
+                        "Storage quota exceeded", ErrorCode.QUOTA_EXCEEDED
+                    )
                 else:
-                    is_over_quota = False
                     upsert_result = await self._upsert_vfs_file(
                         vfs=vfs,
                         user_id=user_id,
@@ -637,18 +649,19 @@ class FileService:
                     )
                     new_file = upsert_result.node
 
-            if is_over_quota:
+            if reject_error is not None:
                 await self.cleanup_unreferenced_blobs({inner_name})
-                raise QuotaExceeded("Storage quota exceeded", ErrorCode.QUOTA_EXCEEDED)
+                raise reject_error
 
         if file_name.lower().endswith(".note"):
             record_note_upload(source=NoteUploadSource.WEB)
 
         await self._cleanup_superseded_artifacts(upsert_result)
 
+        full_path = await self.get_full_path_by_node(user_id, new_file.id)
+
         # Emit domain events (fire and forget)
         if self.event_bus:
-            full_path = await self.get_full_path_by_node(user_id, new_file.id)
             await self._publish_file_upsert_events(
                 user_id=user_id,
                 upsert_result=upsert_result,
@@ -656,6 +669,8 @@ class FileService:
                 note_file_path=full_path,
                 defer_note_processing=False,
             )
+
+        return _to_file_entity(new_file, full_path)
 
     async def _publish_file_upsert_events(
         self,

@@ -79,6 +79,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=False,
     ),
     BuiltinComponentSpec(
+        domain="files",
+        import_path="supernote.server.components.files:FilesComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="gemini",
         import_path="supernote.server.components.gemini:GeminiComponent",
         default_enabled=False,
