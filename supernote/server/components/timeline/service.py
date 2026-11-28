@@ -23,6 +23,7 @@ from supernote.notebook.schema import PageMetadata
 from supernote.server.db.models.event_log import UserEventDO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import InvalidInputError
 from supernote.server.utils.note_content import infer_page_created_ms
@@ -44,6 +45,7 @@ class _Entry:
     pm: NotePageMetadataDO
     file_name: str
     has_five_star: bool | None = None
+    summary: str | None = None
     sources: set[str] = field(default_factory=set)
 
     @property
@@ -63,10 +65,11 @@ class _Entry:
             file_name=self.file_name,
             page_index=self.pm.page_index,
             page_id=self.pm.page_id,
-            sources=[s for s in ("created", "edited") if s in self.sources],
+            sources=[s for s in ("created", "edited", "dated") if s in self.sources],
             is_blank=not self.pm.has_drawables,
             has_five_star=five_star,
             keywords=self.pm.keyword_texts,
+            summary=self.summary,
         )
 
 
@@ -122,6 +125,69 @@ def _parse_cursor(cursor: str | None) -> tuple[int, int, int] | None:
         raise InvalidInputError(f"Invalid cursor {cursor!r}") from err
 
 
+def _extract_dated_summary_hits(
+    rows: list[tuple[int | None, str | None]],
+    *,
+    tz: timezone,
+    start_ms: int | None,
+    end_ms: int | None,
+    max_ts: int | None,
+) -> tuple[dict[tuple[str, int, int], tuple[int, str | None]], set[tuple[int, int]]]:
+    """Extract `(day, file_id, page_index) -> (day_ts, summary)` hits from `SummaryDO.extra_metadata`."""
+    dated_hits: dict[tuple[str, int, int], tuple[int, str | None]] = {}
+    dated_pairs: set[tuple[int, int]] = set()
+    for sum_fid, raw_meta in rows:
+        if sum_fid is None or not raw_meta:
+            continue
+        try:
+            parsed_meta = json.loads(raw_meta)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        segments = (
+            parsed_meta.get("segments") if isinstance(parsed_meta, dict) else None
+        )
+        if not isinstance(segments, list):
+            continue
+        for seg in segments:
+            if not isinstance(seg, dict):
+                continue
+            raw_dates = seg.get("extracted_dates")
+            raw_refs = seg.get("page_refs")
+            if not isinstance(raw_dates, list) or not isinstance(raw_refs, list):
+                continue
+            valid_indices = [
+                p - 1
+                for p in raw_refs
+                if isinstance(p, int) and not isinstance(p, bool) and p >= 1
+            ]
+            if not valid_indices:
+                continue
+            seg_summary = str(seg.get("summary") or "").strip() or None
+            for raw_day in raw_dates:
+                if not isinstance(raw_day, str):
+                    continue
+                try:
+                    d = date.fromisoformat(raw_day.strip())
+                except ValueError:
+                    continue
+                day_ts = int(
+                    datetime(d.year, d.month, d.day, tzinfo=tz).timestamp() * 1000
+                )
+                if start_ms is not None and day_ts < start_ms:
+                    continue
+                if end_ms is not None and day_ts >= end_ms:
+                    continue
+                if max_ts is not None and day_ts > max_ts:
+                    continue
+                day_str = d.isoformat()
+                for page_idx in valid_indices:
+                    dated_hits.setdefault(
+                        (day_str, sum_fid, page_idx), (day_ts, seg_summary)
+                    )
+                    dated_pairs.add((sum_fid, page_idx))
+    return dated_hits, dated_pairs
+
+
 class TimelineService:
     """Queries cross-notebook page creation and edit activity for a user."""
 
@@ -129,7 +195,11 @@ class TimelineService:
         self.session_manager = session_manager
 
     async def list_pages(
-        self, user_id: int, req: TimelinePagesRequestDTO
+        self,
+        user_id: int,
+        req: TimelinePagesRequestDTO,
+        *,
+        include_summaries: bool = True,
     ) -> TimelinePagesVO:
         """Return paginated page activity entries ordered newest-first."""
         if not (1 <= req.limit <= _MAX_LIMIT):
@@ -144,6 +214,7 @@ class TimelineService:
             start_ms=start_ms,
             end_ms=end_ms,
             max_ts=cursor_key[0] if cursor_key else None,
+            include_summaries=include_summaries,
         )
         entries.sort(key=lambda e: e.sort_key, reverse=True)
         if cursor_key is not None:
@@ -163,25 +234,39 @@ class TimelineService:
         )
 
     async def list_days(
-        self, user_id: int, req: TimelineDaysRequestDTO
+        self,
+        user_id: int,
+        req: TimelineDaysRequestDTO,
+        *,
+        include_summaries: bool = True,
     ) -> TimelineDaysVO:
         """Return per-day activity counts for calendar navigation."""
         tz, start_ms, end_ms = _resolve_bounds(req)
         entries = await self._collect_entries(
-            user_id=user_id, req=req, tz=tz, start_ms=start_ms, end_ms=end_ms
+            user_id=user_id,
+            req=req,
+            tz=tz,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            include_summaries=include_summaries,
         )
         counts: dict[str, list[int]] = {}
         for entry in entries:
-            bucket = counts.setdefault(entry.day, [0, 0, 0])
+            bucket = counts.setdefault(entry.day, [0, 0, 0, 0])
             bucket[0] += 1
             bucket[1] += int("created" in entry.sources)
             bucket[2] += int("edited" in entry.sources)
+            bucket[3] += int("dated" in entry.sources)
         return TimelineDaysVO(
             days=[
                 TimelineDayCountVO(
-                    date=day, count=total, created_count=created, edited_count=edited
+                    date=day,
+                    count=total,
+                    created_count=created,
+                    edited_count=edited,
+                    dated_count=dated,
                 )
-                for day, (total, created, edited) in sorted(
+                for day, (total, created, edited, dated) in sorted(
                     counts.items(), reverse=True
                 )
             ]
@@ -196,6 +281,7 @@ class TimelineService:
         start_ms: int | None,
         end_ms: int | None,
         max_ts: int | None = None,
+        include_summaries: bool = True,
     ) -> list[_Entry]:
         merged: dict[tuple[str, int, int], _Entry] = {}
 
@@ -321,6 +407,85 @@ class TimelineService:
                             has_five_star=starred,
                             sources={"edited"},
                         )
+
+            # Optional LLM enrichment: handwritten-date segments from SummaryDO.extra_metadata.
+            if include_summaries:
+                sum_rows = [
+                    (row[0], row[1])
+                    for row in (
+                        await session.execute(
+                            select(SummaryDO.file_id, SummaryDO.extra_metadata).where(
+                                SummaryDO.user_id == user_id,
+                                SummaryDO.is_deleted.is_(False),
+                                SummaryDO.is_summary_group.is_(False),
+                                SummaryDO.file_id.is_not(None),
+                                SummaryDO.extra_metadata.is_not(None),
+                            )
+                        )
+                    ).all()
+                ]
+                dated_hits, dated_pairs = _extract_dated_summary_hits(
+                    sum_rows, tz=tz, start_ms=start_ms, end_ms=end_ms, max_ts=max_ts
+                )
+                if dated_pairs:
+                    meta_by_idx: dict[
+                        tuple[int, int], tuple[NotePageMetadataDO, str]
+                    ] = {}
+                    idx_list = list(dated_pairs)
+                    for i in range(0, len(idx_list), _SQL_PAIR_BATCH_SIZE):
+                        idx_stmt = (
+                            select(NotePageMetadataDO, UserFileDO.file_name)
+                            .join(
+                                UserFileDO,
+                                (NotePageMetadataDO.file_id == UserFileDO.id)
+                                & (NotePageMetadataDO.user_id == UserFileDO.user_id),
+                            )
+                            .where(
+                                NotePageMetadataDO.user_id == user_id,
+                                UserFileDO.is_active == "Y",
+                                UserFileDO.is_folder == "N",
+                                tuple_(
+                                    NotePageMetadataDO.file_id,
+                                    NotePageMetadataDO.page_index,
+                                ).in_(idx_list[i : i + _SQL_PAIR_BATCH_SIZE]),
+                            )
+                        )
+                        if not req.include_blank:
+                            idx_stmt = idx_stmt.where(
+                                NotePageMetadataDO.has_drawables.is_(True)
+                            )
+                        for pm, file_name in (await session.execute(idx_stmt)).all():
+                            meta_by_idx[(pm.file_id, pm.page_index)] = (pm, file_name)
+
+                    for (day_str, sum_fid, page_idx), (
+                        day_ts,
+                        seg_summary,
+                    ) in dated_hits.items():
+                        resolved_idx = meta_by_idx.get((sum_fid, page_idx))
+                        if resolved_idx is None:
+                            continue
+                        pm, file_name = resolved_idx
+                        starred = (
+                            _has_five_star(pm.page_json) if req.starred_only else None
+                        )
+                        if req.starred_only and not starred:
+                            continue
+                        key = (day_str, pm.file_id, pm.page_index)
+                        existing = merged.get(key)
+                        if existing is not None:
+                            existing.sources.add("dated")
+                            if existing.summary is None and seg_summary is not None:
+                                existing.summary = seg_summary
+                        else:
+                            merged[key] = _Entry(
+                                day=day_str,
+                                timestamp_ms=day_ts,
+                                pm=pm,
+                                file_name=file_name,
+                                has_five_star=starred,
+                                summary=seg_summary,
+                                sources={"dated"},
+                            )
 
         return list(merged.values())
 

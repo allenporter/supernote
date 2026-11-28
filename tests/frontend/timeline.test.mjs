@@ -32,6 +32,7 @@ test('timeline.js: fetchTimelinePages sends POST payload and normalizes response
                             isBlank: false,
                             hasFiveStar: true,
                             keywords: ['roadmap'],
+                            summary: 'Planned Q2 roadmap',
                             imageUrl: 'http://localhost/api/oss/png/1001/2?sig=x',
                         },
                     ],
@@ -72,6 +73,7 @@ test('timeline.js: fetchTimelinePages sends POST payload and normalizes response
                     isBlank: false,
                     hasFiveStar: true,
                     keywords: ['roadmap'],
+                    summary: 'Planned Q2 roadmap',
                     imageUrl: 'http://localhost/api/oss/png/1001/2?sig=x',
                 },
             ],
@@ -100,6 +102,7 @@ test('timeline.js: fetchTimelineDays sends POST payload and normalizes day count
                             count: 3,
                             createdCount: 2,
                             editedCount: 1,
+                            datedCount: 1,
                         },
                     ],
                 }),
@@ -112,7 +115,9 @@ test('timeline.js: fetchTimelineDays sends POST payload and normalizes day count
             endDate: '2026-03-31',
             tzOffsetMinutes: 0,
         });
-        assert.deepEqual(days, [{ date: '2026-03-14', count: 3, createdCount: 2, editedCount: 1 }]);
+        assert.deepEqual(days, [
+            { date: '2026-03-14', count: 3, createdCount: 2, editedCount: 1, datedCount: 1 },
+        ]);
     } finally {
         globalThis.fetch = origFetch;
         logout();

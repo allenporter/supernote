@@ -52,6 +52,7 @@ def test_timeline_vos_serialize_with_camel_case_aliases_and_string_ids() -> None
                 is_blank=False,
                 has_five_star=True,
                 keywords=["roadmap"],
+                summary="Reviewed Q2 milestones",
                 image_url="http://example.test/api/oss/png/1001/2?sig=abc",
             )
         ],
@@ -74,6 +75,7 @@ def test_timeline_vos_serialize_with_camel_case_aliases_and_string_ids() -> None
                 "isBlank": False,
                 "hasFiveStar": True,
                 "keywords": ["roadmap"],
+                "summary": "Reviewed Q2 milestones",
                 "imageUrl": "http://example.test/api/oss/png/1001/2?sig=abc",
             }
         ],
@@ -84,7 +86,11 @@ def test_timeline_vos_serialize_with_camel_case_aliases_and_string_ids() -> None
     days_vo = TimelineDaysVO(
         days=[
             TimelineDayCountVO(
-                date="2026-03-14", count=3, created_count=2, edited_count=1
+                date="2026-03-14",
+                count=3,
+                created_count=2,
+                edited_count=1,
+                dated_count=1,
             )
         ]
     )
@@ -98,6 +104,7 @@ def test_timeline_vos_serialize_with_camel_case_aliases_and_string_ids() -> None
                 "count": 3,
                 "createdCount": 2,
                 "editedCount": 1,
+                "datedCount": 1,
             }
         ],
     }

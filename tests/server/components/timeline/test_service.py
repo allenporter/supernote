@@ -14,6 +14,7 @@ from supernote.server.components.timeline.service import TimelineService
 from supernote.server.db.models.event_log import UserEventDO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import InvalidInputError
 from supernote.server.utils.note_content import infer_page_created_ms
@@ -325,8 +326,83 @@ async def test_list_days_counts_per_day(
         TimelineDaysRequestDTO(start_date="2026-03-01", end_date="2026-03-31"),
     )
     assert [d.to_dict() for d in days.days] == [
-        {"date": "2026-03-14", "count": 2, "createdCount": 1, "editedCount": 2},
-        {"date": "2026-03-10", "count": 1, "createdCount": 1, "editedCount": 0},
+        {
+            "date": "2026-03-14",
+            "count": 2,
+            "createdCount": 1,
+            "editedCount": 2,
+            "datedCount": 0,
+        },
+        {
+            "date": "2026-03-10",
+            "count": 1,
+            "createdCount": 1,
+            "editedCount": 0,
+            "datedCount": 0,
+        },
+    ]
+
+
+async def test_list_pages_and_days_enriches_from_summary_extracted_dates(
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    await _seed_timeline_fixture(session_manager, test_user_id)
+    async with session_manager.session() as session:
+        session.add(
+            SummaryDO(
+                user_id=test_user_id,
+                file_id=1001,
+                name="ProjectAlpha",
+                unique_identifier="sum-1001",
+                is_summary_group=False,
+                is_deleted=False,
+                extra_metadata=json.dumps(
+                    {
+                        "segments": [
+                            {
+                                "date_range": "2026-03-10",
+                                "summary": "Kickoff architecture notes",
+                                "extracted_dates": ["2026-03-10", "2026-03-18"],
+                                "page_refs": [1],
+                            }
+                        ]
+                    }
+                ),
+            )
+        )
+        await session.commit()
+
+    service = TimelineService(session_manager=session_manager)
+
+    pages = await service.list_pages(test_user_id, TimelinePagesRequestDTO())
+    assert [
+        (i.date, i.file_id, i.page_index, i.sources, i.summary) for i in pages.items
+    ] == [
+        ("2026-03-18", 1001, 0, ["dated"], "Kickoff architecture notes"),
+        ("2026-03-14", 1001, 0, ["edited"], None),
+        ("2026-03-14", 1002, 0, ["created", "edited"], None),
+        ("2026-03-10", 1001, 0, ["created", "dated"], "Kickoff architecture notes"),
+    ]
+
+    days = await service.list_days(
+        test_user_id,
+        TimelineDaysRequestDTO(start_date="2026-03-01", end_date="2026-03-31"),
+    )
+    assert [(d.date, d.count, d.dated_count) for d in days.days] == [
+        ("2026-03-18", 1, 1),
+        ("2026-03-14", 2, 0),
+        ("2026-03-10", 1, 1),
+    ]
+
+    # When summary enrichment is disabled, dated entries and summaries are omitted.
+    non_llm = await service.list_pages(
+        test_user_id, TimelinePagesRequestDTO(), include_summaries=False
+    )
+    assert [(i.date, i.sources, i.summary) for i in non_llm.items] == [
+        ("2026-03-14", ["edited"], None),
+        ("2026-03-14", ["created", "edited"], None),
+        ("2026-03-10", ["created"], None),
     ]
 
 
