@@ -562,6 +562,10 @@ UI_GATED_COMPONENT_ROUTES: dict[str, set[str]] = {
         "/api/file/query/summary",
         "/api/file/query/summary/group",
     },
+    "timeline": {
+        "/api/extended/timeline/pages",
+        "/api/extended/timeline/days",
+    },
     "transcript": {"/api/extended/transcript"},
     "wiki": {
         "/api/extended/wiki/pages",
