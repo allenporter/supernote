@@ -43,10 +43,11 @@ from supernote.server.db.models.note_processing import (
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
 from supernote.server.services.file import FileService
-from supernote.server.services.vocabulary import notebook_terms
 from supernote.server.utils.image import is_image_filename
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
+
+from .vocabulary import notebook_terms
 
 logger = logging.getLogger(__name__)
 

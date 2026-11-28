@@ -87,16 +87,28 @@ def test_reload_prompts(mock_resources_dir: Path, tmp_path: Path) -> None:
     assert loader.get_prompt(PromptId.SUMMARY_GENERATION) == "New Summary"
 
 
+def test_custom_dir_inherits_unoverridden_builtin_categories(tmp_path: Path) -> None:
+    """Custom prompt directories replace only the categories they define."""
+    ocr_dir = tmp_path / "ocr" / "default"
+    ocr_dir.mkdir(parents=True)
+    (ocr_dir / "prompt.md").write_text("Custom OCR only", encoding="utf-8")
+
+    loader = PromptLoader(resources_dir=tmp_path)
+    assert loader.get_prompt(PromptId.OCR_TRANSCRIPTION) == "Custom OCR only"
+    assert "may appear in the text" in loader.get_prompt(PromptId.OCR_VOCABULARY)
+
+
 @pytest.mark.parametrize(
     ("prompt_id", "expected_marker"),
     [
+        (PromptId.OCR_VOCABULARY, "may appear in the text"),
         (PromptId.WIKI_COMPILE, "WikiCompilePlan"),
         (PromptId.WIKI_CONFLICT, "WikiConflictResolution"),
         (PromptId.WIKI_LINT, "WikiLintReport"),
     ],
 )
-def test_builtin_wiki_prompts_load(prompt_id: PromptId, expected_marker: str) -> None:
-    """Built-in default wiki prompts load cleanly via `PromptLoader`."""
+def test_builtin_prompts_load(prompt_id: PromptId, expected_marker: str) -> None:
+    """Built-in default prompts load cleanly via `PromptLoader`."""
     loader = PromptLoader()
     text = loader.get_prompt(prompt_id)
     assert expected_marker in text

@@ -4,14 +4,13 @@ import json
 
 import pytest
 
+from supernote.server.components.transcript.vocabulary import (
+    MAX_PROMPT_TERMS,
+    notebook_terms,
+)
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.vocabulary import (
-    MAX_PROMPT_TERMS,
-    _is_common,
-    notebook_terms,
-)
 
 ROOT_SCOPE_ID = 0
 USER_ID = 100
@@ -205,27 +204,91 @@ async def test_malformed_keyword_metadata_is_ignored(
     assert await _terms(session_manager, NOTEBOOK_ID) == []
 
 
+async def test_soft_deleted_target_notebook_returns_no_terms(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    await _keywords(session_manager, SIBLING_ID, ["Osprey"])
+    async with session_manager.session() as session:
+        target = await session.get(UserFileDO, NOTEBOOK_ID)
+        assert target is not None
+        target.is_active = "N"
+        await session.commit()
+    assert await _terms(session_manager, NOTEBOOK_ID) == []
+
+
+async def test_more_recently_updated_sibling_wins_folder_order(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    newer_sibling_id = 25
+    async with session_manager.session() as session:
+        older = await session.get(UserFileDO, SIBLING_ID)
+        assert older is not None
+        older.update_time = 1_000
+        session.add(
+            UserFileDO(
+                id=newer_sibling_id,
+                user_id=USER_ID,
+                directory_id=PROJECTS_FOLDER_ID,
+                file_name="Recent.note",
+                update_time=2_000,
+            )
+        )
+        await session.commit()
+    await _keywords(session_manager, SIBLING_ID, ["ArchiveTerm"])
+    await _keywords(session_manager, newer_sibling_id, ["CurrentTerm"])
+
+    assert await _terms(session_manager, NOTEBOOK_ID) == [
+        "CurrentTerm",
+        "ArchiveTerm",
+    ]
+
+
+async def test_short_names_and_acronyms_are_not_dropped_by_stopword_plurals(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    await _keywords(
+        session_manager,
+        NOTEBOOK_ID,
+        ["Wes", "UPS", "AES", "SOS", "ToS", "we", "up"],
+    )
+    assert await _terms(session_manager, NOTEBOOK_ID) == [
+        "Wes",
+        "UPS",
+        "AES",
+        "SOS",
+        "ToS",
+    ]
+
+
 async def test_an_unknown_notebook_has_no_terms(
     session_manager: DatabaseSessionManager,
 ) -> None:
     assert await _terms(session_manager, 999) == []
 
 
-@pytest.mark.parametrize(
-    ("term", "expected"),
-    [
-        ("the", True),
-        ("API", True),
-        ("events", True),
-        ("Boxes", False),
-        ("milestones", True),
-        ("  Logic ", True),
-        ("Lovelace", False),
-        ("ks-tilt", False),
-        ("action item", False),
-        ("", False),
-        ("   ", False),
-    ],
-)
-def test_is_common(term: str, expected: bool) -> None:
-    assert _is_common(term) is expected
+async def test_common_words_and_plurals_are_filtered_while_phrases_survive(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    await _keywords(
+        session_manager,
+        NOTEBOOK_ID,
+        [
+            "the",
+            "API",
+            "events",
+            "Boxes",
+            "milestones",
+            "  Logic ",
+            "Lovelace",
+            "ks-tilt",
+            "action item",
+            "",
+            "   ",
+        ],
+    )
+    assert await _terms(session_manager, NOTEBOOK_ID) == [
+        "Boxes",
+        "Lovelace",
+        "ks-tilt",
+        "action item",
+    ]

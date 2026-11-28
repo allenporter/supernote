@@ -31,15 +31,6 @@ __all__ = [
     "parse_summary_response",
 ]
 
-# The writer's own spellings, from keywords marked on the device: the first
-# sentence gives the model names it has no prior for, and the second stops the
-# list from becoming a source of inserted words.
-_VOCABULARY_CLAUSE = (
-    "These names and terms may appear in the text: {terms}. "
-    "If a handwritten word closely matches one of them, prefer that spelling. "
-    "Never insert one of these terms where the handwriting does not support it."
-)
-
 _CODE_FENCE = re.compile(r"^```[a-zA-Z]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
 
 
@@ -147,8 +138,8 @@ def format_ocr_prompt(
     terms = [term for term in vocabulary if term.casefold() not in on_page]
     if not terms:
         return f"{metadata_block}\n\n{prompt}"
-    clause = _VOCABULARY_CLAUSE.format(terms=", ".join(terms))
-    return f"{metadata_block}\n\n{prompt}\n\n{clause}"
+    clause = prompt_loader.get_prompt(PromptId.OCR_VOCABULARY)
+    return f"{metadata_block}\n\n{prompt}\n\n{clause} {', '.join(terms)}"
 
 
 def format_image_ocr_prompt(

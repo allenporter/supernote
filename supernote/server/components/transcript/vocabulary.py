@@ -1,22 +1,25 @@
 """Spellings a writer uses, read from the keywords they mark on a Supernote device.
 
-Page hashing already stores each page's keywords in
+`NoteMetadataModule` stores each page's keywords in
 `f_note_page_metadata.keywords_json` on every sync, so the terms for a
 notebook are a query over that: a keyword removed or edited on the device, or
 a notebook deleted, is gone from the next prompt without any bookkeeping.
 
 A notebook's own keywords come first, then those of the other notebooks under
-the same top-level folder, so `Work/` and `Work/Weeks/` share terms but a
-journal does not pick up work jargon. A notebook with no folder of its own,
-directly in `Note/` or at the root, uses only its own keywords.
+the same top-level folder (most recently updated first), so `Work/` and
+`Work/Weeks/` share terms but a journal does not pick up work jargon. A
+notebook with no folder of its own, directly in `Note/` or at the root, uses
+only its own keywords.
 """
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.services.vfs import VirtualFileSystem
+from supernote.server.utils.stopwords import STOPWORDS
 
 __all__ = ["MAX_PROMPT_TERMS", "notebook_terms"]
 
@@ -38,37 +41,30 @@ _EDGE_PUNCTUATION = "-_!?,;:#*\"'`()[]{}<>/\\|~–— "
 # A word the model already predicts gains nothing from being listed: measured
 # over handwritten pages, padding the prompt with such words scored worse than
 # listing nothing at all.
-# High-frequency written English.
+# High-frequency written English beyond `STOPWORDS`.
 _ENGLISH = """
-a about above across after again against all almost alone along already also
-although always am among an and another any anyone anything are around as ask
-asked at away back bad be became because become been before began begin behind
-being below best better between big both but by call called came can cannot
-case cases certain change check clear come comes coming common could country
-course current day days did different do does doing done down draw during each
-early easy either else end enough even ever every everything example except
-far few find first five follow following for form found four free from front
-full further gave general get give given go goes going good got great group
-had half hand happen has have having he head hear held help her here high him
-himself his hold home how however i idea if important in include included
-including inside instead into is it its itself just keep kept kind know known
-land large last late later least leave left less let level life like line list
-little live long look looked lot low made main make makes making many may
-maybe me mean means meant might mind more most move much must my name near
-need needed never new next night no none nor not note nothing now number of
-off often old on once one only open or order other others our out over own
-part parts past people per perhaps place plan point points possible present
-probably problem process public put quite rather reach read ready real really
-reason report result results right run said same saw say says second see seem
-seen self sense set several shall she short should show side simple since
-small so some someone something soon sort sound space start state still stop
-such sure system take taken tell than that the their them themselves then
-there these they thing things think this those though thought three through
-time times to today together too took top toward try turn two under until up
-upon us use used useful using usually value very view want was way we week
-well went were what when where whether which while who whole why will with
-within without word words work working world would write written year years
-yes yet you your
+above across after again against almost alone along already although always
+among another anyone anything around ask asked away back bad became because
+become before began begin behind below best better between big call called came
+cannot case cases certain change check clear come comes coming common country
+course current day days different done draw early easy either else end enough
+even ever every everything example except far find first five follow following
+form found four free front full gave general get give given go goes going good
+got great group half hand happen head hear held help high hold home however
+idea important include included including inside instead keep kept kind know
+known land large last late later least leave left less let level life like line
+list little live long look looked lot low made main make makes making many
+maybe mean means meant mind move much name near need needed never new next
+night none note nothing number often old one open order others part parts past
+people per perhaps place plan point points possible present probably problem
+process public put quite rather reach read ready real really reason report
+result results right run said saw say says second see seem seen self sense set
+several shall short show side simple since small someone something soon sort
+sound space start state still stop sure system take taken tell thing things
+think though thought three time times today together took top toward try turn
+two upon us use used useful using usually value view want way week well went
+whether whole within without word words work working world write written year
+years yes yet
 """
 
 # Generic technical and note-taking words, common as device keywords.
@@ -103,24 +99,29 @@ progress purpose question recent reference related risk scope session similar
 specific summary takeaway timeline topic various
 """
 
-_COMMON_WORDS = frozenset(
+_CONTENT_WORDS = frozenset(
     word for block in (_ENGLISH, _TECHNICAL, _ABSTRACT) for word in block.split()
 )
+_COMMON_WORDS = STOPWORDS | _CONTENT_WORDS
 
 
 def _is_common(term: str) -> bool:
     """Whether `term` is a single ordinary word, allowing simple plurals.
 
     A phrase is never common: `action item` is worth keeping even though both
-    of its words are ordinary.
+    of its words are ordinary. Plural stripping applies only to content words
+    of at least 3 letters so short names/acronyms like `Wes`, `UPS`, or `AES`
+    are not dropped via closed-class stopwords (`we`, `up`, `a`).
     """
-    word = term.strip().lower()
-    if not word or any(c.isspace() for c in word):
+    word = term.lower()
+    if " " in word:
         return False
     if word in _COMMON_WORDS:
         return True
     return any(
-        word.endswith(suffix) and word[: -len(suffix)] in _COMMON_WORDS
+        word.endswith(suffix)
+        and len(word) - len(suffix) >= 3
+        and word[: -len(suffix)] in _CONTENT_WORDS
         for suffix in ("s", "es")
     )
 
@@ -142,10 +143,10 @@ async def notebook_terms(
     session: AsyncSession, user_id: int, file_id: int
 ) -> list[str]:
     """The notebook's own terms, then its folder's, capped at `MAX_PROMPT_TERMS`."""
-    note = await session.get(UserFileDO, file_id)
-    if note is None or note.user_id != user_id:
-        return []
     vfs = VirtualFileSystem(session)
+    note = await vfs.get_node_by_id(user_id, file_id)
+    if note is None:
+        return []
     scope_id = await _scope(vfs, user_id, note)
     file_ids = {file_id}
     if scope_id is not None:
@@ -156,6 +157,12 @@ async def notebook_terms(
         )
     rows = await session.scalars(
         select(NotePageMetadataDO)
+        .options(
+            load_only(
+                NotePageMetadataDO.file_id,
+                NotePageMetadataDO.keywords_json,
+            )
+        )
         .join(
             UserFileDO,
             (UserFileDO.id == NotePageMetadataDO.file_id)
@@ -165,7 +172,11 @@ async def notebook_terms(
         .where(NotePageMetadataDO.file_id.in_(file_ids))
         .where(UserFileDO.is_active == "Y")
         .where(NotePageMetadataDO.keywords_json != "[]")
-        .order_by(NotePageMetadataDO.file_id, NotePageMetadataDO.page_index)
+        .order_by(
+            UserFileDO.update_time.desc(),
+            NotePageMetadataDO.file_id,
+            NotePageMetadataDO.page_index,
+        )
     )
     own: list[str] = []
     rest: list[str] = []
@@ -180,19 +191,24 @@ def _dedupe(terms: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for term in terms:
-        if term.casefold() not in seen:
-            seen.add(term.casefold())
+        key = term.casefold()
+        if key not in seen:
+            seen.add(key)
             out.append(term)
     return out
 
 
 async def _scope(vfs: VirtualFileSystem, user_id: int, note: UserFileDO) -> int | None:
     """The highest non-system folder above a notebook, or None if it has none."""
+    if note.directory_id == 0:
+        return None
     scope_id: int | None = None
     current = await vfs.get_node_by_id(user_id, note.directory_id)
     for _ in range(_MAX_FOLDER_DEPTH):
         if current is None or await vfs.is_system_directory(user_id, current):
             break
         scope_id = current.id
+        if current.directory_id == 0:
+            break
         current = await vfs.get_node_by_id(user_id, current.directory_id)
     return scope_id
