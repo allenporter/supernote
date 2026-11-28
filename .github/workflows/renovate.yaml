@@ -34,4 +34,4 @@ jobs:
             ${{ runner.os }}-renovate-validator-
       - name: Validate Renovate configuration
         run: |
-          npx --yes --package=renovate@44 -- renovate-config-validator .github/renovate.json5
+          npx --yes --package=renovate@45 -- renovate-config-validator .github/renovate.json5
