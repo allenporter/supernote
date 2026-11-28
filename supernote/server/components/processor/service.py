@@ -40,7 +40,7 @@ from supernote.server.db.models.note_processing import (
     NotePageContentDO,
     SystemTaskDO,
 )
-from supernote.server.db.models.summary import SummaryDO, SummaryTranscriptDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     Event,
@@ -434,7 +434,11 @@ class ProcessorService:
             return
         summary_id = int(summary.id)
         if summary.handwrite_inner_name and summary.handwrite_md5:
-            if self.task_graph.for_entity_type(TaskEntityType.SUMMARY):
+            summary_graph = self.task_graph.for_entity_type(TaskEntityType.SUMMARY)
+            if any(
+                self.task_graph.is_effectively_enabled(m.task_type)
+                for m in summary_graph.modules
+            ):
                 await self.enqueue_entity(
                     TaskEntityType.SUMMARY, event.user_id, summary_id
                 )
@@ -655,20 +659,36 @@ class ProcessorService:
         await self._recover_missing_summary_tasks(user_id=user_id)
 
     async def _recover_missing_summary_tasks(self, user_id: int | None = None) -> None:
-        """Enqueue handwritten Digest summaries whose OCR transcript is missing or stale."""
-        if not self.task_graph.is_effectively_enabled(TaskType.SUMMARY_OCR):
+        """Enqueue handwritten Digest summaries missing checkpoints for enabled summary modules."""
+        enabled_modules = [
+            m
+            for m in self.task_graph.for_entity_type(TaskEntityType.SUMMARY).modules
+            if self.task_graph.is_effectively_enabled(m.task_type)
+        ]
+        if not enabled_modules:
             return
+
+        conditions = []
+        for module in enabled_modules:
+            task_exists = select(SystemTaskDO.id).where(
+                SystemTaskDO.user_id == SummaryDO.user_id,
+                SystemTaskDO.entity_type == TaskEntityType.SUMMARY.value,
+                SystemTaskDO.entity_id == SummaryDO.id,
+                SystemTaskDO.task_type == module.task_type,
+                SystemTaskDO.key == "global",
+            )
+            if module.version is not None:
+                task_exists = task_exists.where(
+                    or_(
+                        SystemTaskDO.status != ProcessingStatus.COMPLETED,
+                        SystemTaskDO.data == module.version,
+                    )
+                )
+            conditions.append(~task_exists.correlate(SummaryDO).exists())
 
         async with self.session_manager.session() as session:
             stmt = (
                 select(SummaryDO.user_id, SummaryDO.id)
-                .outerjoin(
-                    SummaryTranscriptDO,
-                    and_(
-                        SummaryTranscriptDO.user_id == SummaryDO.user_id,
-                        SummaryTranscriptDO.summary_id == SummaryDO.id,
-                    ),
-                )
                 .where(
                     SummaryDO.is_deleted.is_(False),
                     SummaryDO.is_summary_group.is_(False),
@@ -676,11 +696,8 @@ class ProcessorService:
                     SummaryDO.handwrite_inner_name != "",
                     SummaryDO.handwrite_md5.is_not(None),
                     SummaryDO.handwrite_md5 != "",
-                    or_(
-                        SummaryTranscriptDO.summary_id.is_(None),
-                        SummaryTranscriptDO.handwrite_md5 != SummaryDO.handwrite_md5,
-                    ),
                 )
+                .where(or_(*conditions))
             )
             if user_id is not None:
                 stmt = stmt.where(SummaryDO.user_id == user_id)
@@ -690,7 +707,7 @@ class ProcessorService:
             return
 
         logger.info(
-            "Found %d handwritten summaries with missing/stale transcripts. Enqueuing...",
+            "Found %d handwritten summaries with missing tasks. Enqueuing...",
             len(missing_summaries),
         )
         PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL.inc(len(missing_summaries))
@@ -1126,6 +1143,10 @@ class ProcessorService:
 
         if task_type.strip().upper() != "ALL":
             canonical_type = self.resolve_task_type(task_type)
+            if TaskType.entity_type_for(canonical_type) != TaskEntityType.FILE:
+                raise ValueError(
+                    f"Reprocessing is only supported for file tasks, got: {canonical_type}"
+                )
             if cascade:
                 types_to_clear = [
                     canonical_type,

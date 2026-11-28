@@ -415,3 +415,100 @@ async def test_recover_missing_tasks_backfills_untranscribed_summaries(
     )
     assert transcript is not None
     assert transcript.handwrite_md5 == "55555555555555555555555555555555"
+
+
+async def test_summary_ocr_missing_blob_marks_task_failed_and_skips_missing_recovery(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Missing `.mark` blob marks SUMMARY_OCR task FAILED and is not re-enqueued by missing-task recovery."""
+    await load_components(
+        "ai", "fake_ai", "processor", "summary", "transcript", configs=FAKE_OCR_CONFIG
+    )
+    summary_service = component_core.app[SUMMARY_SERVICE_KEY]
+    transcript_service = component_core.app[TRANSCRIPT_SERVICE_KEY]
+    processor = component_core.app[PROCESSOR_SERVICE_KEY]
+
+    created = await summary_service.add_summary(
+        TEST_USERNAME,
+        AddSummaryDTO(
+            unique_identifier="digest-missing-blob-1",
+            content="Missing mark blob",
+            handwrite_inner_name="does_not_exist.mark",
+            handwrite_md5="66666666666666666666666666666666",
+        ),
+    )
+    assert created.id is not None
+    await _drain_processor(component_core)
+
+    task = await get_task(
+        session_manager, test_user_id, created.id, TaskType.SUMMARY_OCR, "global"
+    )
+    assert task is not None
+    assert task.status == ProcessingStatus.FAILED
+    assert (
+        await transcript_service.get_summary_transcript(test_user_id, created.id)
+        is None
+    )
+
+    await processor.pause()
+    await processor.recover_missing_tasks(user_id=test_user_id)
+    assert (
+        ProcessorWorkItem(TaskEntityType.SUMMARY, test_user_id, created.id)
+        not in processor.processing_entities
+    )
+
+
+async def test_summary_deleted_cleans_up_system_task_checkpoint(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+    test_data_dir: Path,
+) -> None:
+    """Deleting a summary cleans up both its transcript and its SUMMARY_OCR SystemTaskDO checkpoint."""
+    await load_components(
+        "ai", "fake_ai", "processor", "summary", "transcript", configs=FAKE_OCR_CONFIG
+    )
+    summary_service = component_core.app[SUMMARY_SERVICE_KEY]
+    transcript_service = component_core.app[TRANSCRIPT_SERVICE_KEY]
+
+    await blob_storage.put(
+        USER_DATA_BUCKET,
+        "digest_del.mark",
+        (test_data_dir / DIGEST_MARK).read_bytes(),
+    )
+    created = await summary_service.add_summary(
+        TEST_USERNAME,
+        AddSummaryDTO(
+            unique_identifier="digest-delete-cleanup-1",
+            content="Delete me",
+            handwrite_inner_name="digest_del.mark",
+            handwrite_md5="77777777777777777777777777777777",
+        ),
+    )
+    assert created.id is not None
+    await _drain_processor(component_core)
+    assert (
+        await get_task(
+            session_manager, test_user_id, created.id, TaskType.SUMMARY_OCR, "global"
+        )
+        is not None
+    )
+
+    await summary_service.delete_summary(TEST_USERNAME, created.id)
+    await _drain_processor(component_core)
+
+    assert (
+        await transcript_service.get_summary_transcript(test_user_id, created.id)
+        is None
+    )
+    assert (
+        await get_task(
+            session_manager, test_user_id, created.id, TaskType.SUMMARY_OCR, "global"
+        )
+        is None
+    )

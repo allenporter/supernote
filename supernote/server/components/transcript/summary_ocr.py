@@ -48,13 +48,8 @@ def _to_conversion_summary_item(summary: SummaryDO) -> SummaryItem:
     """Build the minimal `SummaryItem` needed by `ConversionService` summary renderers."""
     return SummaryItem(
         id=int(summary.id),
-        user_id=int(summary.user_id),
-        file_id=summary.file_id,
-        name=summary.name,
-        source_path=summary.source_path,
         handwrite_inner_name=summary.handwrite_inner_name,
         handwrite_md5=summary.handwrite_md5,
-        creation_time=summary.creation_time,
     )
 
 
@@ -134,83 +129,92 @@ class SummaryOcrModule(ProcessorModule):
         user_id = raw_user_id
         summary_id = file_id
 
-        async with session_manager.session() as session:
-            summary_do = await session.get(SummaryDO, (summary_id, user_id))
-            if (
-                summary_do is None
-                or summary_do.is_deleted
-                or summary_do.is_summary_group
-                or not summary_do.handwrite_inner_name
-                or not summary_do.handwrite_md5
-            ):
-                return
-            user = await session.get(UserDO, user_id)
-            if user is None:
-                logger.warning(
-                    "Skipping summary OCR for summary %s: user %s not found",
-                    summary_id,
-                    user_id,
+        # Bounded loop handles the case where a newer handwriting revision is saved
+        # while OCR for an earlier revision is in flight (which enqueue_entity deduplicates).
+        for _ in range(3):
+            async with session_manager.session() as session:
+                summary_do = await session.get(SummaryDO, (summary_id, user_id))
+                if (
+                    summary_do is None
+                    or summary_do.is_deleted
+                    or summary_do.is_summary_group
+                    or not summary_do.handwrite_inner_name
+                    or not summary_do.handwrite_md5
+                ):
+                    return
+                user = await session.get(UserDO, user_id)
+                if user is None:
+                    logger.warning(
+                        "Skipping summary OCR for summary %s: user %s not found",
+                        summary_id,
+                        user_id,
+                    )
+                    return
+                user_email = user.email
+                handwrite_md5 = summary_do.handwrite_md5
+                file_name = _summary_ocr_file_name(summary_do, summary_id)
+                creation_time = summary_do.creation_time
+                summary_item = _to_conversion_summary_item(summary_do)
+                vocabulary = (
+                    await notebook_terms(session, user_id, int(summary_do.file_id))
+                    if summary_do.file_id is not None
+                    else ()
                 )
-                return
-            user_email = user.email
-            handwrite_md5 = summary_do.handwrite_md5
-            file_name = _summary_ocr_file_name(summary_do, summary_id)
-            creation_time = summary_do.creation_time
-            summary_item = _to_conversion_summary_item(summary_do)
-            vocabulary = (
-                await notebook_terms(session, user_id, int(summary_do.file_id))
-                if summary_do.file_id is not None
-                else ()
-            )
 
-        page_numbers = await self.conversion_service.convert_summary_to_png(
-            user_email, summary_item
-        )
-        page_texts: list[str] = []
-        for page_no in page_numbers:
-            converted = await self.conversion_service.get_summary_png_page(
-                user_email, summary_item, page_no
+            page_numbers = await self.conversion_service.convert_summary_to_png(
+                user_email, summary_item
             )
-            if converted is None:
-                raise FileNotFound(
-                    f"Rendered PNG page {page_no} missing for summary {summary_id}"
+            page_texts: list[str] = []
+            for page_no in page_numbers:
+                converted = await self.conversion_service.get_summary_png_page(
+                    user_email, summary_item, page_no
                 )
-            png_bytes = await self.blob_storage.get_bytes(
-                CACHE_BUCKET, converted.storage_key
-            )
-            page_metadata = PageMetadata(
-                file_name=file_name,
-                page_index=page_no,
-                page_id=f"summary_{summary_id}_page_{page_no}",
-                notebook_create_time=creation_time,
-            )
-            prompt = format_ocr_prompt(page_metadata, vocabulary=vocabulary)
-            stripped = (await self.ocr_model.extract_text(png_bytes, prompt)).strip()
-            if stripped:
-                page_texts.append(stripped)
+                if converted is None:
+                    raise FileNotFound(
+                        f"Rendered PNG page {page_no} missing for summary {summary_id}"
+                    )
+                png_bytes = await self.blob_storage.get_bytes(
+                    CACHE_BUCKET, converted.storage_key
+                )
+                page_metadata = PageMetadata(
+                    file_name=file_name,
+                    page_index=page_no,
+                    page_id=f"summary_{summary_id}_page_{page_no}",
+                    notebook_create_time=creation_time,
+                )
+                prompt = format_ocr_prompt(page_metadata, vocabulary=vocabulary)
+                stripped = (
+                    await self.ocr_model.extract_text(png_bytes, prompt)
+                ).strip()
+                if stripped:
+                    page_texts.append(stripped)
 
-        # Re-verify live SummaryDO still matches before persisting so concurrent
-        # deletes or handwriting updates can never be overwritten with stale text.
-        async with session_manager.session() as session:
-            current = await session.get(SummaryDO, (summary_id, user_id))
-            if (
-                current is None
-                or current.is_deleted
-                or current.handwrite_md5 != handwrite_md5
-            ):
-                return
+            # Re-verify live SummaryDO still matches before persisting so concurrent
+            # deletes or handwriting updates can never be overwritten with stale text.
+            async with session_manager.session() as session:
+                current = await session.get(SummaryDO, (summary_id, user_id))
+                if (
+                    current is None
+                    or current.is_deleted
+                    or not current.handwrite_inner_name
+                    or not current.handwrite_md5
+                ):
+                    return
+                if current.handwrite_md5 != handwrite_md5:
+                    continue
 
-        await self.transcript_service.upsert_summary_transcript(
-            user_id=user_id,
-            summary_id=summary_id,
-            handwrite_md5=handwrite_md5,
-            text_content="\n\n".join(page_texts),
-            model_id=self.ocr_model.model_id,
-        )
-        logger.info(
-            "Transcribed %d handwriting page(s) for summary %s (user %s, model=%s)",
-            len(page_numbers),
-            summary_id,
-            user_id,
-            self.ocr_model.model_id,
-        )
+            await self.transcript_service.upsert_summary_transcript(
+                user_id=user_id,
+                summary_id=summary_id,
+                handwrite_md5=handwrite_md5,
+                text_content="\n\n".join(page_texts),
+                model_id=self.ocr_model.model_id,
+            )
+            logger.info(
+                "Transcribed %d handwriting page(s) for summary %s (user %s, model=%s)",
+                len(page_numbers),
+                summary_id,
+                user_id,
+                self.ocr_model.model_id,
+            )
+            return
