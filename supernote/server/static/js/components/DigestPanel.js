@@ -1,6 +1,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { formatDigestMarkdown, resolveSourceFileId } from '../api/digests.js';
-import { formatSourceLabel, useDigests } from '../composables/useDigests.js';
+import { BUILT_IN_DIGEST_VIEWS, formatSourceLabel, useDigests } from '../composables/useDigests.js';
 import { useModalEscape } from '../composables/useModalEscape.js';
 import { showToast } from '../composables/useToast.js';
 import { copyTextToClipboard } from '../utils/clipboard.js';
@@ -107,14 +107,16 @@ export default {
         });
 
         const activeHeading = computed(() => {
-            if (selectedCategoryFilter.value === 'all') return 'All Digests';
+            if (selectedCategoryFilter.value === 'all') return 'All';
+            if (selectedCategoryFilter.value === 'digests') return 'Digests';
+            if (selectedCategoryFilter.value === 'ai-summaries') return 'AI Summaries';
             if (selectedCategoryFilter.value === 'uncategorized') return 'Uncategorized';
             return categoryMap.value[selectedCategoryFilter.value]?.name || 'Digests';
         });
 
         const activeCategoryUuid = computed(() => {
             const f = selectedCategoryFilter.value;
-            return f !== 'all' && f !== 'uncategorized' ? f : '';
+            return !BUILT_IN_DIGEST_VIEWS.has(f) ? f : '';
         });
 
         const activeSourceLabel = computed(() =>

@@ -6,11 +6,14 @@ import {
     deleteDigestCategory,
     fetchDigestCategories,
     fetchDigests,
+    isAiSummaryDigest,
     updateDigest,
     updateDigestCategory,
 } from '../api/digests.js';
 import { getErrorMessage } from '../utils/format.js';
 import { showToast } from './useToast.js';
+
+export const BUILT_IN_DIGEST_VIEWS = new Set(['all', 'digests', 'ai-summaries', 'uncategorized']);
 
 /**
  * Extract a concise filename label from a VFS-relative source path.
@@ -32,7 +35,7 @@ export function useDigests() {
     const error = ref(null);
 
     /** @type {import('vue').Ref<string>} */
-    const selectedCategoryFilter = ref('all'); // 'all' | 'uncategorized' | <category.uniqueIdentifier>
+    const selectedCategoryFilter = ref('all'); // 'all' | 'digests' | 'ai-summaries' | 'uncategorized' | <category.uniqueIdentifier>
     /** @type {import('vue').Ref<string | null>} */
     const selectedSourcePath = ref(null);
     const searchQuery = ref('');
@@ -53,8 +56,7 @@ export function useDigests() {
                 digests.value = loadedDigests;
                 const activeFilter = selectedCategoryFilter.value;
                 if (
-                    activeFilter !== 'all' &&
-                    activeFilter !== 'uncategorized' &&
+                    !BUILT_IN_DIGEST_VIEWS.has(activeFilter) &&
                     !loadedCategories.some((c) => c.uniqueIdentifier === activeFilter)
                 ) {
                     selectedCategoryFilter.value = 'all';
@@ -93,15 +95,37 @@ export function useDigests() {
         return map;
     });
 
+    /**
+     * Classify whether a digest is an AI Notebook Summary using its category name and dataSource.
+     * @param {DigestItem} item
+     * @returns {boolean}
+     */
+    function isItemAiSummary(item) {
+        const categoryName = item.parentUniqueIdentifier
+            ? (categoryMap.value[item.parentUniqueIdentifier]?.name ?? null)
+            : null;
+        return isAiSummaryDigest(item, categoryName);
+    }
+
     const categoryCounts = computed(() => {
         /** @type {Record<string, number>} */
-        const counts = { all: digests.value.length, uncategorized: 0 };
+        const counts = {
+            all: digests.value.length,
+            digests: 0,
+            'ai-summaries': 0,
+            uncategorized: 0,
+        };
         for (const cat of categories.value) {
             if (cat.uniqueIdentifier) {
                 counts[cat.uniqueIdentifier] = 0;
             }
         }
         for (const item of digests.value) {
+            if (isItemAiSummary(item)) {
+                counts['ai-summaries'] += 1;
+            } else {
+                counts.digests += 1;
+            }
             if (!item.parentUniqueIdentifier || !categoryMap.value[item.parentUniqueIdentifier]) {
                 counts.uncategorized += 1;
             } else {
@@ -116,6 +140,12 @@ export function useDigests() {
         const filter = selectedCategoryFilter.value;
         if (filter === 'all') {
             return digests.value;
+        }
+        if (filter === 'digests') {
+            return digests.value.filter((item) => !isItemAiSummary(item));
+        }
+        if (filter === 'ai-summaries') {
+            return digests.value.filter((item) => isItemAiSummary(item));
         }
         if (filter === 'uncategorized') {
             return digests.value.filter(

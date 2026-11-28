@@ -23,6 +23,7 @@ function makeSeedResponses() {
                 categoryId: 'cat-ai',
                 fileId: '100',
                 content: 'Weekly architecture synthesis',
+                dataSource: 'gemini-2.5-flash',
                 sourcePath: 'Note/Architecture.note',
                 updateTime: 3000,
             },
@@ -95,6 +96,8 @@ test('useDigests.js: filters by category, orphaned-uncategorized, source, and se
             ['11', '12', '10', '13'],
         );
         assert.equal(state.categoryCounts.value.all, 4);
+        assert.equal(state.categoryCounts.value.digests, 3);
+        assert.equal(state.categoryCounts.value['ai-summaries'], 1);
         assert.equal(state.categoryCounts.value.uncategorized, 2);
         assert.equal(state.categoryCounts.value['cat-ai'], 1);
         assert.equal(state.categoryCounts.value['cat-books'], 1);
@@ -104,6 +107,18 @@ test('useDigests.js: filters by category, orphaned-uncategorized, source, and se
             { path: 'Note/Architecture.note', label: 'Architecture.note', count: 1 },
             { path: 'Document/Papers/Consensus.pdf', label: 'Consensus.pdf', count: 2 },
         ]);
+
+        state.selectedCategoryFilter.value = 'digests';
+        assert.deepEqual(
+            state.filteredDigests.value.map((d) => d.id),
+            ['11', '12', '13'],
+        );
+
+        state.selectedCategoryFilter.value = 'ai-summaries';
+        assert.deepEqual(
+            state.filteredDigests.value.map((d) => d.id),
+            ['10'],
+        );
 
         state.selectedCategoryFilter.value = 'uncategorized';
         assert.deepEqual(
@@ -159,6 +174,15 @@ test('useDigests.js: clears stale selectedSourcePath and deleted selectedCategor
         const state = mounted.result;
         await state.loadDigests();
 
+        // Switching from 'digests' to 'ai-summaries' narrows availableSources and clears stale source
+        state.selectedCategoryFilter.value = 'digests';
+        state.selectedSourcePath.value = 'Document/Papers/Consensus.pdf';
+        state.selectedCategoryFilter.value = 'ai-summaries';
+        assert.equal(state.selectedSourcePath.value, null);
+        assert.deepEqual(state.availableSources.value, [
+            { path: 'Note/Architecture.note', label: 'Architecture.note', count: 1 },
+        ]);
+
         // Select Consensus.pdf, then switch to cat-ai where Consensus.pdf does not exist
         state.selectedSourcePath.value = 'Document/Papers/Consensus.pdf';
         state.selectedCategoryFilter.value = 'cat-ai';
@@ -167,6 +191,11 @@ test('useDigests.js: clears stale selectedSourcePath and deleted selectedCategor
             state.filteredDigests.value.map((d) => d.id),
             ['10'],
         );
+
+        // Built-in views survive reload without being reset to 'all'
+        state.selectedCategoryFilter.value = 'ai-summaries';
+        await state.loadDigests();
+        assert.equal(state.selectedCategoryFilter.value, 'ai-summaries');
 
         // Select cat-books, then reload after it disappears remotely
         state.selectedCategoryFilter.value = 'cat-books';

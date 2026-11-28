@@ -135,6 +135,28 @@ export function normalizeDigestItem(raw) {
     };
 }
 
+const AI_MODEL_SOURCE_PATTERN =
+    /^(AI|LLM|AI SYNTHESIS)$|(GEMINI|GEMMA|GPT-|\bO[134](?:-|$)|CLAUDE|LLAMA|MISTRAL|QWEN|DEEPSEEK|PHI-|OLLAMA|MODELS\/|OPENAI|ANTHROPIC|SUMMARY)/;
+
+/**
+ * Classify whether a Digest entry is a server-generated AI Notebook Summary.
+ * Matches either the canonical `"AI Summaries"` category name or an LLM
+ * provider/model identifier in `dataSource` (for example `gemini-2.5-flash`).
+ * @param {Pick<DigestItem, 'dataSource'>} digest
+ * @param {string | null} [categoryName=null]
+ * @returns {boolean}
+ */
+export function isAiSummaryDigest(digest, categoryName = null) {
+    if (typeof categoryName === 'string' && categoryName.trim().toLowerCase() === 'ai summaries') {
+        return true;
+    }
+    const ds = String(digest?.dataSource || '')
+        .trim()
+        .toUpperCase();
+    if (!ds) return false;
+    return AI_MODEL_SOURCE_PATTERN.test(ds);
+}
+
 /**
  * Format a Digest entry as Markdown for clipboard copy, including any typed
  * comment and handwritten annotation transcript.
@@ -356,6 +378,37 @@ export async function deleteDigest(digestId) {
         body: { id: String(digestId) },
         errorPrefix: 'Failed to delete digest',
     });
+}
+
+/**
+ * Render a Digest entry's handwritten `.mark` annotation to per-page PNG URLs
+ * via POST /api/extended/file/summary/to/png.
+ * @param {string | number} digestId
+ * @returns {Promise<NotePngPage[]>}
+ */
+export async function fetchDigestHandwritingPages(digestId) {
+    const data = await apiRequest('/api/extended/file/summary/to/png', {
+        body: { id: String(digestId) },
+        errorPrefix: 'Failed to load handwriting preview',
+    });
+    /** @type {Array<Record<string, unknown>>} */
+    const rawPages = Array.isArray(data?.pngPageVOList) ? data.pngPageVOList : [];
+    return rawPages
+        .map((page, index) => {
+            const rawPageNo = page?.pageNo;
+            const parsed =
+                rawPageNo === null || rawPageNo === undefined || rawPageNo === ''
+                    ? Number.NaN
+                    : Number(rawPageNo);
+            const url = nonEmptyStr(page?.url);
+            if (!url) return null;
+            return {
+                pageNo: Number.isFinite(parsed) ? parsed : index,
+                url,
+            };
+        })
+        .filter((page) => page !== null)
+        .sort((a, b) => a.pageNo - b.pageNo);
 }
 
 /**

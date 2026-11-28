@@ -24,9 +24,11 @@ from supernote.models.summary import (
 )
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.summary import SummaryTranscriptDO
 from supernote.server.keys import (
+    BLOB_STORAGE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
@@ -503,9 +505,12 @@ async def test_web_ui_digests_browser_view(
             unique_identifier="b" * 32,
             parent_unique_identifier="a" * 32,
             content="## Weekly Architecture Recap\n- **Shipped** Digests browser view",
-            data_source="GEMINI",
+            data_source="gemini-2.5-flash",
             source_path="Note/Digest_Source.note",
         ),
+    )
+    await client.app[BLOB_STORAGE_KEY].put(
+        USER_DATA_BUCKET, "hw-blob-001", SAMPLE_UI_NOTE.read_bytes()
     )
     hw_digest = await summary_service.add_summary(
         user_email,
@@ -580,6 +585,7 @@ async def test_web_ui_digests_browser_view(
             await page.get_by_text("Weekly Architecture Recap").wait_for(
                 state="visible"
             )
+            await page.locator("[data-digest-ai-badge]").wait_for(state="visible")
             await page.get_by_text("Edsger Dijkstra").wait_for(state="visible")
             await page.get_by_text("Apply this to sync state").wait_for(state="visible")
             await page.get_by_text("Handwritten", exact=True).first.wait_for(
@@ -592,6 +598,29 @@ async def test_web_ui_digests_browser_view(
                 "Handwritten annotation attached — transcript pending."
             ).wait_for(state="visible")
 
+            # Expand inline handwriting PNG preview on the transcribed digest card
+            hw_card = page.locator("[data-digest-card]").filter(
+                has_text="Simplicity is prerequisite for reliability."
+            )
+            await hw_card.locator("[data-digest-view-handwriting]").click()
+            hw_img = hw_card.locator("[data-digest-handwriting-preview] img").first
+            await hw_img.wait_for(state="visible")
+            await page.wait_for_function(
+                "(img) => img.complete && img.naturalWidth > 0",
+                arg=await hw_img.element_handle(),
+            )
+            await hw_card.locator("[data-digest-view-handwriting]").click()
+            await hw_card.locator("[data-digest-handwriting-preview]").wait_for(
+                state="hidden"
+            )
+
+            # Digests view excludes AI Notebook Summaries
+            await page.locator('[data-digest-view="digests"]').click()
+            await page.get_by_text(
+                "Simplicity is prerequisite for reliability."
+            ).wait_for(state="visible")
+            await page.get_by_text("Weekly Architecture Recap").wait_for(state="hidden")
+
             await page.get_by_role(
                 "button", name=re.compile(r"^Uncategorized\b")
             ).click()
@@ -600,12 +629,13 @@ async def test_web_ui_digests_browser_view(
             ).wait_for(state="visible")
             await page.get_by_text("Weekly Architecture Recap").wait_for(state="hidden")
 
-            await page.get_by_role(
-                "button", name=re.compile(r"^AI Summaries\b")
-            ).click()
+            await page.locator('[data-digest-view="ai-summaries"]').click()
             await page.get_by_text("Weekly Architecture Recap").wait_for(
                 state="visible"
             )
+            await page.get_by_text(
+                "Simplicity is prerequisite for reliability."
+            ).wait_for(state="hidden")
             await page.get_by_role("button", name="Open Source").click()
             await page.wait_for_url(f"**/#/file/{note_file_id}*")
             await desktop.close()
@@ -620,6 +650,13 @@ async def test_web_ui_digests_browser_view(
             await mpage.get_by_text("Weekly Architecture Recap").wait_for(
                 state="visible"
             )
+            m_hw_card = mpage.locator("[data-digest-card]").filter(
+                has_text="Simplicity is prerequisite for reliability."
+            )
+            await m_hw_card.locator("[data-digest-view-handwriting]").click()
+            await m_hw_card.locator(
+                "[data-digest-handwriting-preview] img"
+            ).first.wait_for(state="visible")
             overflow = await mpage.evaluate(
                 "document.documentElement.scrollWidth - window.innerWidth"
             )
@@ -720,7 +757,7 @@ async def test_web_ui_digests_crud_modals(
             assert saved[0].parent_unique_identifier == ""
 
             # Escape cancels delete confirmation; confirming removes the digest
-            await page.get_by_role("button", name=re.compile(r"^All Digests\b")).click()
+            await page.locator('[data-digest-view="all"]').click()
             await page.get_by_text("Clarity beats cleverness.").wait_for(
                 state="visible"
             )
