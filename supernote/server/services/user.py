@@ -466,7 +466,8 @@ class UserService:
 
         return random_code, timestamp
 
-    async def _get_user_by_id(self, user_id: int) -> UserDO | None:
+    async def get_user_by_id(self, user_id: int) -> UserDO | None:
+        """Get a user by their numeric user ID."""
         async with self._session_manager.session() as session:
             stmt = select(UserDO).where(UserDO.id == user_id)
             result = await session.execute(stmt)
@@ -1074,7 +1075,7 @@ class UserService:
             return None
 
         if claims.user_id is not None:
-            user = await self._get_user_by_id(user_id)
+            user = await self.get_user_by_id(user_id)
             if not user or not user.is_active or user.email != claims.sub:
                 logger.warning("Token user invalid or inactive for user_id=%s", user_id)
                 return None

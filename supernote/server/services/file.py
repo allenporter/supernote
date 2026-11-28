@@ -589,8 +589,12 @@ class FileService:
         file_name: str,
         md5: str,
         inner_name: str,
-    ) -> None:
-        """Finish upload (Web API)."""
+    ) -> FileEntity:
+        """Finish upload (Web API and staged MCP uploads).
+
+        TODO(#444): Support an `overwrite: bool = False` guard and a dedicated
+        upload-source metric label if MCP uploads need separate tracking from Web.
+        """
         user_id, configured_limit = await self._resolve_user_quota(user)
 
         staging_lock = self._staging_locks.setdefault(inner_name, asyncio.Lock())
@@ -646,9 +650,10 @@ class FileService:
 
         await self._cleanup_superseded_artifacts(upsert_result)
 
+        full_path = await self.get_full_path_by_node(user_id, new_file.id)
+
         # Emit domain events (fire and forget)
         if self.event_bus:
-            full_path = await self.get_full_path_by_node(user_id, new_file.id)
             await self._publish_file_upsert_events(
                 user_id=user_id,
                 upsert_result=upsert_result,
@@ -656,6 +661,8 @@ class FileService:
                 note_file_path=full_path,
                 defer_note_processing=False,
             )
+
+        return _to_file_entity(new_file, full_path)
 
     async def _publish_file_upsert_events(
         self,
