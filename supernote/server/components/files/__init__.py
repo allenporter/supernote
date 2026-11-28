@@ -7,8 +7,8 @@ they sync automatically to connected Supernote devices.
 Core file storage and device sync live directly on `ServerCore.file_service`
 (`FileService`), which always runs regardless of whether MCP is enabled. This
 component is the thin MCP adapter layer that exposes those file operations as
-MCP tools (`list_files` and `upload_document`), delegating to core
-`FileService` and `BlobStorage`.
+MCP tools (`list_files`, `upload_document`, `create_folder`, and
+`delete_item`), delegating to core `FileService` and `BlobStorage`.
 """
 
 from __future__ import annotations
