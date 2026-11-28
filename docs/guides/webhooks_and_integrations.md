@@ -79,7 +79,7 @@ webhooks:
         - "note.*"
 ```
 
-Each endpoint filters events for one `user` email. You can subscribe to exact event names (`file.created`, `file.content_updated`, `note.processing_completed`, `schedule.task_created`, `summary.created`), namespace wildcards (`file.*`, `note.*`, `schedule.*`, `summary.*`), or `*` (or omit `events`) for all events.
+Each endpoint filters events for one `user` email. You can subscribe to exact event names (`file.created`, `file.content_updated`, `note.processing_completed`, `schedule.task_created`, `summary.created`, `summary.transcribed`), namespace wildcards (`file.*`, `note.*`, `schedule.*`, `summary.*`), or `*` (or omit `events`) for all events.
 
 > [!NOTE]
 > The server resolves each endpoint's `user` email at startup. If you configure an endpoint before creating that user account, restart the server after creating the user so the subscription activates.

@@ -44,6 +44,7 @@ from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import LocalEventBus, SummaryTranscribedEvent
 from supernote.server.exceptions import FileNotFound
 from supernote.server.services.blob import BlobStorage
 
@@ -85,11 +86,13 @@ class SummaryOcrModule(ProcessorModule):
         conversion_service: ConversionService,
         transcript_service: TranscriptService,
         ocr_model: OcrModel | None,
+        event_bus: LocalEventBus | None = None,
     ) -> None:
         self.blob_storage = blob_storage
         self.conversion_service = conversion_service
         self.transcript_service = transcript_service
         self.ocr_model = ocr_model
+        self.event_bus = event_bus
 
     @property
     def name(self) -> str:
@@ -224,14 +227,33 @@ class SummaryOcrModule(ProcessorModule):
                     return
                 if current.handwrite_md5 != handwrite_md5:
                     continue
+                current_file_id = (
+                    int(current.file_id) if current.file_id is not None else None
+                )
+                current_unique_id = current.unique_identifier
+                current_source_path = current.source_path
 
+            text_content = "\n\n".join(page_texts)
             await self.transcript_service.upsert_summary_transcript(
                 user_id=user_id,
                 summary_id=summary_id,
                 handwrite_md5=handwrite_md5,
-                text_content="\n\n".join(page_texts),
+                text_content=text_content,
                 model_id=self.ocr_model.model_id,
             )
+            if self.event_bus is not None and text_content:
+                await self.event_bus.publish(
+                    SummaryTranscribedEvent(
+                        user_id=user_id,
+                        summary_id=summary_id,
+                        file_id=current_file_id,
+                        unique_identifier=current_unique_id,
+                        source_path=current_source_path,
+                        handwrite_md5=handwrite_md5,
+                        text_content=text_content,
+                        model_id=self.ocr_model.model_id,
+                    )
+                )
             logger.info(
                 "Transcribed %d handwriting page(s) for summary %s (user %s, model=%s)",
                 len(page_numbers),

@@ -1,5 +1,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { formatDigestMarkdown, resolveSourceFileId } from '../api/digests.js';
+import {
+    buildDigestExportFilename,
+    formatDigestMarkdown,
+    formatDigestsMarkdownExport,
+    resolveSourceFileId,
+} from '../api/digests.js';
 import { BUILT_IN_DIGEST_VIEWS, formatSourceLabel, useDigests } from '../composables/useDigests.js';
 import { useModalEscape } from '../composables/useModalEscape.js';
 import { showToast } from '../composables/useToast.js';
@@ -278,6 +283,35 @@ export default {
             );
         }
 
+        function handleExportMarkdown() {
+            const items = filteredDigests.value;
+            if (items.length === 0) return;
+            const exportTitle =
+                activeSourceLabel.value ||
+                (selectedCategoryFilter.value === 'all' ? 'Digests' : activeHeading.value);
+            const markdown = formatDigestsMarkdownExport(items, { title: exportTitle });
+            const filename = buildDigestExportFilename(
+                activeSourceLabel.value ||
+                    (selectedCategoryFilter.value === 'all' ? '' : activeHeading.value),
+            );
+            const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            try {
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+            showToast(
+                `Exported ${items.length} digest${items.length === 1 ? '' : 's'} as Markdown`,
+                'success',
+            );
+        }
+
         /**
          * @param {DigestItem} digest
          */
@@ -343,6 +377,7 @@ export default {
             requestDeleteDigest,
             confirmPendingDelete,
             handleCopyDigest,
+            handleExportMarkdown,
             handleOpenSource,
         };
     },
@@ -378,7 +413,7 @@ export default {
                 </div>
 
                 <div class="flex items-center gap-2 w-full sm:w-auto">
-                    <div class="relative flex-1 sm:w-56">
+                    <div class="relative flex-1 min-w-0 sm:w-56">
                         <svg class="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                         </svg>
@@ -386,6 +421,16 @@ export default {
                             aria-label="Filter digests"
                             class="w-full pl-9 pr-3 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-slate-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-all" />
                     </div>
+                    <button @click="handleExportMarkdown" :disabled="filteredDigests.length === 0" type="button"
+                        data-digest-export-md
+                        aria-label="Export digests as Markdown"
+                        title="Export filtered digests as Markdown"
+                        class="inline-flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl border border-stone-200 bg-white text-stone-700 hover:text-slate-900 hover:bg-stone-50 disabled:opacity-50 text-xs font-medium transition-colors shrink-0">
+                        <svg aria-hidden="true" class="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        <span class="hidden sm:inline">Export</span>
+                    </button>
                     <button @click="loadDigests" :disabled="isLoading" type="button"
                         aria-label="Refresh digests"
                         title="Refresh"

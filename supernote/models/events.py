@@ -69,6 +69,9 @@ class DomainEventType(StrEnum):
     SUMMARY_DELETED = "summary.deleted"
     """Summary or synthesis item deleted (`entity_type='summary'`, serialized from `SummaryDeletedEvent`)."""
 
+    SUMMARY_TRANSCRIBED = "summary.transcribed"
+    """Handwritten Digest annotation OCR completed (`entity_type='summary'`, serialized from `SummaryTranscribedEvent`)."""
+
 
 class DomainEntityType(StrEnum):
     """Canonical target entity categories for domain events."""

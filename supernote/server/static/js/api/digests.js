@@ -168,12 +168,141 @@ export function formatDigestMarkdown(digest) {
     const content = (digest.content || '').trim();
     if (content) parts.push(content);
     const comment = (digest.commentStr || '').trim();
-    if (comment) parts.push(`> ${comment.replace(/\r?\n/g, '\n> ')}`);
+    if (comment) {
+        parts.push(
+            comment
+                .split(/\r?\n/)
+                .map((line) => (line ? `> ${line}` : '>'))
+                .join('\n'),
+        );
+    }
     const transcript = (digest.handwriting?.transcript || '').trim();
     if (transcript) {
         parts.push(`**Handwritten annotation:**\n\n${transcript}`);
     }
     return parts.join('\n\n');
+}
+
+/**
+ * Collapse embedded newlines so Markdown headings and inline labels stay single-line.
+ * @param {string} text
+ * @returns {string}
+ */
+function collapseMarkdownLine(text) {
+    return text.replace(/[\r\n]+/g, ' ').trim();
+}
+
+/**
+ * Wrap text in a safe Markdown inline code span even if it contains backticks.
+ * @param {string} text
+ * @returns {string}
+ */
+function formatMarkdownCodeSpan(text) {
+    const cleaned = collapseMarkdownLine(text);
+    const runs = cleaned.match(/`+/g) || [];
+    const longest = runs.reduce((max, r) => Math.max(max, r.length), 0);
+    const fence = '`'.repeat(longest + 1);
+    if (cleaned.startsWith('`') || cleaned.endsWith('`')) {
+        return `${fence} ${cleaned} ${fence}`;
+    }
+    return `${fence}${cleaned}${fence}`;
+}
+
+/**
+ * Format a UTC `YYYY-MM-DD` date string from epoch ms, or `null`.
+ * @param {number | null | undefined} epochMs
+ * @returns {string | null}
+ */
+function formatExportIsoDate(epochMs) {
+    if (!epochMs || !Number.isFinite(epochMs) || epochMs <= 0) return null;
+    const d = new Date(epochMs);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Build a safe `.md` download filename from a heading or source label.
+ * @param {string | null | undefined} label
+ * @returns {string}
+ */
+export function buildDigestExportFilename(label) {
+    const slug = String(label || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\.[a-z0-9]{1,8}$/i, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    if (!slug || slug === 'digests') return 'digests.md';
+    return slug.endsWith('-digests') ? `${slug}.md` : `${slug}-digests.md`;
+}
+
+/**
+ * Format a list of Digests as grouped, PKM-ready Markdown for file download.
+ * @param {DigestItem[]} digests
+ * @param {{ title?: string }} [options]
+ * @returns {string}
+ */
+export function formatDigestsMarkdownExport(digests, options = {}) {
+    const heading = collapseMarkdownLine(options.title || '') || 'Digests';
+    if (!Array.isArray(digests) || digests.length === 0) {
+        return `# ${heading}\n\n_No digests found._\n`;
+    }
+
+    /** @type {Map<string, DigestItem[]>} */
+    const groups = new Map();
+    for (const digest of digests) {
+        const rawSource = normalizeSourcePath(digest.sourcePath);
+        const key = rawSource ? collapseMarkdownLine(rawSource) : '';
+        const list = groups.get(key);
+        if (list) {
+            list.push(digest);
+        } else {
+            groups.set(key, [digest]);
+        }
+    }
+
+    const sections = [`# ${heading}`];
+    for (const [sourcePath, items] of groups.entries()) {
+        const formattedItems = items
+            .map((digest) => {
+                const body = formatDigestMarkdown(digest);
+                const meta = [];
+                const author = digest.author ? collapseMarkdownLine(digest.author) : '';
+                if (author) meta.push(author);
+                if (Array.isArray(digest.tags) && digest.tags.length > 0) {
+                    const tagsStr = digest.tags
+                        .map((t) => String(t).trim())
+                        .filter(Boolean)
+                        .map((t) => `#${t}`)
+                        .join(' ');
+                    if (tagsStr) meta.push(tagsStr);
+                }
+                const dateStr = formatExportIsoDate(digest.lastModifiedTime || digest.creationTime);
+                if (dateStr) meta.push(dateStr);
+                const parts = [];
+                if (body) parts.push(body);
+                if (meta.length > 0) parts.push(`_${meta.join(' · ')}_`);
+                return parts.join('\n\n');
+            })
+            .filter(Boolean);
+        if (formattedItems.length === 0) continue;
+
+        const sourceName = sourcePath
+            ? sourcePath.split('/').filter(Boolean).pop() || sourcePath
+            : 'Standalone Digests';
+        const groupLines = [`## ${sourceName}`];
+        if (sourcePath) {
+            groupLines.push(`Source: ${formatMarkdownCodeSpan(sourcePath)}`);
+        }
+        groupLines.push(formattedItems.join('\n\n---\n\n'));
+        sections.push(groupLines.join('\n\n'));
+    }
+
+    if (sections.length === 1) {
+        return `# ${heading}\n\n_No digests found._\n`;
+    }
+
+    return `${sections.join('\n\n')}\n`;
 }
 
 const DIGEST_PAGE_SIZE = 200;

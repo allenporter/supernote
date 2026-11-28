@@ -384,6 +384,31 @@ class SummaryDeletedEvent(DomainEvent):
 
 
 @dataclass
+class SummaryTranscribedEvent(DomainEvent):
+    """Triggered when OCR finishes transcribing a handwritten Digest annotation."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_TRANSCRIBED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.SUMMARY
+    DEFAULT_ACTOR: ClassVar[str] = "system:processor"
+
+    summary_id: int = field(metadata=field_options(serialize=str))
+    handwrite_md5: str
+    text_content: str
+    file_id: int | None = field(default=None, metadata=field_options(serialize=str))
+    unique_identifier: str | None = None
+    source_path: str | None = None
+    model_id: str | None = None
+
+    @property
+    def entity_id(self) -> str:
+        return str(self.summary_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return self.file_id
+
+
+@dataclass
 class VfsItemCreatedEvent(DomainEvent):
     """Triggered when a VFS file or directory is created, uploaded, or restored from recycle."""
 

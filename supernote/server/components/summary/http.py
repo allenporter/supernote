@@ -18,10 +18,12 @@ from __future__ import annotations
 import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 
 from aiohttp import web
+from mashumaro import field_options
+from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.extended import (
@@ -89,6 +91,7 @@ from supernote.server.services.user import UserService
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
+from .markdown_export import format_digests_markdown
 from .service import (
     DEFAULT_SUMMARY_PAGE_SIZE,
     SUMMARY_SERVICE_KEY,
@@ -578,6 +581,84 @@ async def handle_list_digests(request: web.Request) -> web.Response:
         return err.to_response()
     except Exception as err:
         logger.exception("Error listing digests")
+        return SupernoteError.uncaught(err).to_response()
+
+
+MAX_EXPORT_DIGESTS = 5_000
+
+
+@dataclass
+class _DigestExportQueryDTO(DataClassJSONMixin):
+    """Query parameters DTO for `GET /api/extended/digests/export`."""
+
+    file_id: int | None = field(metadata=field_options(alias="fileId"), default=None)
+    category_id: str | None = field(
+        metadata=field_options(alias="categoryId"), default=None
+    )
+    format: str = "markdown"
+
+
+@routes.get("/api/extended/digests/export")
+async def handle_export_digests(request: web.Request) -> web.Response:
+    """Export matching Digests (including handwriting OCR transcripts) as Markdown."""
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        req_dto = parse_query_dto(request, _DigestExportQueryDTO)
+    except InvalidInputError as err:
+        return err.to_response()
+
+    export_format = (req_dto.format or "markdown").strip().lower()
+    if export_format != "markdown":
+        return InvalidInputError(
+            f"Unsupported export format {export_format!r}; supported formats: markdown"
+        ).to_response()
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
+    transcript_service: TranscriptService = request.app[TRANSCRIPT_SERVICE_KEY]
+
+    if not (user_id := await user_service.get_user_id(user_email)):
+        return web.json_response(
+            create_error_response("User not found").to_dict(),
+            status=HTTPStatus.NOT_FOUND,
+        )
+
+    try:
+        all_digests = []
+        seen_ids: set[int] = set()
+        offset = 0
+        page_size = 200
+        while len(all_digests) < MAX_EXPORT_DIGESTS:
+            remaining = MAX_EXPORT_DIGESTS - len(all_digests)
+            batch_limit = min(page_size, remaining)
+            vo = await summary_service.list_digests(
+                user_id,
+                transcript_service,
+                file_id=req_dto.file_id,
+                category_id=req_dto.category_id,
+                limit=batch_limit,
+                offset=offset,
+            )
+            for item in vo.digests:
+                if item.id in seen_ids:
+                    continue
+                seen_ids.add(item.id)
+                all_digests.append(item)
+            offset += len(vo.digests)
+            if not vo.digests or len(vo.digests) < batch_limit or offset >= vo.total:
+                break
+
+        markdown = format_digests_markdown(all_digests)
+        return web.Response(
+            text=markdown,
+            content_type="text/markdown",
+            charset="utf-8",
+            headers={"Content-Disposition": 'attachment; filename="digests.md"'},
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        logger.exception("Error exporting digests")
         return SupernoteError.uncaught(err).to_response()
 
 
