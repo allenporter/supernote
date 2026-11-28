@@ -743,13 +743,27 @@ class SummaryService:
         This is NOT part of the standard public API but used by web frontend extensions.
         """
         user_id = await self.user_service.get_user_id(user_email)
+        return await self.list_summaries_for_user(user_id, file_id=file_id)
+
+    async def list_summaries_for_user(
+        self,
+        user_id: int,
+        *,
+        file_id: int | None = None,
+        limit: int | None = None,
+    ) -> list[SummaryItem]:
+        """List active leaf summaries for `user_id`, optionally filtered by `file_id`."""
         async with self.session_manager.session() as session:
             stmt = select(SummaryDO).where(
                 SummaryDO.user_id == user_id,
-                SummaryDO.file_id == file_id,
                 SummaryDO.is_deleted.is_(False),
                 SummaryDO.is_summary_group.is_(False),
             )
+            if file_id is not None:
+                stmt = stmt.where(SummaryDO.file_id == file_id)
+            stmt = stmt.order_by(SummaryDO.update_time.desc(), SummaryDO.id.desc())
+            if limit is not None:
+                stmt = stmt.limit(limit)
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]

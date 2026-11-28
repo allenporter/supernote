@@ -50,6 +50,7 @@ def test_web_summary_list_models() -> None:
         "errorMsg": None,
         "summaryDOList": [item.to_dict()],
         "totalRecords": 1,
+        "transcripts": {},
     }
 
 

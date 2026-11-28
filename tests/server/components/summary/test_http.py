@@ -28,6 +28,8 @@ from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.components.summary.service import DEFAULT_SUMMARY_PAGE_SIZE
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
+from supernote.server.db.models.summary import SummaryTranscriptDO
+from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
@@ -614,7 +616,7 @@ async def test_extended_file_summary_list_invalid_dto(
 ) -> None:
     resp = await client.post(
         "/api/extended/file/summary/list",
-        json={},
+        json={"fileId": "not-an-int"},
         headers=auth_headers,
     )
     assert resp.status == 400
@@ -990,3 +992,62 @@ async def test_summary_render_unsafe_handwrite_md5(
     )
     with pytest.raises(BadRequestException):
         await getattr(summary_client, method)(summary_id)
+
+
+async def test_extended_summary_list_returns_current_transcripts_and_all_files(
+    extended_client: ExtendedClient,
+    summary_client: SummaryClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """POST /api/extended/file/summary/list attaches current handwriting transcripts and supports omitting fileId."""
+    add_1 = await summary_client.add_summary(
+        AddSummaryDTO(
+            file_id=6101,
+            content="Digest excerpt 1",
+            handwrite_inner_name="hw_6101.mark",
+            handwrite_md5="md5_current_1",
+        )
+    )
+    add_2 = await summary_client.add_summary(
+        AddSummaryDTO(
+            file_id=6102,
+            content="Digest excerpt 2",
+            handwrite_inner_name="hw_6102.mark",
+            handwrite_md5="md5_v2",
+        )
+    )
+    assert add_1.id is not None
+    assert add_2.id is not None
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                SummaryTranscriptDO(
+                    user_id=test_user_id,
+                    summary_id=add_1.id,
+                    handwrite_md5="md5_current_1",
+                    text_content="Transcribed marginalia note",
+                    model_id="fake-ocr-v1",
+                ),
+                SummaryTranscriptDO(
+                    user_id=test_user_id,
+                    summary_id=add_2.id,
+                    handwrite_md5="md5_stale_v1",
+                    text_content="Outdated text",
+                    model_id="fake-ocr-v1",
+                ),
+            ]
+        )
+        await session.commit()
+
+    by_file = await extended_client.list_summaries(6101)
+    assert by_file.total_records == 1
+    assert str(add_1.id) in by_file.transcripts
+    assert by_file.transcripts[str(add_1.id)].text == "Transcribed marginalia note"
+    assert by_file.transcripts[str(add_1.id)].model_id == "fake-ocr-v1"
+
+    all_digests = await extended_client.list_summaries()
+    assert all_digests.total_records == 2
+    assert str(add_1.id) in all_digests.transcripts
+    assert str(add_2.id) not in all_digests.transcripts

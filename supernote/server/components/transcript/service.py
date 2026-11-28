@@ -300,18 +300,25 @@ class TranscriptService:
         if not summary_ids:
             return {}
         async with self.session_manager.session() as session:
-            rows = (
-                (
-                    await session.execute(
-                        select(SummaryTranscriptDO).where(
-                            SummaryTranscriptDO.user_id == user_id,
-                            SummaryTranscriptDO.summary_id.in_(summary_ids),
+            try:
+                rows = (
+                    (
+                        await session.execute(
+                            select(SummaryTranscriptDO).where(
+                                SummaryTranscriptDO.user_id == user_id,
+                                SummaryTranscriptDO.summary_id.in_(summary_ids),
+                            )
                         )
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            )
+            except OperationalError as err:
+                # Preserve read compatibility with unmigrated legacy databases
+                # opened before `e1f2a3b4c5d6` (see legacy DB integration tests).
+                if "no such table" in str(err).lower():
+                    return {}
+                raise
         return {int(row.summary_id): _to_summary_transcript(row) for row in rows}
 
     async def is_summary_transcript_stale(

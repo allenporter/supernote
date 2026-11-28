@@ -23,14 +23,56 @@ def _serialize_str_list(values: list[int]) -> list[str]:
 
 
 @dataclass
-class WebSummaryListRequestDTO(DataClassJSONMixin):
-    """Request DTO for listing summaries by file ID (Web Extension)."""
+class SummaryTranscriptVO(DataClassJSONMixin):
+    """Server-side OCR transcript for a Digest summary's handwritten `.mark` annotation.
 
-    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
-    """The ID of the file to list summaries for."""
+    Unlike `SummaryItem` (which mirrors the Supernote device sync protocol and stores the
+    highlighted excerpt, typed comment, and raw `.mark` blob reference), this VO holds
+    server-generated handwriting OCR output (`f_summary_transcript`). Returning it in a
+    separate `WebSummaryListVO.transcripts` map keeps `SummaryItem` wire-compatible with
+    Supernote tablets while letting extended Web UI and automation clients read OCR text
+    keyed by string `summaryId`.
+    """
+
+    summary_id: int = field(metadata=field_options(alias="summaryId", serialize=str))
+    """Summary database ID."""
+
+    handwrite_md5: str = field(metadata=field_options(alias="handwriteMD5"))
+    """MD5 hash of the `.mark` handwriting blob that produced this transcript."""
+
+    text: str
+    """Extracted handwriting OCR text."""
+
+    model_id: str | None = field(metadata=field_options(alias="modelId"), default=None)
+    """Identifier of the OCR model that produced this transcript."""
+
+    update_time: int | None = field(
+        metadata=field_options(alias="updateTime"), default=None
+    )
+    """Last update timestamp in milliseconds."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class WebSummaryListRequestDTO(DataClassJSONMixin):
+    """Request DTO for listing summaries, optionally filtered by file ID (Web Extension)."""
+
+    file_id: int | None = field(
+        metadata=field_options(alias="fileId", serialize=str), default=None
+    )
+    """Optional ID of the file to filter summaries for; omit to list all active leaf digests."""
+
+    page: int | None = None
+    """Optional 1-indexed page number when listing across all files."""
+
+    size: int | None = None
+    """Optional page size when listing across all files."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
 
 
 @dataclass
@@ -43,10 +85,13 @@ class WebSummaryListVO(BaseResponse):
     summary_do_list: list[SummaryItem] = field(
         metadata=field_options(alias="summaryDOList"), default_factory=list
     )
-    """List of summary items found for the file."""
+    """List of summary items found."""
 
     total_records: int = field(metadata=field_options(alias="totalRecords"), default=0)
     """Total count of summaries returned."""
+
+    transcripts: dict[str, SummaryTranscriptVO] = field(default_factory=dict)
+    """Map of string `summaryId` to its current handwritten annotation OCR transcript."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

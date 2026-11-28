@@ -70,7 +70,7 @@ class SummaryComponent:
 
     domain = "summary"
     dependencies: tuple[str, ...] = ("ai", "conversion", "transcript")
-    platforms: tuple[str, ...] = ("http", "processor")
+    platforms: tuple[str, ...] = ("http", "mcp", "processor")
 
     def __init__(self) -> None:
         self._config: SummaryConfig | None = None

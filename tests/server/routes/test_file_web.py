@@ -60,13 +60,6 @@ async def test_web_summary_list_implementation(
 async def test_web_summary_list_invalid(
     authenticated_client: Client, web_summary_list_url: str
 ) -> None:
-    # Test missing fileId - Should raise BadRequestException
-    with pytest.raises(BadRequestException):
-        await authenticated_client.post(
-            web_summary_list_url,
-            json={},
-        )
-
     # Test invalid fileId - Should raise BadRequestException
     with pytest.raises(BadRequestException):
         await authenticated_client.post(

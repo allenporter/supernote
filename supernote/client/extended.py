@@ -39,9 +39,15 @@ class ExtendedClient:
         """Initialize the extended client."""
         self._client = client
 
-    async def list_summaries(self, file_id: int) -> WebSummaryListVO:
-        """List summaries for a file (Extension)."""
-        dto = WebSummaryListRequestDTO(file_id=file_id)
+    async def list_summaries(
+        self,
+        file_id: int | None = None,
+        *,
+        page: int | None = None,
+        size: int | None = None,
+    ) -> WebSummaryListVO:
+        """List summaries for a file or across all files (Extension)."""
+        dto = WebSummaryListRequestDTO(file_id=file_id, page=page, size=size)
         return await self._client.post_json(
             "/api/extended/file/summary/list", WebSummaryListVO, json=dto.to_dict()
         )

@@ -26,7 +26,7 @@ async def test_summary_component_full_lifecycle(
     assert isinstance(component, Component)
     assert component.domain == "summary"
     assert component.dependencies == ("ai", "conversion", "transcript")
-    assert component.platforms == ("http", "processor")
+    assert component.platforms == ("http", "mcp", "processor")
 
     service = component_core.app[SUMMARY_SERVICE_KEY]
     assert isinstance(service, SummaryService)
