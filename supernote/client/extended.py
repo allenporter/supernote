@@ -43,7 +43,10 @@ class ExtendedClient:
         self._client = client
 
     async def list_summaries(self, file_id: int) -> WebSummaryListVO:
-        """List summaries for a file (Extension)."""
+        """List summaries for a file (Extension).
+
+        TODO: Deprecate once CLI and Web UI callers migrate to ``list_digests``.
+        """
         dto = WebSummaryListRequestDTO(file_id=file_id)
         return await self._client.post_json(
             "/api/extended/file/summary/list", WebSummaryListVO, json=dto.to_dict()

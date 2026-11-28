@@ -58,6 +58,7 @@ While the official `/api/file/*/summary*` endpoints preserve exact Supernote dev
     *   `limit` (optional, `1–200`, default `50`) and `offset` (optional, default `0`): Offset pagination.
 *   **Response (`DigestListVO`)**: Returns `{digests: DigestVO[], total, limit, offset}` where every `DigestVO` is self-contained—carrying `id`, `uniqueIdentifier`, `categoryId`, `fileId`, `name`, `sourcePath`, `author`, parsed `tags`, `dataSource`, `content`, `comment`, and an optional inline `handwriting` object (`DigestHandwritingVO`: `md5`, `transcript`, `modelId`, `updateTime`).
 *   **Freshness guarantee**: `handwriting.transcript` is populated only when the stored `SummaryTranscriptDO.handwrite_md5` matches the Digest's current `handwrite_md5`; pending or stale OCR omits `transcript` while keeping `handwriting.md5`.
+*   **Legacy endpoint note**: `POST /api/extended/file/summary/list` (`ExtendedClient.list_summaries`) remains supported for existing Web UI and CLI callers. *(TODO: migrate remaining callers to `GET /api/extended/digests` and deprecate the legacy endpoint.)*
 
 ---
 

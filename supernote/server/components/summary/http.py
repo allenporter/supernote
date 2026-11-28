@@ -585,6 +585,7 @@ async def handle_list_digests(request: web.Request) -> web.Response:
 async def handle_extended_file_summary_list(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/summary/list
     # Purpose: Extended API to list summaries for a file.
+    # TODO: Deprecate once Web UI and CLI callers migrate to GET /api/extended/digests.
     user_email = request[REQUEST_USER_KEY]
     try:
         req_dto = await parse_json_dto(request, WebSummaryListRequestDTO)
