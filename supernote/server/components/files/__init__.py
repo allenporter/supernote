@@ -1,15 +1,14 @@
 """Cloud file management over MCP (`FilesComponent`).
 
 Lets AI assistants browse a user's Supernote cloud folders (such as `/INBOX`
-and `/DOCUMENT`) and upload reading material like PDFs or documents so they
-sync automatically to connected Supernote devices.
+and `/DOCUMENT`) and upload reading material like Markdown, text, or PDFs so
+they sync automatically to connected Supernote devices.
 
 Core file storage and device sync live directly on `ServerCore.file_service`
 (`FileService`), which always runs regardless of whether MCP is enabled. This
 component is the thin MCP adapter layer that exposes those file operations as
-MCP tools (`list_files`, `upload_document`, `prepare_upload`, `commit_upload`),
-delegating to core `FileService`, `BlobStorage`, `UrlSigner`,
-`CoordinationService`, and `/api/oss/upload`.
+MCP tools (`list_files` and `upload_document`), delegating to core
+`FileService` and `BlobStorage`.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ __all__ = ["FilesComponent"]
 
 
 class FilesComponent:
-    """Vertical component exposing VFS browsing and staged upload tools over MCP."""
+    """Vertical component exposing VFS browsing and document upload tools over MCP."""
 
     domain = "files"
     dependencies: tuple[str, ...] = ()
