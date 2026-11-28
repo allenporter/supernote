@@ -294,6 +294,7 @@ async def test_search_component_registers_embedding_stage_via_processor_platform
         TaskType.PNG_CONVERSION,
         TaskType.NOTE_METADATA,
         TaskType.OCR_EXTRACTION,
+        TaskType.SUMMARY_OCR,
         TaskType.EMBEDDING_GENERATION,
     ]
     assert service.task_graph.depends_on(TaskType.EMBEDDING_GENERATION) == (

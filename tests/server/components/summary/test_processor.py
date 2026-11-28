@@ -1396,6 +1396,7 @@ async def test_summary_component_registers_summary_stage_via_processor_platform(
         TaskType.PNG_CONVERSION,
         TaskType.NOTE_METADATA,
         TaskType.OCR_EXTRACTION,
+        TaskType.SUMMARY_OCR,
         TaskType.SUMMARY_GENERATION,
     ]
     assert service.task_graph.depends_on(TaskType.SUMMARY_GENERATION) == (
