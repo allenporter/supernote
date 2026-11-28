@@ -23,6 +23,7 @@ The `config` component resolves each built-in component's effective configuratio
 | `files` | Yes | — | `mcp` | Cloud file browsing, document upload, folder creation, and soft-delete MCP tools (`list_files`, `upload_document`, `create_folder`, `delete_item`). |
 | `gemini` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | Google Gemini Vision, text, and embedding provider (auto-enabled when a Gemini key is configured). |
 | `http` | Yes | — | — | Main-port `aiohttp` route registrar (`http` platform host). |
+| `inbox` | Yes | — | — | Markdown-to-EPUB/PDF e-ink document builder for `/INBOX` reading material. |
 | `integrity` | Yes | — | `http` | Two-way VFS, database, and disk blob integrity verification endpoints. |
 | `mcp` | Yes | `oauth` | — | Streamable HTTP Model Context Protocol server (`mcp` platform host on port `8081`). |
 | `metrics` | Yes | — | `http` | Prometheus `/metrics` endpoint and periodic storage metrics collector. |
