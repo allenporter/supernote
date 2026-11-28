@@ -1,12 +1,13 @@
-"""MCP tools for browsing cloud folders and uploading documents to a Supernote device.
+"""MCP tools for browsing cloud folders, uploading documents, and managing files on a Supernote device.
 
-AI clients use these tools to inspect folders like `/INBOX` or `/DOCUMENT` and
-deliver reading material (Markdown, text, or small PDFs/EPUBs up to 10 MiB)
-directly into the user's cloud storage so connected tablets sync the new files
-automatically.
+AI clients use these tools to inspect folders like `/INBOX` or `/DOCUMENT`,
+create new folders, deliver reading material (Markdown, text, or small
+PDFs/EPUBs up to 10 MiB), and soft-delete files or folders to the recycle bin
+so connected tablets stay in sync automatically.
 
-Uploads land through `FileService.upload_finish_web`, enforcing user storage
-quotas and publishing domain events for real-time device sync.
+All mutations delegate to `FileService`, enforcing user isolation, storage
+quotas, system-directory protection, and publishing domain events for
+real-time device sync.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_provenance
 from supernote.server.exceptions import (
+    AccessDenied,
     FileAlreadyExists,
     FileNotFound,
     InvalidPath,
@@ -67,6 +69,21 @@ def _validate_file_name(file_name: str) -> str | None:
         )
     if file_name in (".", ".."):
         return f"Invalid file_name {file_name!r}."
+    return None
+
+
+def _validate_folder_path(path: str) -> str | None:
+    """Validate a VFS folder path, returning an error message if invalid."""
+    if not path or not path.strip():
+        return "path must be non-empty."
+    if "\\" in path or "\x00" in path:
+        return f"Invalid folder path {path!r}."
+    stripped = path.strip("/")
+    if not stripped:
+        return "Cannot create root directory."
+    for seg in stripped.split("/"):
+        if not seg or seg != seg.strip() or seg in (".", ".."):
+            return f"Invalid path segment in folder path {path!r}."
     return None
 
 
@@ -236,5 +253,92 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             "file": _serialize_file(entity),
         }
 
+    async def create_folder(
+        ctx: Context,
+        path: str,
+        cause_seq: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a directory path in Supernote cloud storage (creating missing parent folders).
+
+        Args:
+            path: Target VFS directory path (e.g. `"/DOCUMENT/Research"`).
+            cause_seq: Optional causal domain event sequence ID for provenance tracking.
+            reason: Optional human-readable reason for creating the folder.
+        """
+        _ = ctx
+        if (email := await _resolve_authenticated_email()) is None:
+            return create_error_response(
+                _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
+            ).to_dict()
+
+        if err_msg := _validate_folder_path(path):
+            return create_error_response(err_msg, ErrorCode.BAD_REQUEST).to_dict()
+
+        try:
+            with bind_event_provenance(cause_seq=cause_seq, reason=reason):
+                entity = await file_service.create_directory(email, path)
+        except InvalidPath as err:
+            return create_error_response(str(err), ErrorCode.BAD_REQUEST).to_dict()
+        except SupernoteError as err:
+            return create_error_response(str(err), ErrorCode.INTERNAL_ERROR).to_dict()
+
+        return {
+            "success": True,
+            "folder": _serialize_file(entity),
+        }
+
+    async def delete_item(
+        ctx: Context,
+        file_id: str,
+        cause_seq: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Move a file or folder to the recycle bin (soft delete) and trigger device sync.
+
+        Protected Supernote system folders (such as `/INBOX`, `/DOCUMENT`, `/Note`)
+        cannot be deleted.
+
+        Args:
+            file_id: Numeric VFS file or folder ID string (as returned by `list_files`).
+            cause_seq: Optional causal domain event sequence ID for provenance tracking.
+            reason: Optional human-readable reason for deleting the item.
+        """
+        _ = ctx
+        if (email := await _resolve_authenticated_email()) is None:
+            return create_error_response(
+                _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
+            ).to_dict()
+
+        try:
+            parsed_id = int(file_id)
+        except ValueError:
+            return create_error_response(
+                f"Invalid file_id {file_id!r}: must be a numeric ID string.",
+                ErrorCode.BAD_REQUEST,
+            ).to_dict()
+        if parsed_id <= 0:
+            return create_error_response(
+                f"Invalid file_id {file_id!r}: must be a positive integer.",
+                ErrorCode.BAD_REQUEST,
+            ).to_dict()
+
+        try:
+            with bind_event_provenance(cause_seq=cause_seq, reason=reason):
+                entity = await file_service.delete_item(email, parsed_id)
+        except FileNotFound as err:
+            return create_error_response(str(err), ErrorCode.NOT_FOUND).to_dict()
+        except AccessDenied as err:
+            return create_error_response(str(err), ErrorCode.FORBIDDEN).to_dict()
+        except SupernoteError as err:
+            return create_error_response(str(err), ErrorCode.INTERNAL_ERROR).to_dict()
+
+        return {
+            "success": True,
+            "deleted": _serialize_file(entity),
+        }
+
     registrar.add_tool(list_files)
     registrar.add_tool(upload_document)
+    registrar.add_tool(create_folder)
+    registrar.add_tool(delete_item)
