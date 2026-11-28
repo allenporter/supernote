@@ -179,6 +179,28 @@ class VirtualFileSystem:
         _walk(parent_id, base_path)
         return results
 
+    async def get_active_child(
+        self, user_id: int, parent_id: int, name: str
+    ) -> UserFileDO | None:
+        """Return any active file or folder with `name` in `parent_id`, if it exists."""
+        if parent_id == 0:
+            if (
+                root_node := await self._resolve_root_segment(user_id, name)
+            ) is not None:
+                return root_node
+        stmt = (
+            select(UserFileDO)
+            .where(
+                UserFileDO.user_id == user_id,
+                UserFileDO.directory_id == parent_id,
+                UserFileDO.file_name == name,
+                UserFileDO.is_active == "Y",
+            )
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
     async def get_active_file(
         self, user_id: int, parent_id: int, name: str
     ) -> UserFileDO | None:
@@ -369,7 +391,7 @@ class VirtualFileSystem:
 
         return "/".join(path_parts)
 
-    async def _resolve_existing_directory_prefix(
+    async def resolve_directory_prefix(
         self, user_id: int, parts: list[str]
     ) -> tuple[int, list[str]]:
         """Walk existing folder segments from root and return `(deepest_dir_id, missing_parts)`."""
@@ -401,7 +423,7 @@ class VirtualFileSystem:
     async def ensure_directory_path(self, user_id: int, path: str) -> int:
         """Ensure a directory path exists, creating if necessary. Returns the final directory ID."""
         parts = [p for p in path.strip("/").split("/") if p]
-        current_dir_id, missing_parts = await self._resolve_existing_directory_prefix(
+        current_dir_id, missing_parts = await self.resolve_directory_prefix(
             user_id, parts
         )
         for part in missing_parts:
@@ -459,7 +481,7 @@ class VirtualFileSystem:
 
         parent_parts = parts[:-1]
         new_name = parts[-1]
-        current_dir_id, missing_parts = await self._resolve_existing_directory_prefix(
+        current_dir_id, missing_parts = await self.resolve_directory_prefix(
             user_id, parent_parts
         )
 

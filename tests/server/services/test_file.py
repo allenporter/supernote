@@ -22,13 +22,21 @@ from supernote.server.events import (
     BlobCleanupEvent,
     Event,
     LocalEventBus,
+    NoteUpdatedEvent,
+    VfsContentUpdatedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
     VfsItemPurgedEvent,
 )
-from supernote.server.exceptions import HashMismatch, QuotaExceeded
+from supernote.server.exceptions import (
+    FileAlreadyExists,
+    FileNotFound,
+    HashMismatch,
+    InvalidPath,
+    QuotaExceeded,
+)
 from supernote.server.metrics import NoteUploadSource
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -1374,3 +1382,276 @@ async def test_handle_blob_cleanup_event(
         USER_DATA_BUCKET, "referenced_by_recycled_file.bin"
     )
     assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_provider.bin")
+
+
+async def test_staged_upload_happy_path_and_events(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    event_bus: LocalEventBus,
+    test_user_id: int,
+    test_users: list[str],
+) -> None:
+    """check_staged_upload + commit_staged_upload lands a PDF and emits VfsItemCreatedEvent."""
+    user = test_users[0]
+    await file_service.create_directory(user, "/INBOX")
+
+    created: list[VfsItemCreatedEvent] = []
+    note_events: list[NoteUpdatedEvent] = []
+
+    async def _on_created(ev: VfsItemCreatedEvent) -> None:
+        created.append(ev)
+
+    async def _on_note(ev: NoteUpdatedEvent) -> None:
+        note_events.append(ev)
+
+    event_bus.subscribe(VfsItemCreatedEvent, _on_created)
+    event_bus.subscribe(NoteUpdatedEvent, _on_note)
+
+    content = b"%PDF-1.4 sample paper"
+    md5 = hashlib.md5(content).hexdigest()
+    parent_path, filename = await file_service.check_staged_upload(
+        user, "/INBOX/paper.pdf", len(content)
+    )
+    assert (parent_path, filename) == ("INBOX", "paper.pdf")
+
+    await blob_storage.put(USER_DATA_BUCKET, "staged_pdf_1", content)
+    entity = await file_service.commit_staged_upload(
+        user, "/INBOX/paper.pdf", "staged_pdf_1", md5
+    )
+    await asyncio.sleep(0)
+
+    assert entity.name == "paper.pdf"
+    assert entity.full_path == "INBOX/paper.pdf"
+    assert entity.size == len(content)
+    assert entity.md5 == md5
+    assert len(created) == 1
+    assert created[0].user_id == test_user_id
+    assert created[0].item_id == entity.id
+    assert created[0].full_path == "INBOX/paper.pdf"
+    assert note_events == []
+
+    # Uploading a .note file also emits NoteUpdatedEvent with defer_processing=False
+    note_bytes = b"note-binary"
+    note_md5 = hashlib.md5(note_bytes).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "staged_note_1", note_bytes)
+    note_entity = await file_service.commit_staged_upload(
+        user, "/INBOX/meeting.note", "staged_note_1", note_md5
+    )
+    await asyncio.sleep(0)
+
+    assert len(note_events) == 1
+    assert note_events[0].file_id == note_entity.id
+    assert note_events[0].defer_processing is False
+
+
+async def test_staged_upload_overwrite_conflict_and_replace(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    event_bus: LocalEventBus,
+    create_test_user: None,
+    test_users: list[str],
+) -> None:
+    """overwrite=False rejects conflicts and cleans up staged blobs; overwrite=True replaces and emits update."""
+    user = test_users[0]
+    await file_service.create_directory(user, "/INBOX")
+
+    v1 = b"version one"
+    md5_v1 = hashlib.md5(v1).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "staged_v1", v1)
+    entity_v1 = await file_service.commit_staged_upload(
+        user, "/INBOX/report.pdf", "staged_v1", md5_v1
+    )
+
+    v2 = b"version two updated"
+    md5_v2 = hashlib.md5(v2).hexdigest()
+
+    # Pre-flight rejects conflict when overwrite=False
+    with pytest.raises(FileAlreadyExists):
+        await file_service.check_staged_upload(
+            user, "/INBOX/report.pdf", len(v2), overwrite=False
+        )
+
+    # Commit also rejects conflict when overwrite=False and cleans up staged blob
+    await blob_storage.put(USER_DATA_BUCKET, "staged_v2_conflict", v2)
+    with pytest.raises(FileAlreadyExists):
+        await file_service.commit_staged_upload(
+            user, "/INBOX/report.pdf", "staged_v2_conflict", md5_v2, overwrite=False
+        )
+    assert not await blob_storage.exists(USER_DATA_BUCKET, "staged_v2_conflict")
+    assert await blob_storage.exists(USER_DATA_BUCKET, "staged_v1")
+
+    # overwrite=True succeeds, cleans up v1 blob, and emits VfsContentUpdatedEvent
+    updated: list[VfsContentUpdatedEvent] = []
+
+    async def _on_updated(ev: VfsContentUpdatedEvent) -> None:
+        updated.append(ev)
+
+    event_bus.subscribe(VfsContentUpdatedEvent, _on_updated)
+
+    await file_service.check_staged_upload(
+        user, "/INBOX/report.pdf", len(v2), overwrite=True
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "staged_v2", v2)
+    entity_v2 = await file_service.commit_staged_upload(
+        user, "/INBOX/report.pdf", "staged_v2", md5_v2, overwrite=True
+    )
+    await asyncio.sleep(0)
+
+    assert entity_v2.id == entity_v1.id
+    assert entity_v2.md5 == md5_v2
+    assert entity_v2.size == len(v2)
+    assert not await blob_storage.exists(USER_DATA_BUCKET, "staged_v1")
+    assert await blob_storage.exists(USER_DATA_BUCKET, "staged_v2")
+    assert len(updated) == 1
+    assert updated[0].old_md5 == md5_v1
+    assert updated[0].new_md5 == md5_v2
+
+
+async def test_staged_upload_missing_parents(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    create_test_user: None,
+    test_users: list[str],
+) -> None:
+    """Missing parents fail with FileNotFound by default and succeed with create_parents=True."""
+    user = test_users[0]
+    content = b"deep doc"
+    md5 = hashlib.md5(content).hexdigest()
+
+    with pytest.raises(FileNotFound):
+        await file_service.check_staged_upload(
+            user, "/Research/2026/paper.pdf", len(content), create_parents=False
+        )
+
+    await blob_storage.put(USER_DATA_BUCKET, "staged_missing_parent", content)
+    with pytest.raises(FileNotFound):
+        await file_service.commit_staged_upload(
+            user,
+            "/Research/2026/paper.pdf",
+            "staged_missing_parent",
+            md5,
+            create_parents=False,
+        )
+    assert not await blob_storage.exists(USER_DATA_BUCKET, "staged_missing_parent")
+
+    assert await file_service.check_staged_upload(
+        user, "/Research/2026/paper.pdf", len(content), create_parents=True
+    ) == ("Research/2026", "paper.pdf")
+    await blob_storage.put(USER_DATA_BUCKET, "staged_create_parents", content)
+    entity = await file_service.commit_staged_upload(
+        user,
+        "/Research/2026/paper.pdf",
+        "staged_create_parents",
+        md5,
+        create_parents=True,
+    )
+    assert entity.full_path == "Research/2026/paper.pdf"
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "",
+        "   ",
+        "/",
+        "/INBOX/",
+        "/INBOX//paper.pdf",
+        "/INBOX/../paper.pdf",
+        "/INBOX/./paper.pdf",
+        "INBOX\\paper.pdf",
+        "/INBOX/bad\x00.pdf",
+    ],
+)
+async def test_staged_upload_rejects_invalid_paths(
+    file_service: FileService,
+    test_users: list[str],
+    bad_path: str,
+) -> None:
+    """Invalid or traversal paths raise InvalidPath."""
+    user = test_users[0]
+    with pytest.raises(InvalidPath):
+        await file_service.check_staged_upload(user, bad_path, 10)
+
+
+async def test_staged_upload_rejects_folder_collision_and_file_parent(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    create_test_user: None,
+    test_users: list[str],
+) -> None:
+    """Uploading over an existing folder or under an existing file raises InvalidPath."""
+    user = test_users[0]
+    await file_service.create_directory(user, "/INBOX")
+
+    with pytest.raises(InvalidPath):
+        await file_service.check_staged_upload(user, "/INBOX", 10, overwrite=True)
+
+    with pytest.raises(InvalidPath):
+        await file_service.check_staged_upload(user, "/INBOX/paper.pdf", -1)
+
+    content = b"existing file"
+    md5 = hashlib.md5(content).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "staged_parent_file", content)
+    await file_service.commit_staged_upload(
+        user, "/INBOX/blocker.pdf", "staged_parent_file", md5
+    )
+
+    with pytest.raises(InvalidPath):
+        await file_service.check_staged_upload(
+            user, "/INBOX/blocker.pdf/child.pdf", 10, create_parents=True
+        )
+
+
+async def test_staged_upload_missing_blob_and_hash_mismatch(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    create_test_user: None,
+    test_users: list[str],
+) -> None:
+    """Missing blob raises FileNotFound; MD5 mismatch raises HashMismatch and retains blob for retry."""
+    user = test_users[0]
+    await file_service.create_directory(user, "/INBOX")
+
+    with pytest.raises(FileNotFound):
+        await file_service.commit_staged_upload(
+            user, "/INBOX/missing.pdf", "does_not_exist", "deadbeef"
+        )
+
+    content = b"actual pdf bytes"
+    await blob_storage.put(USER_DATA_BUCKET, "staged_hash_test", content)
+    with pytest.raises(HashMismatch):
+        await file_service.commit_staged_upload(
+            user, "/INBOX/paper.pdf", "staged_hash_test", "wrong_md5"
+        )
+    # Staged blob is retained so the caller can retry with the correct MD5
+    assert await blob_storage.exists(USER_DATA_BUCKET, "staged_hash_test")
+
+
+async def test_staged_upload_quota_enforcement(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+    test_users: list[str],
+) -> None:
+    """Quota exceeded is rejected at check and commit, cleaning up orphan blobs on commit failure."""
+    user = test_users[0]
+    await file_service.create_directory(user, "/INBOX")
+
+    async with session_manager.session() as session:
+        await session.execute(
+            update(UserDO).where(UserDO.id == test_user_id).values(total_capacity=10)
+        )
+        await session.commit()
+
+    with pytest.raises(QuotaExceeded):
+        await file_service.check_staged_upload(user, "/INBOX/big.pdf", 20)
+
+    big_content = b"x" * 20
+    big_md5 = hashlib.md5(big_content).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "staged_over_quota", big_content)
+    with pytest.raises(QuotaExceeded):
+        await file_service.commit_staged_upload(
+            user, "/INBOX/big.pdf", "staged_over_quota", big_md5
+        )
+    assert not await blob_storage.exists(USER_DATA_BUCKET, "staged_over_quota")

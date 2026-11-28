@@ -106,6 +106,26 @@ class FileEntity:
         return self.update_time
 
 
+def _parse_upload_path(path: str) -> tuple[str, str]:
+    """Validate and split a VFS upload path into `(parent_path, filename)`."""
+    if not path or not path.strip():
+        raise InvalidPath("Upload path must be non-empty")
+    if "\x00" in path or "\\" in path:
+        raise InvalidPath(f"Invalid characters in upload path: {path!r}")
+    if path.endswith("/"):
+        raise InvalidPath(
+            f"Upload path must refer to a file, not a directory: {path!r}"
+        )
+    stripped = path[1:] if path.startswith("/") else path
+    segments = stripped.split("/")
+    for seg in segments:
+        if not seg or seg in (".", ".."):
+            raise InvalidPath(f"Invalid path segment in upload path: {path!r}")
+    parent_path = "/".join(segments[:-1])
+    filename = segments[-1]
+    return parent_path, filename
+
+
 def _to_file_entity(node: UserFileDO, full_path: str) -> FileEntity:
     """Convert a UserFileDO to a FileEntity."""
     return FileEntity(
@@ -656,6 +676,167 @@ class FileService:
                 note_file_path=full_path,
                 defer_note_processing=False,
             )
+
+    async def _validate_upload_target(
+        self,
+        vfs: VirtualFileSystem,
+        user_id: int,
+        parent_path: str,
+        filename: str,
+        *,
+        overwrite: bool,
+        create_parents: bool,
+    ) -> UserFileDO | None:
+        """Validate parent directory and target collisions, returning existing file if overwriting."""
+        parent_id = 0
+        if parent_path:
+            parent_id, missing_parts = await vfs.resolve_directory_prefix(
+                user_id, parent_path.split("/")
+            )
+            if missing_parts:
+                if not create_parents:
+                    raise FileNotFound(f"Parent directory not found: {parent_path}")
+                return None
+
+        existing = await vfs.get_active_child(user_id, parent_id, filename)
+        if existing is None:
+            return None
+        if existing.is_folder == "Y":
+            raise InvalidPath(f"Target path is a directory: {filename}")
+        if not overwrite:
+            raise FileAlreadyExists(f"File already exists: {filename}")
+        return existing
+
+    async def check_staged_upload(
+        self,
+        user: str,
+        path: str,
+        size: int,
+        *,
+        overwrite: bool = False,
+        create_parents: bool = False,
+    ) -> tuple[str, str]:
+        """Validate target path, overwrite policy, and quota before staging an upload.
+
+        Returns the normalized `(parent_path, filename)` pair.
+        """
+        if size < 0:
+            raise InvalidPath("Upload size must be non-negative")
+        parent_path, filename = _parse_upload_path(path)
+        user_id, configured_limit = await self._resolve_user_quota(user)
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            existing = await self._validate_upload_target(
+                vfs,
+                user_id,
+                parent_path,
+                filename,
+                overwrite=overwrite,
+                create_parents=create_parents,
+            )
+            current_used = await vfs.get_total_usage(user_id)
+            old_size = existing.size if existing else 0
+
+        if size > 0:
+            self._check_apply_quota_and_disk(
+                configured_limit, current_used, old_size, size
+            )
+
+        return parent_path, filename
+
+    async def commit_staged_upload(
+        self,
+        user: str,
+        path: str,
+        inner_name: str,
+        md5: str,
+        *,
+        overwrite: bool = False,
+        create_parents: bool = False,
+    ) -> FileEntity:
+        """Commit a staged blob in `USER_DATA_BUCKET` to VFS and emit sync events."""
+        parent_path, filename = _parse_upload_path(path)
+        user_id, configured_limit = await self._resolve_user_quota(user)
+
+        staging_lock = self._staging_locks.setdefault(inner_name, asyncio.Lock())
+        async with staging_lock:
+            try:
+                metadata = await self.blob_storage.get_metadata(
+                    USER_DATA_BUCKET, inner_name, include_md5=True
+                )
+            except FileNotFoundError:
+                raise FileNotFound(f"Blob {inner_name} not found")
+
+            if metadata.content_md5 != md5:
+                raise HashMismatch(
+                    f"Hash mismatch: expected {md5}, got {metadata.content_md5}"
+                )
+
+            blob_size = metadata.size
+            cleanup_error: Exception | None = None
+
+            async with self.session_manager.session() as session:
+                vfs = VirtualFileSystem(session)
+                try:
+                    existing = await self._validate_upload_target(
+                        vfs,
+                        user_id,
+                        parent_path,
+                        filename,
+                        overwrite=overwrite,
+                        create_parents=create_parents,
+                    )
+                except FileError as err:
+                    cleanup_error = err
+                else:
+                    current_used = await vfs.get_total_usage(user_id)
+                    old_size = existing.size if existing else 0
+                    net_change = blob_size - old_size
+                    if self._is_commit_over_quota(
+                        configured_limit, current_used, net_change
+                    ):
+                        cleanup_error = QuotaExceeded(
+                            "Storage quota exceeded", ErrorCode.QUOTA_EXCEEDED
+                        )
+                    else:
+                        parent_id = (
+                            await vfs.ensure_directory_path(user_id, parent_path)
+                            if parent_path
+                            else 0
+                        )
+                        upsert_result = await self._upsert_vfs_file(
+                            vfs=vfs,
+                            user_id=user_id,
+                            parent_id=parent_id,
+                            name=filename,
+                            size=blob_size,
+                            md5=md5,
+                            storage_key=inner_name,
+                        )
+                        new_file = upsert_result.node
+                        canonical_full_path = await vfs.get_full_path(
+                            user_id, new_file.id
+                        )
+
+            if cleanup_error is not None:
+                await self.cleanup_unreferenced_blobs({inner_name})
+                raise cleanup_error
+
+        await self._cleanup_superseded_artifacts(upsert_result)
+
+        entity = _to_file_entity(new_file, canonical_full_path)
+
+        if self.event_bus:
+            await self._publish_file_upsert_events(
+                user_id=user_id,
+                upsert_result=upsert_result,
+                vfs_full_path=canonical_full_path,
+                note_file_path=canonical_full_path,
+                defer_note_processing=False,
+            )
+
+        return entity
 
     async def _publish_file_upsert_events(
         self,
