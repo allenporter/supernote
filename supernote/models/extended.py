@@ -24,13 +24,13 @@ def _serialize_str_list(values: list[int]) -> list[str]:
 
 @dataclass
 class DigestHandwritingVO(DataClassJSONMixin):
-    """Handwritten `.mark` annotation metadata and OCR transcript for a Digest."""
+    """Handwritten `.mark` annotation metadata and OCR annotation transcript for a Digest."""
 
     md5: str | None = None
-    """MD5 hash of the `.mark` handwriting blob."""
+    """MD5 hash of the `.mark` handwritten annotation blob."""
 
     transcript: str | None = None
-    """Current OCR transcript text for the handwriting, or `None` if not yet transcribed."""
+    """Current OCR annotation transcript for the handwriting, or `None` if pending or stale."""
 
     model_id: str | None = field(metadata=field_options(alias="modelId"), default=None)
     """Identifier of the OCR model that produced `transcript`."""
@@ -38,7 +38,7 @@ class DigestHandwritingVO(DataClassJSONMixin):
     update_time: int | None = field(
         metadata=field_options(alias="updateTime"), default=None
     )
-    """Transcript last-updated timestamp in milliseconds."""
+    """Annotation transcript last-updated timestamp in milliseconds."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -49,13 +49,13 @@ class DigestHandwritingVO(DataClassJSONMixin):
 class DigestVO(DataClassJSONMixin):
     """Self-contained Digest entry shared by `GET /api/extended/digests` and MCP `list_digests`.
 
-    Represents any leaf entry in `f_summary`—PDF/EPUB highlights, typed notes,
-    handwritten `.mark` annotations, or AI notebook summaries—with handwriting OCR
-    transcripts attached inline rather than in a separate lookup map.
+    Represents any leaf Digest in `f_summary`—PDF/EPUB excerpts, lassoed notebook
+    excerpts, manual entries, or AI Notebook Summaries—with optional typed comments
+    and inline handwritten `.mark` annotation transcripts.
     """
 
     id: int = field(metadata=field_options(serialize=str))
-    """Summary database ID."""
+    """Digest database ID (`SummaryDO.id`)."""
 
     unique_identifier: str | None = field(
         metadata=field_options(alias="uniqueIdentifier"), default=None

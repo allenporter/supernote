@@ -1,39 +1,67 @@
-# Summary API Overview
+# Digest & Summary API Overview
 
-This document provides a high-level overview of the Summary ecosystem in the Supernote cloud, designed to help developers implement features like OCR-generated summaries.
+This document explains how Supernote's **Digest** ecosystem works in Open Private Cloud—mapping Supernote's user-facing Digest concepts to the official device sync protocol (`/api/file/*/summary*`), the unified extended Digest API (`GET /api/extended/digests`), and server-generated **AI Notebook Summaries**.
+
+## Terminology
+
+Supernote's tablet UI and public documentation call this feature **Digest** (organized into **Categories** and **Sources**), whereas Supernote's HTTP sync protocol and database schema use the legacy wire names **Summary** and **Summary Group**. To avoid overloading the word "summary," our documentation and extended APIs use the following terms consistently:
+
+| Concept | Preferred Term | Wire / DB Representation | Notes |
+| :--- | :--- | :--- | :--- |
+| Individual card in the Digest app | **Digest** (or **Digest entry**) | `SummaryDO` (`is_summary_group=False`) / `SummaryItem` | Includes PDF/EPUB excerpts, lassoed note excerpts, manual entries, and AI Notebook Summaries. |
+| Folder organizing Digests | **Digest Category** (or **Category**) | `SummaryDO` (`is_summary_group=True`) | Single-level grouping via `parentUniqueIdentifier`; unassigned Digests appear under **Uncategorized**. |
+| Primary text of a Digest | **Excerpt** (or **Digest body**) | `content` | Captured via PDF/EPUB bracket/highlight, Note *"Recognize as Digest"*, manual entry, or AI generation. |
+| Keyboard note attached to a Digest | **Typed comment** | `commentStr` | Optional plain-text annotation added inside the Digest detail view. |
+| Stylus ink attached to a Digest | **Handwritten annotation** | `handwriteInnerName` + `handwriteMD5` (`.mark` blob) | Optional ink canvas attached to a Digest card (distinct from `.note` notebooks). |
+| Server OCR of a Digest's `.mark` ink | **Annotation transcript** | `SummaryTranscriptDO` (`DigestVO.handwriting.transcript`) | Produced by `SummaryOcrModule` (`TaskType.SUMMARY_OCR`); distinct from `.note` **Page transcripts**. |
+| LLM-generated synthesis of a `.note` | **AI Notebook Summary** (or **AI Summary**) | `SummaryDO` filed under `"AI Summaries"` Category | Standard Digest entry whose `content` is generated from a notebook's page transcripts. |
+| Linked original document | **Source** | `fileId`, `sourcePath`, `author` | Optional loose back-link used by the **Sources** tab in the Digest app. |
 
 ## Core Concepts
 
-The system revolves around three main entities: **Summaries**, **Summary Groups**, and **Summary Tags**.
+The official sync protocol revolves around three entities: **Summaries** (Digests), **Summary Groups** (Digest Categories), and **Summary Tags**.
 
-### Summaries (`SummaryDO`)
-A "Summary" represents an individual **Digest** entry in the Supernote Partner App and tablet Digest UI—such as a PDF/EPUB highlight excerpt or a server-generated AI notebook synthesis.
+### Digests (`SummaryDO`)
+A `SummaryDO` row with `isSummaryGroup="N"` represents an individual **Digest** entry in the Supernote Partner App and tablet Digest UI—whether extracted from a PDF/EPUB, recognized from a handwritten notebook via *"Recognize as Digest"*, entered manually, or generated as an **AI Notebook Summary**.
 
-*   **Conceptual Role**: Holds a single Digest card (quote, excerpt, or AI synthesis) plus optional text/handwriting annotations.
+*   **Conceptual Role**: Holds a single Digest card (excerpt or AI Notebook Summary) plus optional typed comments and handwritten annotations.
 *   **Key Fields**:
     *   `uniqueIdentifier`: **32-character lowercase hex identifier** (or client UUID) used for device/Partner App Digest synchronization.
-    *   `content`: Primary text content (excerpt or Markdown synthesis).
-    *   `sourcePath`: VFS-relative path to the source file without a leading slash (e.g., `Note/Meeting.note` or `Document/Archive/Paper.pdf`).
+    *   `content`: Primary Digest body (extracted excerpt or AI Notebook Summary Markdown).
+    *   `sourcePath`: VFS-relative path to the Source file without a leading slash (e.g., `Note/Meeting.note` or `Document/Archive/Paper.pdf`).
     *   `isSummaryGroup`: Set to `"N"` for Digest items.
     *   `parentUniqueIdentifier`: Points to the `uniqueIdentifier` of the Digest's **Category** (`SummaryGroup`). Empty (`""`) or `None` appears under **Uncategorized** in the Partner App.
 
-### Summary Groups (`SummaryDO` with `isSummaryGroup='Y'`)
+### Digest Categories (`SummaryDO` with `isSummaryGroup='Y'`)
 A "Summary Group" maps directly to a **Category** in the Supernote Partner App and tablet Digest filter bar (*All*, *Uncategorized*, and custom categories).
 
 *   **Conceptual Role**: Top-level Digest Category. Because each `SummaryDO` has a single `parentUniqueIdentifier`, a Digest entry belongs to at most one Category.
 *   **Key Fields**:
     *   `uniqueIdentifier`: 32-character lowercase hex identifier for the category.
     *   `isSummaryGroup`: Set to `"Y"`.
-    *   `name`: Category display name (for example, `"AI Summaries"` for server-generated notebook syntheses).
+    *   `name`: Category display name (for example, `"AI Summaries"` for server-generated AI Notebook Summaries).
 
 ### Summary Tags (`SummaryTagDO`)
 Legacy/auxiliary tag endpoints (`/api/file/*/summary/tag`) defined in the cloud API schema.
 
-*   **Usage Note**: The Supernote Partner App and Digest 2.0 UI organize digests by **Categories** (`SummaryGroup` via `parentUniqueIdentifier`) and **Sources** (`sourcePath`), leaving `SummaryTagDO` and `SummaryDO.tags` unused (`null`).
+*   **Usage Note**: The Supernote Partner App and Digest 2.0 UI organize Digests by **Categories** (`SummaryGroup` via `parentUniqueIdentifier`) and **Sources** (`sourcePath`), leaving `SummaryTagDO` and `SummaryDO.tags` unused (`null`).
 
 ---
 
-## Interoperability Workflow (Custom Digest / AI Synthesis)
+## Unified Extended Digest API (`GET /api/extended/digests`)
+
+While the official `/api/file/*/summary*` endpoints preserve exact Supernote device wire compatibility, clients that want to read Digests together with server-side **Annotation transcripts** should use `GET /api/extended/digests` (or the identical `list_digests` MCP tool and `ExtendedClient.list_digests` SDK method):
+
+*   **Query Parameters (`DigestListRequestDTO`)**:
+    *   `fileId` (optional): Filter Digests linked to one Source VFS file ID.
+    *   `categoryId` (optional): Filter Digests belonging to one Digest Category (`parentUniqueIdentifier`).
+    *   `limit` (optional, `1–200`, default `50`) and `offset` (optional, default `0`): Offset pagination.
+*   **Response (`DigestListVO`)**: Returns `{digests: DigestVO[], total, limit, offset}` where every `DigestVO` is self-contained—carrying `id`, `uniqueIdentifier`, `categoryId`, `fileId`, `name`, `sourcePath`, `author`, parsed `tags`, `dataSource`, `content`, `comment`, and an optional inline `handwriting` object (`DigestHandwritingVO`: `md5`, `transcript`, `modelId`, `updateTime`).
+*   **Freshness guarantee**: `handwriting.transcript` is populated only when the stored `SummaryTranscriptDO.handwrite_md5` matches the Digest's current `handwrite_md5`; pending or stale OCR omits `transcript` while keeping `handwriting.md5`.
+
+---
+
+## Interoperability Workflow (Custom Digest / AI Notebook Summary)
 
 If you are building an integration that publishes Digest cards (such as AI syntheses or reading excerpts) for Supernote files:
 
