@@ -60,8 +60,20 @@ export default {
         const transcriptScrollPane = ref(null);
         /** @type {import('vue').Ref<string | null>} */
         const copiedPageKey = ref(null);
+        /** @type {import('vue').Ref<Set<string>>} */
+        const failedOutlineImages = ref(new Set());
         /** @type {ReturnType<typeof setTimeout> | null} */
         let copyResetTimer = null;
+
+        /**
+         * @param {string} key
+         */
+        function markOutlineImageFailed(key) {
+            if (failedOutlineImages.value.has(key)) return;
+            const next = new Set(failedOutlineImages.value);
+            next.add(key);
+            failedOutlineImages.value = next;
+        }
 
         function clearCopiedState() {
             if (copyResetTimer) {
@@ -105,6 +117,7 @@ export default {
             () => props.fileId,
             () => {
                 clearCopiedState();
+                failedOutlineImages.value = new Set();
             },
         );
 
@@ -222,6 +235,8 @@ export default {
             hasCopyablePageText,
             isPageCopied,
             copyPageTranscript,
+            failedOutlineImages,
+            markOutlineImageFailed,
             renderedSummaries,
         };
     },
@@ -351,10 +366,11 @@ export default {
                             <span v-if="item.text" class="text-xs font-medium text-slate-900 leading-snug line-clamp-2 break-words">
                                 {{ item.text }}
                             </span>
-                            <img v-else-if="item.imageUrl"
+                            <img v-else-if="item.imageUrl && !failedOutlineImages.has(item.key)"
                                 :src="item.imageUrl"
                                 :alt="'Heading on page ' + (item.pageIndex + 1)"
                                 loading="lazy"
+                                @error="markOutlineImageFailed(item.key)"
                                 class="max-h-9 max-w-full object-contain rounded bg-white border border-stone-200/70 px-1 py-0.5" />
                             <span v-else class="text-xs italic text-stone-500">Heading</span>
                         </div>

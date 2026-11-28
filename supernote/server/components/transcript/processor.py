@@ -14,7 +14,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from supernote.models.base import TaskType
+from supernote.models.base import ProcessingStatus, TaskType
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import (
     PageMetadata,
@@ -47,6 +47,7 @@ from supernote.server.services.file import FileService
 from supernote.server.utils.image import is_image_filename
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
+from supernote.server.utils.tasks import get_task
 
 from .service import TRANSCRIPT_SERVICE_KEY
 from .summary_ocr import SummaryOcrModule
@@ -149,6 +150,11 @@ class OcrModule(ProcessorModule):
     def enabled(self) -> bool:
         return self.ocr_model is not None
 
+    @property
+    def version(self) -> str:
+        """Module schema version recorded in `SystemTaskDO.data` (`v2` adds title OCR)."""
+        return "v2"
+
     async def run_if_needed(
         self,
         file_id: int,
@@ -161,9 +167,17 @@ class OcrModule(ProcessorModule):
         if page_index is None or not page_id or not self.enabled:
             return False
 
-        page_ocr_needed = await super().run_if_needed(
-            file_id, session_manager, page_index, page_id, user_id=user_id
+        key = self.get_task_key(page_index, page_id)
+        task = await get_task(
+            session_manager,
+            user_id,
+            file_id,
+            self.task_type,
+            key,
+            entity_type=self.entity_type,
         )
+        task_completed = task is not None and task.status == ProcessingStatus.COMPLETED
+        task_current = task_completed and task.data == self.version
 
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
@@ -175,12 +189,16 @@ class OcrModule(ProcessorModule):
             file_do = await session.get(UserFileDO, file_id)
             if file_do is None or file_do.user_id != user_id:
                 return False
-            if not page_ocr_needed:
+            if task_current:
                 if self.note_metadata_service is None:
                     return False
                 return await _has_untranscribed_titles(
                     session, user_id, file_id, int(content.page_index)
                 )
+            # Legacy completed page being upgraded to v2: process() takes the
+            # title-only fast path without needing the cached page PNG.
+            if task_completed and content.text_content is not None:
+                return True
             page_meta = await _get_verified_page_metadata(
                 session, user_id, file_id, page_id, content.content_hash
             )
@@ -240,15 +258,24 @@ class OcrModule(ProcessorModule):
             user_id = file_do.user_id
             file_name = file_do.file_name
             saved_page_index = int(content.page_index)
-            # Fast path when a page is already transcribed (e.g. footer-only title edit
-            # or title backfill on an existing note): skip fetching the cached page PNG
-            # and avoid a redundant full-page LLM call; only OCR the missing title crops.
+            key = self.get_task_key(page_index, page_id)
+            task = await get_task(
+                session_manager,
+                user_id,
+                file_id,
+                self.task_type,
+                key,
+                entity_type=self.entity_type,
+            )
+            # Fast path when a page is already completed and transcribed (e.g.
+            # version upgrade backfill or footer-only title edit): skip fetching
+            # the cached page PNG and avoid a redundant full-page LLM call; only
+            # OCR any missing title crops. Explicit reprocessing clears the task
+            # row so `task` is None and full-page OCR still runs.
             title_only = (
-                content.text_content is not None
-                and self.note_metadata_service is not None
-                and await _has_untranscribed_titles(
-                    session, user_id, file_id, saved_page_index
-                )
+                task is not None
+                and task.status == ProcessingStatus.COMPLETED
+                and content.text_content is not None
             )
             page_meta = (
                 None

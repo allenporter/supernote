@@ -9,6 +9,9 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 
+from supernote.notebook import fileformat
+from supernote.notebook.converter import ImageConverter
+from supernote.notebook.exceptions import DecoderException
 from supernote.server.components.note_metadata import NoteMetadataService
 from supernote.server.components.note_metadata.processor import NoteMetadataModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
@@ -219,3 +222,35 @@ async def test_get_title_png_key_returns_none_when_not_accessible(
         )
         is None
     )
+
+
+async def test_get_title_png_key_isolates_per_title_decode_failures(
+    note_metadata_service: NoteMetadataService,
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    test_user_id: int,
+) -> None:
+    """A decode failure on one title does not prevent other titles in the note from rendering."""
+    await _hash_heading_note(
+        session_manager, file_service, user_id=test_user_id, file_id=8407
+    )
+    real_convert_title = ImageConverter.convert_title
+    call_count = 0
+
+    def _flaky_convert_title(
+        self: ImageConverter, title: fileformat.Title
+    ) -> Image.Image:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise DecoderException("simulated corrupt title")
+        return real_convert_title(self, title)
+
+    with patch.object(ImageConverter, "convert_title", _flaky_convert_title):
+        key = await note_metadata_service.get_title_png_key(
+            user_id=test_user_id, file_id=8407, bitmap_md5=DARK_GREY_TITLE_MD5
+        )
+
+    assert key == get_title_png_path(8407, DARK_GREY_TITLE_MD5)
+    png = await _read_cache(file_service, key)
+    assert Image.open(io.BytesIO(png)).size == (582, 178)
